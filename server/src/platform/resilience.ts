@@ -32,11 +32,21 @@ export interface RetryOptions {
   onRetry?: (attempt: number, err: unknown) => void;
 }
 
-function defaultIsRetryable(err: unknown): boolean {
-  const status =
+/**
+ * HTTP status carried by a thrown error, whichever shape the client used:
+ * Octokit puts it on `.status`, Fastify/AppError on `.statusCode`, fetch-style
+ * wrappers on `.response.status`. Returns undefined for non-HTTP failures.
+ */
+export function httpStatusOf(err: unknown): number | undefined {
+  return (
     (err as { status?: number })?.status ??
     (err as { statusCode?: number })?.statusCode ??
-    (err as { response?: { status?: number } })?.response?.status;
+    (err as { response?: { status?: number } })?.response?.status
+  );
+}
+
+function defaultIsRetryable(err: unknown): boolean {
+  const status = httpStatusOf(err);
   if (typeof status === 'number') return status === 429 || status >= 500;
   // network-ish errors
   const code = (err as { code?: string })?.code;
