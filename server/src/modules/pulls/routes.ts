@@ -129,6 +129,27 @@ export default async function pullsRoutes(appBase: FastifyInstance) {
       }
     }
 
+    // TOTAL cost per PR for the list's cost column — the sum of every agent run
+    // ever made against it, which is what "what has this PR cost me?" means.
+    // (Unlike `score`, which is deliberately the LATEST review only.)
+    //
+    // Summed in JS rather than SQL for the same reason the score lookup groups
+    // in JS: the list is small, so one IN-query is cheaper than the round trips.
+    // A PR with no priced run stays null → the column renders an em dash, which
+    // keeps "never measured" distinct from "measured, and it was free".
+    const totalCostByPr = new Map<string, number>();
+    if (prIds.length > 0) {
+      const runRows = await container.db
+        .select({ prId: t.agentRuns.prId, costUsd: t.agentRuns.costUsd })
+        .from(t.agentRuns)
+        .where(inArray(t.agentRuns.prId, prIds));
+      for (const run of runRows) {
+        if (run.prId && run.costUsd != null) {
+          totalCostByPr.set(run.prId, (totalCostByPr.get(run.prId) ?? 0) + run.costUsd);
+        }
+      }
+    }
+
     const now = Date.now();
     return rows.map((r) => {
       const review = latestReviewByPr.get(r.id);
@@ -153,6 +174,7 @@ export default async function pullsRoutes(appBase: FastifyInstance) {
         opened_at: r.openedAt?.toISOString() ?? null,
         updated_at: r.updatedAt?.toISOString() ?? null,
         score: review ? review.score : null,
+        cost_usd: totalCostByPr.get(r.id) ?? null,
       };
     });
   });
