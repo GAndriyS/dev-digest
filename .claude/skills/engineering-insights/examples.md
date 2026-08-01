@@ -1,7 +1,22 @@
 # Entry examples — good vs bad
 
 The bar for every entry: **actionable cold**. A reader with no session context
-knows exactly what to do or avoid, without asking follow-ups.
+knows exactly what to do or avoid, without asking follow-ups. And it must be
+**consequential** — something downstream changes because it was written — and
+**unique** — nothing already in the file says it.
+
+## The two entries that most often should NOT be written
+
+❌ *Interesting but inert.* `- **2026-07-31** — The review engine takes the
+   provider's reported usage.cost when OpenRouter returns one, and falls back
+   to the PriceBook estimate otherwise.`
+   True, and genuinely interesting — but nothing a future session does changes
+   because of it, and the code says it plainly. Trivia, not an insight.
+
+❌ *A rephrasing of an existing entry.* If the file already says tsx watch
+   ignores `.env`, do not add "remember to restart the API after editing env
+   vars". Extend the original with a dated line only if you learned something
+   new about it; otherwise write nothing.
 
 ## What Works
 
@@ -56,3 +71,16 @@ session to rediscover it.
 ✅ `- **2026-07-31** — file_edges rows keep the OLD path after a rename until
    the next full index — is that stale data acceptable for blast-radius (L04),
    or does incremental need a purge step? (spotted in pipeline/incremental.ts)`
+
+**Closing one.** Never annotate in place:
+
+❌ `- **2026-08-02** (resolved) — Turned out incremental does need a purge step.`
+   The question is now noise in a queue meant to hold open items.
+
+✅ Delete the question. Then, if the answer is an insight on its own terms,
+   write it where it belongs — here, `Codebase Patterns`:
+   `- **2026-08-02** — Incremental indexing must purge file_edges rows for the
+   old path on rename; without it blast-radius reports callers through a file
+   that no longer exists (pipeline/incremental.ts).`
+   If the answer is already captured by a code comment or a spec, delete the
+   question and write nothing.

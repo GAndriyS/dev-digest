@@ -26,3 +26,16 @@ export function formatSeconds(ms: number): string {
 export function formatTokens(tokensIn: number, tokensOut: number): string {
   return `${(tokensIn / 1000).toFixed(0)}k→${(tokensOut / 1000).toFixed(1)}k`;
 }
+
+/**
+ * USD cost with fixed 4 decimals (e.g. "$0.0013"). Four decimals because the
+ * cheap models we default to land around $0.001 per run — toFixed(2) would
+ * flatten every one of them to "$0.00". Null (unknown model price, or a run
+ * from before cost was persisted) renders as an em dash, never "$NaN".
+ *
+ * Shared by all three cost surfaces: the PR-list column, the run timeline,
+ * and the trace drawer's COST stat.
+ */
+export function formatCost(usd: number | null | undefined): string {
+  return usd == null ? "—" : `$${usd.toFixed(4)}`;
+}
