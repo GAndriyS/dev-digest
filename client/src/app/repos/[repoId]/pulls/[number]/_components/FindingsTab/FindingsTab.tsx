@@ -4,9 +4,10 @@ import React, { useCallback } from "react";
 import { Icon, Badge, Button, SectionLabel, EmptyState } from "@devdigest/ui";
 import { RunStatus } from "../RunStatus";
 import { RunHistory } from "../RunHistory/RunHistory";
+import { findingsByRun, severityCountsByRun } from "../RunHistory/helpers";
 import { ReviewRunAccordion } from "../ReviewRunAccordion";
 import { s } from "./styles";
-import type { FindingRecord, ReviewRecord, RunSummary, PrCommit } from "@devdigest/shared";
+import type { FindingRecord, ReviewRecord, RunSummary, PrCommit, Severity } from "@devdigest/shared";
 import type { UseMutationResult } from "@tanstack/react-query";
 
 interface FindingsTabProps {
@@ -24,6 +25,10 @@ interface FindingsTabProps {
   onOpenTrace: (id: string) => void;
   onDelete: (id: string) => void;
   onRunDone: () => void;
+  /** Page-level severity filter (?severity=) — null shows every severity. */
+  severityFilter?: Severity | null;
+  /** Toggle the filter; clearing when the same severity is clicked again. */
+  onToggleSeverity?: (severity: Severity) => void;
 }
 
 export function FindingsTab({
@@ -40,6 +45,8 @@ export function FindingsTab({
   onOpenTrace,
   onDelete,
   onRunDone,
+  severityFilter = null,
+  onToggleSeverity,
 }: FindingsTabProps) {
   const handleCancelAll = useCallback(() => {
     liveRunIds.forEach((id) => cancelMutation.mutate(id));
@@ -70,6 +77,23 @@ export function FindingsTab({
   const handleGoToReview = useCallback((runId: string) => {
     setTarget((p) => ({ runId, n: (p?.n ?? 0) + 1 }));
   }, []);
+
+  // Timeline rows come from agent_runs (which only carry a total findings
+  // count), so the per-severity breakdown is joined from the reviews already
+  // loaded for the accordions below, keyed by run_id.
+  const severityByRun = React.useMemo(() => severityCountsByRun(runs), [runs]);
+  const runFindings = React.useMemo(() => findingsByRun(runs), [runs]);
+
+  // Picking a severity on a run row filters EVERY run's findings (the filter is
+  // page-level, so a deep link from the PR list behaves identically) and scrolls
+  // to that run. Clicking the active severity again just clears the filter.
+  const handleSelectSeverity = useCallback(
+    (runId: string, severity: Severity) => {
+      onToggleSeverity?.(severity);
+      if (severity !== severityFilter) handleGoToReview(runId);
+    },
+    [onToggleSeverity, severityFilter, handleGoToReview],
+  );
 
   return (
     <section>
@@ -134,6 +158,10 @@ export function FindingsTab({
             onOpenTrace={handleOpenTrace}
             onGoToReview={handleGoToReview}
             onDelete={handleDelete}
+            severityByRun={severityByRun}
+            findingsByRun={runFindings}
+            activeSeverity={severityFilter}
+            onSelectSeverity={onToggleSeverity ? handleSelectSeverity : undefined}
           />
         </div>
       )}
@@ -164,6 +192,7 @@ export function FindingsTab({
             headSha={headSha}
             targetRunId={target?.runId ?? null}
             targetNonce={target?.n ?? 0}
+            severityFilter={severityFilter}
           />
         ))
       )}

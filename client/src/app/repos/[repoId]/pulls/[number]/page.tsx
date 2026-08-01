@@ -21,7 +21,10 @@ import { usePrReviews, useCancelRun, usePrActiveRuns, usePrRuns, useDeleteRun } 
 import { useActiveRepo, useRepoNotFound } from "../../../../../lib/repo-context";
 import { ApiError } from "../../../../../lib/api";
 import { githubPrUrl } from "../../../../../lib/github-urls";
-import type { FindingRecord } from "@devdigest/shared";
+import { Severity as SeveritySchema, type FindingRecord, type Severity } from "@devdigest/shared";
+
+/** The contract's severities — the only accepted values for `?severity=`. */
+const SEVERITIES: Severity[] = SeveritySchema.options;
 
 export default function PRDetailPage() {
   const params = useParams<{ repoId: string; number: string }>();
@@ -66,6 +69,16 @@ export default function PRDetailPage() {
     router.replace(`/repos/${repoId}/pulls/${number}${sp.toString() ? `?${sp.toString()}` : ""}`);
   };
   const setTab = (t: string) => setParam("tab", t);
+
+  // Severity filter lives in the query too, so the PR list can deep-link
+  // straight into a pre-filtered findings view. An unknown value reads as
+  // "no filter" rather than filtering everything away.
+  const severityParam = search.get("severity");
+  const severityFilter = SEVERITIES.includes(severityParam as Severity)
+    ? (severityParam as Severity)
+    : null;
+  const toggleSeverity = (sev: Severity) =>
+    setParam("severity", severityFilter === sev ? null : sev);
 
   // Reviews come newest-first; each is its own run (grouped into accordions).
   const runs = reviews ?? [];
@@ -148,6 +161,8 @@ export default function PRDetailPage() {
             repoFullName={repoFullName}
             headSha={pr.head_sha}
             cancelMutation={cancel}
+            severityFilter={severityFilter}
+            onToggleSeverity={toggleSeverity}
             onOpenTrace={(id) => setParam("trace", id)}
             onDelete={(id) => {
               if (window.confirm("Delete this run from history? (its logs are removed too)"))
