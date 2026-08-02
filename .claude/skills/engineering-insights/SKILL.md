@@ -133,7 +133,7 @@ yet, which is why this is the one place deletion is correct.
 ## Maintenance (keeps the loop healthy)
 
 - **Promotion:** an entry that has changed the agent's behaviour twice gets
-  promoted to the module's `CLAUDE.md → Conventions` as ONE line (cap 7 — the
+  promoted to the module's `AGENTS.md → Conventions` as ONE line (cap 7 — the
   eighth evicts the least relevant back here). The full write-up stays in
   INSIGHTS.md.
 - **Prune** (when asked, or during a quarterly review): remove entries about

@@ -7,7 +7,7 @@ reasoning behind a component's shape, i18n workflow — material worth reading o
 demand but not worth carrying in every session.
 
 **What does not:** the UI route map (already in `README.md`), conventions and
-rules (`CLAUDE.md`), and props tables that the types already express.
+rules (`AGENTS.md`), and props tables that the types already express.
 
 ## Contents
 

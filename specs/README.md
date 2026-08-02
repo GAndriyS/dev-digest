@@ -4,7 +4,7 @@ Cross-cutting specs: what we are building and what "done" means. Specs scoped to
 a single package live in `<package>/specs/`.
 
 One file per feature, named after the lesson that introduces it:
-`L01-run-cost-badge.md`. `CLAUDE.md` links this directory, never individual
+`L01-run-cost-badge.md`. `AGENTS.md` links this directory, never individual
 files — otherwise the map grows with every lesson and blows its line budget.
 
 ## Template
