@@ -3,7 +3,7 @@
 Specs for work that lives entirely in the web app. Anything spanning the web app
 and the API belongs in `../specs/`.
 
-One file per feature: `add-<screen>.md` or `LNN-<feature>.md`. `CLAUDE.md` links
+One file per feature: `add-<screen>.md` or `LNN-<feature>.md`. `AGENTS.md` links
 this directory, not individual files.
 
 ## Template

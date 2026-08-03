@@ -3,7 +3,7 @@
 Specs for engine work. Anything that also needs a route, a table, or a screen
 belongs in `../specs/`.
 
-One file per change: `add-<slot>.md` or `LNN-<feature>.md`. `CLAUDE.md` links
+One file per change: `add-<slot>.md` or `LNN-<feature>.md`. `AGENTS.md` links
 this directory, not individual files.
 
 ## Template

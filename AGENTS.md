@@ -1,0 +1,64 @@
+# DevDigest
+
+Local-first AI pull-request review. Course starter template: import a PR, run an
+agent review on it. Node 22 · TS 5.7 · Zod 3 · Fastify 5 + Drizzle/Postgres
+(pgvector) · Next 15 + React 19.
+
+## Before answering
+
+Read the touched module's `INSIGHTS.md` before starting work (root `INSIGHTS.md`
+for cross-cutting tasks); search `docs/` and `specs/` as needed. Working inside
+a package — read its own `AGENTS.md` (`server/`, `client/`, `reviewer-core/`,
+`e2e/`).
+
+## Conventions (not obvious from code)
+
+- This is NOT a monorepo workspace: four independent packages, each with its own
+  `package.json` **and lockfile**. `server/`, `client/` → **pnpm**;
+  `reviewer-core/`, `e2e/` → **npm**. Installing at the repo root does nothing.
+  Cross-package code resolves via tsconfig path aliases, not published modules.
+- Migrations are NOT applied on boot — `cd server && pnpm db:migrate`.
+- `@devdigest/shared` exists **twice**: `server/src/vendor/shared` (canonical,
+  also used by reviewer-core) and `client/src/vendor/shared` (trimmed copy, has
+  already drifted). Edit the server copy, then mirror wire-crossing changes into
+  the client copy — never edit only one.
+- Contracts are Zod-first: one schema drives request validation **and** response
+  serialization. Never hand-roll `Schema.parse(req.body)` in a handler.
+- DB-backed tests must end in `.it.test.ts` — the unit and integration lanes
+  split on that glob.
+- `reviewer-core` is consumed as TypeScript **source**; it never emits JS, its
+  `build` is a typecheck.
+- Secrets live in `~/.devdigest/secrets.json` (mode 0600) with `process.env` as
+  fallback. Never the database, never git.
+- The DB schema ships every table for every course lesson — empty tables are
+  expected, not a bug.
+- Never `docker compose down -v` — it drops the `devdigest_pgdata` volume along
+  with every imported repo and review.
+- Agent instructions live in `AGENTS.md`; the `CLAUDE.md` next to it is a
+  two-line `@AGENTS.md` import and holds no content — Claude Code reads only
+  `CLAUDE.md`, so the pointer is what makes `AGENTS.md` reachable. Do not delete
+  it, and never let the two diverge. It is an import rather than a symlink on
+  purpose: git hands a symlink to a Windows clone without Developer Mode as a
+  text file containing the word `AGENTS.md`, which loads as the whole ruleset.
+- When prose and CI disagree, trust `.github/workflows/**`.
+- Git is always in English — branch names, commit messages, PR titles and bodies.
+- Every PR body ends with an **Insights** section summarising what the branch
+  appended to `INSIGHTS.md` (or stating plainly that nothing was recorded). It
+  puts the findings in front of the reviewer next to the diff that produced
+  them, and makes an empty sweep a stated decision rather than an omission.
+- Do not touch: `server/clones/**` (runtime clone checkouts),
+  `server/src/db/migrations/*.sql` (applied — add a new migration instead),
+  `**/src/vendor/ui/**` (vendored UI kit — fix upstream, then re-vendor).
+
+## Use when
+
+- Whole-stack boot (`./scripts/dev.sh`), architecture, diagrams → read `README.md`
+- Test strategy and CI lanes → read `TESTING.md`
+- API / DB / adapters work → read `server/AGENTS.md`
+- Web UI work → read `client/AGENTS.md`
+- Review-engine work → read `reviewer-core/AGENTS.md`
+- Browser e2e work → read `e2e/AGENTS.md`
+- Deep dives → read `docs/` · current work → read `specs/` · findings → read
+  `INSIGHTS.md` · skills catalog → read `.claude/skills/README.md`
+- Captured a non-obvious finding or wrapping up a session → run
+  `/engineering-insights` (recording nothing is a legitimate outcome)

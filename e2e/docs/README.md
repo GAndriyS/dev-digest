@@ -7,7 +7,7 @@ agent-browser command reference notes, screenshot triage — material worth read
 on demand but not worth carrying in every session.
 
 **What does not:** the flow format and coverage table (already in `README.md`),
-and the rules (`CLAUDE.md`).
+and the rules (`AGENTS.md`).
 
 ## Contents
 

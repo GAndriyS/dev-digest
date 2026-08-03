@@ -20,7 +20,7 @@ live in `<package>/INSIGHTS.md`. Maintained by the `engineering-insights` skill.
   insight on its own terms, write it into the section it belongs to as a normal
   entry; if the decision now lives in the code or a spec, write nothing.
 - **Promotion:** an entry that changed the agent's behaviour twice → ONE line
-  in the module's `CLAUDE.md → Conventions` (cap 7; the eighth evicts the least
+  in the module's `AGENTS.md → Conventions` (cap 7; the eighth evicts the least
   relevant back here). The full write-up stays in this file.
 - **Prune** quarterly: drop entries about since-fixed bugs, merge duplicates,
   resolve contradictions in favour of the newer date. Near ~200 entries —
@@ -34,6 +34,23 @@ live in `<package>/INSIGHTS.md`. Maintained by the `engineering-insights` skill.
 
 ## Tool & Library Notes
 
+- **2026-08-02** — A repo added as an ADDITIONAL working directory never gets
+  its `CLAUDE.md` auto-loaded: Claude Code walks up from the PRIMARY project
+  folder only, and dev-digest has always been opened as a secondary cwd
+  alongside `E:\repos\datasets-api`. So this repo's instructions have been inert
+  in every such session — agents only ever saw them by reading the file on
+  purpose. `ls ~/.claude/projects/` is the fast check: one directory per folder
+  ever opened as primary, so a missing `E--repos-dev-digest` proves no session
+  has had it in scope. Cost four failed verification rounds before this was
+  spotted — check the primary cwd FIRST when memory appears not to load.
+- **2026-08-02** — Claude Code strips HTML comments out of memory files before
+  the model sees them. A `<!-- ... -->` line in `CLAUDE.md`/`AGENTS.md` is
+  invisible: never put load-bearing instructions there, and never use one as a
+  probe for whether memory loaded (an entire verification attempt was wasted on
+  `<!-- CANARY -->` markers that could not have shown up). Confirmed in the same
+  run that the `@AGENTS.md` import DOES resolve — a session with dev-digest as
+  primary cwd reported `CLAUDE.md` as one line of content (`@AGENTS.md`, the
+  comment above it gone) followed by the imported body of `AGENTS.md`.
 - **2026-08-01** — Port 3001 is shared with another local project, and the two
   bind different stacks: `E:\repos\madiro-shoes\apps\api` listens on `::`
   (IPv6) while our Fastify listens on `0.0.0.0` (IPv4), so BOTH bind

@@ -7,7 +7,7 @@ to add one, migration and indexing walkthroughs, performance notes — material
 worth reading on demand but not worth carrying in every session.
 
 **What does not:** the API map and DI flow (already in `README.md`), invariants
-and rules (`CLAUDE.md`), and anything the route schemas already state.
+and rules (`AGENTS.md`), and anything the route schemas already state.
 
 ## Contents
 

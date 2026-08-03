@@ -55,7 +55,7 @@ session to rediscover it.
 ✅ `- **2026-07-31** — "instanceof ZodError" returning false in route handlers:
    two zod instances exist at runtime (shared vs api). Fix: shape-match on
    name + issues array, as app.ts's error handler does. Third occurrence —
-   candidate for promotion to server/CLAUDE.md.`
+   candidate for promotion to server/AGENTS.md.`
 
 ## Session Notes
 

@@ -7,7 +7,7 @@ shaped the way it is, structured-output repair strategy, map-reduce tuning —
 material worth reading on demand but not worth carrying in every session.
 
 **What does not:** the pipeline diagram and public API (already in `README.md`),
-and the invariants (`CLAUDE.md`).
+and the invariants (`AGENTS.md`).
 
 ## Contents
 
