@@ -26,6 +26,13 @@
     "blockers": " · {count} blockers",
     "prScore": "PR SCORE"
   },
+  "severityCounters": {
+    "critical": "{count} critical",
+    "warning": "{count} warning",
+    "suggestion": "{count} suggestion",
+    "popoverTitle": "{count} findings",
+    "popoverMore": "and {count} more"
+  },
   "panel": {
     "hideLowConfidence": "Hide low confidence",
     "noMatchTitle": "No findings match",
@@ -91,6 +98,7 @@
       "author": "Author",
       "size": "Size",
       "score": "Score",
+      "findings": "Findings",
       "status": "Status",
       "cost": "Cost",
       "updated": "Updated"

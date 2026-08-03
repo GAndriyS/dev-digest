@@ -36,6 +36,10 @@ a package — read its own `CLAUDE.md` (`server/`, `client/`, `reviewer-core/`,
   with every imported repo and review.
 - When prose and CI disagree, trust `.github/workflows/**`.
 - Git is always in English — branch names, commit messages, PR titles and bodies.
+- Every PR body ends with an **Insights** section summarising what the branch
+  appended to `INSIGHTS.md` (or stating plainly that nothing was recorded). It
+  puts the findings in front of the reviewer next to the diff that produced
+  them, and makes an empty sweep a stated decision rather than an omission.
 - Do not touch: `server/clones/**` (runtime clone checkouts),
   `server/src/db/migrations/*.sql` (applied — add a new migration instead),
   `**/src/vendor/ui/**` (vendored UI kit — fix upstream, then re-vendor).

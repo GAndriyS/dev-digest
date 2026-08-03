@@ -6,8 +6,10 @@ import { PrCommentInput } from '@devdigest/shared';
 import * as t from '../../db/schema.js';
 import { getContext } from '../_shared/context.js';
 import { IdParams } from '../_shared/schemas.js';
-import { AppError, NotFoundError } from '../../platform/errors.js';
-import { deriveReviewStatus } from './status.js';
+import { AppError, NotFoundError, errSummary } from '../../platform/errors.js';
+import { httpStatusOf } from '../../platform/resilience.js';
+import { deriveReviewStatus, rollupSeverities, type SeverityCounts } from './status.js';
+import { githubRepoAvailability } from './github-availability.js';
 
 /**
  * F1 — pulls module. PR import via Octokit (list + per-PR detail).
@@ -35,7 +37,21 @@ export default async function pullsRoutes(appBase: FastifyInstance) {
     try {
       gh = await container.github();
     } catch (err) {
-      app.log.warn({ err }, 'GitHub client unavailable (no token / offline); serving persisted PRs');
+      app.log.warn(
+        { err: errSummary(err) },
+        'GitHub client unavailable (no token / offline); serving persisted PRs',
+      );
+    }
+
+    // A repo GitHub already 404'd for stays unreachable for the cache TTL, and
+    // this endpoint is polled every minute — going back would just re-buy the
+    // same 404 with rate-limit budget. Drop to the persisted-only path.
+    if (gh && githubRepoAvailability.isKnownMissing(repo.id)) {
+      app.log.debug(
+        { repo: repo.fullName },
+        'GitHub sync suppressed (repo 404s); serving persisted PRs',
+      );
+      gh = null;
     }
 
     // Local-first: sync from GitHub when a token is configured, but never
@@ -43,6 +59,7 @@ export default async function pullsRoutes(appBase: FastifyInstance) {
     if (gh) {
       try {
         const pulls = await gh.listPullRequests({ owner: repo.owner, name: repo.name });
+        githubRepoAvailability.markPresent(repo.id);
         for (const pr of pulls) {
           await container.db
             .insert(t.pullRequests)
@@ -73,7 +90,11 @@ export default async function pullsRoutes(appBase: FastifyInstance) {
             });
         }
       } catch (err) {
-        app.log.warn({ err }, 'GitHub PR sync skipped (no token / offline); serving persisted PRs');
+        if (httpStatusOf(err) === 404) githubRepoAvailability.markMissing(repo.id);
+        app.log.warn(
+          { err: errSummary(err) },
+          'GitHub PR sync skipped (no token / offline); serving persisted PRs',
+        );
       }
     }
 
@@ -106,15 +127,14 @@ export default async function pullsRoutes(appBase: FastifyInstance) {
           r.deletions = detail.deletions;
           r.filesCount = detail.files_count;
         } catch (err) {
-          app.log.warn({ err, number: r.number }, 'PR diff-stat backfill skipped');
+          app.log.warn({ err: errSummary(err), number: r.number }, 'PR diff-stat backfill skipped');
         }
       }
     }
 
     // Latest-review SCORE per PR for the list's score ring. Computed on read
     // from reviews (no FK denorm); the list is small, so one IN-query + JS
-    // grouping is cheap. (The per-severity FINDINGS breakdown is intentionally
-    // not surfaced on the list — findings live on the PR detail page.)
+    // grouping is cheap.
     const prIds = rows.map((r) => r.id);
     const latestReviewByPr = new Map<string, { score: number | null }>();
     if (prIds.length > 0) {
@@ -150,6 +170,26 @@ export default async function pullsRoutes(appBase: FastifyInstance) {
       }
     }
 
+    // Per-severity FINDINGS breakdown per PR for the list's findings column.
+    // Counts EVERY review of the PR (not just the latest, unlike `score`) and
+    // includes dismissed findings, so the number matches what the detail page
+    // shows once you click a counter through to it.
+    const severityByPr = new Map<string, SeverityCounts>();
+    if (prIds.length > 0) {
+      const sevRows = await container.db
+        .select({ prId: t.reviews.prId, severity: t.findings.severity })
+        .from(t.findings)
+        .innerJoin(t.reviews, eq(t.findings.reviewId, t.reviews.id))
+        .where(and(inArray(t.reviews.prId, prIds), eq(t.reviews.kind, 'review')));
+      const byPr = new Map<string, { severity: string }[]>();
+      for (const row of sevRows) {
+        const list = byPr.get(row.prId);
+        if (list) list.push(row);
+        else byPr.set(row.prId, [row]);
+      }
+      for (const [prId, list] of byPr) severityByPr.set(prId, rollupSeverities(list));
+    }
+
     const now = Date.now();
     return rows.map((r) => {
       const review = latestReviewByPr.get(r.id);
@@ -175,6 +215,7 @@ export default async function pullsRoutes(appBase: FastifyInstance) {
         updated_at: r.updatedAt?.toISOString() ?? null,
         score: review ? review.score : null,
         cost_usd: totalCostByPr.get(r.id) ?? null,
+        finding_counts: severityByPr.get(r.id) ?? { critical: 0, warning: 0, suggestion: 0 },
       };
     });
   });
@@ -197,80 +238,90 @@ export default async function pullsRoutes(appBase: FastifyInstance) {
     // Local-first: refresh detail from GitHub when a token is configured;
     // otherwise serve the persisted files/commits/body (seeded or previously
     // imported) so PR detail works offline.
-    try {
-      const gh = await container.github();
-      const detail = await gh.getPullRequest({ owner: repo.owner, name: repo.name }, pr.number);
+    // A repo GitHub already 404'd for is skipped outright — the refresh would
+    // only re-buy the same 404 (see github-availability.ts).
+    if (!githubRepoAvailability.isKnownMissing(repo.id)) {
+      try {
+        const gh = await container.github();
+        const detail = await gh.getPullRequest({ owner: repo.owner, name: repo.name }, pr.number);
+        githubRepoAvailability.markPresent(repo.id);
 
-      await container.db.delete(t.prFiles).where(eq(t.prFiles.prId, pr.id));
-      if (detail.files.length > 0) {
-        await container.db.insert(t.prFiles).values(
-          detail.files.map((f) => ({
-            prId: pr.id,
-            path: f.path,
-            additions: f.additions,
-            deletions: f.deletions,
-            patch: f.patch ?? null,
-          })),
+        await container.db.delete(t.prFiles).where(eq(t.prFiles.prId, pr.id));
+        if (detail.files.length > 0) {
+          await container.db.insert(t.prFiles).values(
+            detail.files.map((f) => ({
+              prId: pr.id,
+              path: f.path,
+              additions: f.additions,
+              deletions: f.deletions,
+              patch: f.patch ?? null,
+            })),
+          );
+        }
+        await container.db.delete(t.prCommits).where(eq(t.prCommits.prId, pr.id));
+        if (detail.commits.length > 0) {
+          await container.db.insert(t.prCommits).values(
+            detail.commits.map((c) => ({
+              prId: pr.id,
+              sha: c.sha,
+              message: c.message,
+              author: c.author,
+              committedAt: c.committed_at ? new Date(c.committed_at) : null,
+            })),
+          );
+        }
+        await container.db
+          .update(t.pullRequests)
+          .set({
+            body: detail.body ?? null,
+            // Diff stats aren't on GitHub's PR-list payload — backfill them from
+            // the detail fetch so the Pull Requests list shows real size/files.
+            additions: detail.additions,
+            deletions: detail.deletions,
+            filesCount: detail.files_count,
+          })
+          .where(eq(t.pullRequests.id, pr.id));
+
+        return { ...detail, id: pr.id };
+      } catch (err) {
+        if (httpStatusOf(err) === 404) githubRepoAvailability.markMissing(repo.id);
+        app.log.warn(
+          { err: errSummary(err) },
+          'GitHub PR detail refresh skipped (no token / offline); serving persisted detail',
         );
       }
-      await container.db.delete(t.prCommits).where(eq(t.prCommits.prId, pr.id));
-      if (detail.commits.length > 0) {
-        await container.db.insert(t.prCommits).values(
-          detail.commits.map((c) => ({
-            prId: pr.id,
-            sha: c.sha,
-            message: c.message,
-            author: c.author,
-            committedAt: c.committed_at ? new Date(c.committed_at) : null,
-          })),
-        );
-      }
-      await container.db
-        .update(t.pullRequests)
-        .set({
-          body: detail.body ?? null,
-          // Diff stats aren't on GitHub's PR-list payload — backfill them from
-          // the detail fetch so the Pull Requests list shows real size/files.
-          additions: detail.additions,
-          deletions: detail.deletions,
-          filesCount: detail.files_count,
-        })
-        .where(eq(t.pullRequests.id, pr.id));
-
-      return { ...detail, id: pr.id };
-    } catch (err) {
-      app.log.warn({ err }, 'GitHub PR detail refresh skipped (no token / offline); serving persisted detail');
-      const files = await container.db.select().from(t.prFiles).where(eq(t.prFiles.prId, pr.id));
-      const commits = await container.db.select().from(t.prCommits).where(eq(t.prCommits.prId, pr.id));
-      return {
-        id: pr.id,
-        number: pr.number,
-        title: pr.title,
-        author: pr.author,
-        branch: pr.branch,
-        base: pr.base,
-        head_sha: pr.headSha,
-        additions: pr.additions,
-        deletions: pr.deletions,
-        files_count: pr.filesCount,
-        status: pr.status as PrDetail['status'],
-        opened_at: pr.openedAt?.toISOString() ?? null,
-        updated_at: pr.updatedAt?.toISOString() ?? null,
-        body: pr.body ?? null,
-        files: files.map((f) => ({
-          path: f.path,
-          additions: f.additions,
-          deletions: f.deletions,
-          patch: f.patch ?? null,
-        })),
-        commits: commits.map((c) => ({
-          sha: c.sha,
-          message: c.message,
-          author: c.author,
-          committed_at: c.committedAt?.toISOString() ?? null,
-        })),
-      };
     }
+
+    const files = await container.db.select().from(t.prFiles).where(eq(t.prFiles.prId, pr.id));
+    const commits = await container.db.select().from(t.prCommits).where(eq(t.prCommits.prId, pr.id));
+    return {
+      id: pr.id,
+      number: pr.number,
+      title: pr.title,
+      author: pr.author,
+      branch: pr.branch,
+      base: pr.base,
+      head_sha: pr.headSha,
+      additions: pr.additions,
+      deletions: pr.deletions,
+      files_count: pr.filesCount,
+      status: pr.status as PrDetail['status'],
+      opened_at: pr.openedAt?.toISOString() ?? null,
+      updated_at: pr.updatedAt?.toISOString() ?? null,
+      body: pr.body ?? null,
+      files: files.map((f) => ({
+        path: f.path,
+        additions: f.additions,
+        deletions: f.deletions,
+        patch: f.patch ?? null,
+      })),
+      commits: commits.map((c) => ({
+        sha: c.sha,
+        message: c.message,
+        author: c.author,
+        committed_at: c.committedAt?.toISOString() ?? null,
+      })),
+    };
   });
 
   // ---- Inline review comments (Files changed tab) -------------------------
@@ -298,13 +349,16 @@ export default async function pullsRoutes(appBase: FastifyInstance) {
       try {
         gh = await container.github();
       } catch (err) {
-        app.log.warn({ err }, 'GitHub client unavailable; serving no PR comments');
+        app.log.warn({ err: errSummary(err) }, 'GitHub client unavailable; serving no PR comments');
         return [];
       }
       try {
         return await gh.listReviewComments({ owner: repo.owner, name: repo.name }, pr.number);
       } catch (err) {
-        app.log.warn({ err }, 'GitHub review-comments fetch skipped (offline / error)');
+        app.log.warn(
+          { err: errSummary(err) },
+          'GitHub review-comments fetch skipped (offline / error)',
+        );
         return [];
       }
     },

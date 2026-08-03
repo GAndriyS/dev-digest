@@ -7,7 +7,7 @@ import { seed } from '../src/db/seed.js';
 import { MockLLMProvider, MockEmbedder, MockGitClient } from '../src/adapters/mocks.js';
 import * as t from '../src/db/schema.js';
 import { eq } from 'drizzle-orm';
-import type { Review } from '@devdigest/shared';
+import { PrMeta, type Review } from '@devdigest/shared';
 
 const hasDocker = await dockerAvailable();
 const d = hasDocker ? describe : describe.skip;
@@ -208,6 +208,41 @@ d('A2 reviews + agents (Testcontainers pg)', () => {
     expect(run!.status).toBe('done');
     expect(run!.findingsCount).toBe(1);
     expect(run!.grounding).toBe('1/2 passed');
+
+    await app.close();
+  });
+
+  it('PR list surfaces a per-severity finding_counts breakdown', async () => {
+    const app = await appWith(REVIEW_FIXTURE);
+    const { repo, pr } = await setupRepoAndPr(pg.handle.db, workspaceId);
+
+    // Unreviewed PR → all-zero counts (never null, so the column can render).
+    const before = (await app.inject({ method: 'GET', url: `/repos/${repo.id}/pulls` })).json();
+    expect(PrMeta.array().safeParse(before).success).toBe(true);
+    expect(before.find((p: PrMeta) => p.number === pr.number)!.finding_counts).toEqual({
+      critical: 0,
+      warning: 0,
+      suggestion: 0,
+    });
+
+    const agent = (
+      await app.inject({
+        method: 'POST',
+        url: '/agents',
+        payload: { name: 'Counter', provider: 'openai', model: 'gpt-4.1', system_prompt: 's' },
+      })
+    ).json();
+    await app.inject({ method: 'POST', url: `/pulls/${pr.id}/review`, payload: { agentId: agent.id } });
+    await waitForPrRuns(pg.handle.db, pr.id, { expected: 1 });
+
+    // Grounding keeps only the CRITICAL finding (line 11); the WARNING one sat
+    // on line 999 and was dropped, so the counts mirror what is persisted.
+    const after = (await app.inject({ method: 'GET', url: `/repos/${repo.id}/pulls` })).json();
+    expect(after.find((p: PrMeta) => p.number === pr.number)!.finding_counts).toEqual({
+      critical: 1,
+      warning: 0,
+      suggestion: 0,
+    });
 
     await app.close();
   });

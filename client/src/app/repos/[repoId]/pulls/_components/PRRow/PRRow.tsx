@@ -5,6 +5,7 @@ import React from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { Icon, Avatar, Badge, CircularScore } from "@devdigest/ui";
+import { PrFindingsCounters } from "./PrFindingsCounters";
 import type { PrMeta } from "@/lib/types";
 import { SIZE_COLOR, STATUS_META } from "../../constants";
 import { relativeTime, sizeOf } from "../../helpers";
@@ -18,6 +19,9 @@ export function PRRow({ pr, repoId }: { pr: PrMeta; repoId: string }) {
   const st = STATUS_META[pr.status] ?? STATUS_META.needs_review!;
   const { size, lines } = sizeOf(pr);
   const reviewed = pr.score != null; // null score ⇒ PR has never been reviewed
+  // No findings at all reads as an em dash, same as an unpriced cost cell.
+  const fc = pr.finding_counts;
+  const counts = fc && fc.critical + fc.warning + fc.suggestion > 0 ? fc : null;
   return (
     <div
       onMouseEnter={() => setH(true)}
@@ -50,6 +54,21 @@ export function PRRow({ pr, repoId }: { pr: PrMeta; repoId: string }) {
       <div style={s.scoreCell}>
         {reviewed ? (
           <CircularScore score={pr.score!} size={34} stroke={3} />
+        ) : (
+          <span style={s.muted}>—</span>
+        )}
+      </div>
+      <div style={s.findingsCell}>
+        {counts ? (
+          <PrFindingsCounters
+            prId={pr.id}
+            counts={counts}
+            onSelect={(severity) =>
+              router.push(
+                `/repos/${repoId}/pulls/${pr.number}?tab=findings&severity=${severity}`,
+              )
+            }
+          />
         ) : (
           <span style={s.muted}>—</span>
         )}

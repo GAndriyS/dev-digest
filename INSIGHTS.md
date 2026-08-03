@@ -34,7 +34,33 @@ live in `<package>/INSIGHTS.md`. Maintained by the `engineering-insights` skill.
 
 ## Tool & Library Notes
 
+- **2026-08-01** — Port 3001 is shared with another local project, and the two
+  bind different stacks: `E:\repos\madiro-shoes\apps\api` listens on `::`
+  (IPv6) while our Fastify listens on `0.0.0.0` (IPv4), so BOTH bind
+  successfully — no EADDRINUSE, both log "Server listening". Windows resolves
+  `localhost` to `::1` first, so `http://localhost:3001` reaches madiro-shoes
+  and `http://127.0.0.1:3001` reaches DevDigest. The tell is the 404 body:
+  `{"message":"Cannot GET /repos"}` is Express (theirs); Fastify says
+  `Route GET:/repos not found`. `client/.env` points at `localhost:3001`, so
+  when madiro-shoes is up the whole frontend loads nothing while the API looks
+  perfectly healthy. Diagnose with
+  `Get-NetTCPConnection -LocalPort 3001 -State Listen | Select LocalAddress,OwningProcess`
+  — two rows means this. Curl `127.0.0.1`, never `localhost`, to test our API.
+
 ## Recurring Errors & Fixes
+
+- **2026-08-01** — API goes silent: port still listening, TCP still accepted,
+  but no response and — the discriminating symptom — no `incoming request` line
+  in the log either, at 0% CPU (measure a delta; the cumulative figure looks
+  busy). Fastify logs that line on receipt, before any handler or DB work, so
+  its absence rules out the pool, the query, and the handler; a wedged pino
+  write is what remains. The API's stdout is a pipe under `pnpm dev`, Node
+  writes to pipes SYNCHRONOUSLY on Windows, and a consumer that stops draining
+  blocks the process outright. Restarting the API clears it (a curl that had
+  hung 25 min returned in the same second). Mechanism inferred, not measured;
+  the symptom→restart loop is confirmed. Reduce the exposure at the source:
+  log external-call failures through `errSummary()` from `platform/errors.ts`,
+  never the raw error.
 
 ## Session Notes
 
@@ -49,6 +75,15 @@ live in `<package>/INSIGHTS.md`. Maintained by the `engineering-insights` skill.
   restoration, not new pricing logic — the computation was never removed.
   Verified with a real OpenRouter run: `cost_usd = 0.0002213904` persisted and
   rendered as `$0.0002`.
+
+- **2026-08-01** — Lab: per-severity finding counters (`feat/homework-01-findings`).
+  Added `PrMeta.finding_counts` (both vendored contract copies) + one grouped
+  IN-query in `GET /repos/:id/pulls`, and a shared `SeverityCounters` component
+  mounted on PR rows and timeline run rows, with the filter held in `?severity=`
+  so a list chip deep-links into a pre-filtered detail page. Verified by 14 new
+  client tests, an integration test on real Postgres, and a live API response.
+  Visual confirmation in the Browser pane stayed blocked — the pane was never
+  displayed (see `client/INSIGHTS.md`).
 
 ## Open Questions
 

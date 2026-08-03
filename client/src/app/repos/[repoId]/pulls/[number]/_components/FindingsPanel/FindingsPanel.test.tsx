@@ -12,9 +12,8 @@ import { FindingsPanel } from "./FindingsPanel";
 
 afterEach(cleanup);
 
-const FINDINGS: FindingRecord[] = [
-  {
-    id: "f1",
+function finding(o: Partial<FindingRecord> & { id: string }): FindingRecord {
+  return {
     severity: "CRITICAL",
     category: "security",
     title: "Hardcoded secret",
@@ -30,8 +29,11 @@ const FINDINGS: FindingRecord[] = [
     review_id: "r1",
     accepted_at: null,
     dismissed_at: null,
-  },
-];
+    ...o,
+  };
+}
+
+const FINDINGS: FindingRecord[] = [finding({ id: "f1" })];
 
 function renderWithIntl(ui: React.ReactElement) {
   return render(
@@ -50,6 +52,30 @@ describe("FindingsPanel (smoke)", () => {
 
   it("shows the empty state when nothing matches", () => {
     renderWithIntl(<FindingsPanel findings={[]} prId="pr1" />);
+    expect(screen.getByText("No findings match")).toBeInTheDocument();
+  });
+});
+
+describe("FindingsPanel severity filter", () => {
+  const MIXED = [
+    finding({ id: "f1", severity: "CRITICAL", title: "Hardcoded secret" }),
+    finding({ id: "f2", severity: "WARNING", title: "Missing Retry-After header" }),
+  ];
+
+  it("shows only the filtered severity", () => {
+    renderWithIntl(<FindingsPanel findings={MIXED} prId="pr1" severityFilter="WARNING" />);
+    expect(screen.getByText("Missing Retry-After header")).toBeInTheDocument();
+    expect(screen.queryByText("Hardcoded secret")).not.toBeInTheDocument();
+  });
+
+  it("shows every severity when the filter is null", () => {
+    renderWithIntl(<FindingsPanel findings={MIXED} prId="pr1" severityFilter={null} />);
+    expect(screen.getByText("Hardcoded secret")).toBeInTheDocument();
+    expect(screen.getByText("Missing Retry-After header")).toBeInTheDocument();
+  });
+
+  it("falls back to the empty state when the filter matches nothing", () => {
+    renderWithIntl(<FindingsPanel findings={MIXED} prId="pr1" severityFilter="SUGGESTION" />);
     expect(screen.getByText("No findings match")).toBeInTheDocument();
   });
 });
