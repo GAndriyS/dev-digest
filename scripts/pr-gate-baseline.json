@@ -1,0 +1,5 @@
+{
+  "_comment": "Shrink-only ratchet for /pr-self-review. Findings recorded here already existed when the gate was adopted and do not block a PR. NEVER add an entry by hand — scripts/pr-gate-ci.mjs fails the build if this list grows, because a new entry re-permits a finding instead of fixing it. The skill prunes entries that no longer reproduce. Same convention as WILDCARD_BARREL_DEBT in client/scripts/check-ui-conventions.mjs.",
+  "adopted_at": "2026-08-04",
+  "findings": []
+}

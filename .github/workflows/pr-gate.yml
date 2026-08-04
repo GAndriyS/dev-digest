@@ -1,0 +1,55 @@
+# PR gate — the CI half of the pr-self-review skill.
+#
+# The thorough review is local (`/pr-self-review`): it runs the repo's skills
+# against the diff and refuses to open a PR on a critical finding. That gate
+# cannot hold GitHub's Merge button, and CI has no LLM key here by design, so
+# this workflow enforces the subset a machine can decide alone.
+#
+# Deliberately NOT duplicated here: typecheck, dependency-cruiser,
+# check-ui-conventions and the test suites. Those already run in client.yml,
+# server-unit.yml, server-integration.yml, reviewer-core.yml and e2e-web.yml —
+# make those required checks too (see .claude/skills/pr-self-review/README.md).
+#
+# No `paths:` filter on purpose: the Insights-section rule applies to every PR,
+# including docs-only ones, so this must run unconditionally to stay a usable
+# required check. A path filter would leave it "pending" forever on skipped PRs.
+name: pr gate
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    name: conventions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The gate diffs against the merge base, which needs real history.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # The body is written to a file rather than interpolated into the shell:
+      # a PR body is attacker-controlled text, and `run: echo "${{ ... }}"` would
+      # let a backtick or $( ) in it execute on the runner.
+      - name: Capture PR body
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: printf '%s' "$PR_BODY" > "$RUNNER_TEMP/pr-body.md"
+
+      - name: Check PR conventions
+        run: |
+          node scripts/pr-gate-ci.mjs \
+            --base "${{ github.event.pull_request.base.sha }}" \
+            --body-file "$RUNNER_TEMP/pr-body.md"

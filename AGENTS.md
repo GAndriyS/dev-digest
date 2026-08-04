@@ -46,6 +46,9 @@ a package — read its own `AGENTS.md` (`server/`, `client/`, `reviewer-core/`,
   appended to `INSIGHTS.md` (or stating plainly that nothing was recorded). It
   puts the findings in front of the reviewer next to the diff that produced
   them, and makes an empty sweep a stated decision rather than an omission.
+- Opening a PR goes through `/pr-self-review` — it reviews the diff with the
+  routed skills, drafts the PR body including that Insights section, and writes
+  the stamp a PreToolUse hook checks before `gh pr create`.
 - Do not touch: `server/clones/**` (runtime clone checkouts),
   `server/src/db/migrations/*.sql` (applied — add a new migration instead),
   `**/src/vendor/ui/**` (vendored UI kit — fix upstream, then re-vendor).
