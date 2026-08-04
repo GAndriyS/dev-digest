@@ -19,7 +19,24 @@ append-only. Entry format and promotion rules → root `INSIGHTS.md`.
 
 ## Codebase Patterns
 
+- **2026-08-04** — The PR list defaults to the **Needs review** filter, so on a
+  dev database where the seeded PR has already been reviewed the table reads
+  "No pull requests" while the header above it says "1 open". That is the filter,
+  not a data or hydration failure — click **All** and the row appears. Worth
+  knowing before debugging an "empty" list: compare the open count in the header
+  against the table before suspecting the API. The hermetic e2e stack seeds fresh,
+  so flow 02 never sees this.
+
 ## Tool & Library Notes
+
+- **2026-08-04** — The Browser-pane blocker is still live: `preview_start` opens
+  the tab, but `document.visibilityState` stays `"hidden"` and `computer
+  screenshot` fails outright with "the Browser pane is not displayed, so the page
+  is not compositing frames". Do not spend another session working around it —
+  drive the app with the e2e suite's `agent-browser` binary instead (it is
+  installed for `e2e/`, renders normally, and has `console`, `errors`,
+  `network requests` and `screenshot` subcommands, which is everything a page
+  sweep needs). Full walk of all ten routes this way took one command.
 
 - **2026-07-31** — In the agent Browser pane, a tab whose pane is not displayed
   reports `document.visibilityState === "hidden"`, and Next.js never finishes
