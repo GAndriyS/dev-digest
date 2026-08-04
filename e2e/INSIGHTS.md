@@ -22,6 +22,32 @@ skill, append-only. Entry format and promotion rules → root `INSIGHTS.md`.
 
 ## Recurring Errors & Fixes
 
+- **2026-08-04** — Running `scripts/e2e.sh` while a dev `next dev` is up in the
+  same checkout poisons BOTH: they share `client/.next`, and `NEXT_PUBLIC_*` is
+  inlined into the compiled chunks at dev-server start. The hermetic run bakes
+  `NEXT_PUBLIC_API_BASE=http://localhost:3101` into the shared cache, and the
+  dev server on :3000 then serves those chunks — so the dev UI silently calls
+  the e2e API port and every page renders "Could not load…" while `curl` against
+  :3001 answers 200 and `client/.env` looks correct. The tell is in
+  `agent-browser network requests`: the page fetches **:3101**. Stop the dev web
+  server and `rm -rf client/.next` before a hermetic run; the DB and API ports
+  are already isolated, the build cache is not.
+- **2026-08-04** — A wedged agent-browser daemon fails `open` outright (the URL
+  stays `about:blank`, later invocations hang until timeout) and leaves orphaned
+  Chrome processes behind. `close --all` does not recover it. Kill only its own
+  browsers — `Get-Process chrome | Where-Object { $_.Path -like '*\.agent-browser\*' }`
+  — never all of Chrome, since the user's own browser shares the image name.
+  After that the next `open` succeeds immediately.
+- **2026-08-04** — agent-browser keeps ONE shared session per daemon, so two
+  things driving it at once silently corrupt each other's results. Running a
+  manual page sweep against the dev stack (:3000) while `scripts/e2e.sh` was
+  mid-suite on its own stack (:3100) made flows fail on assertions that were
+  actually true — `wait --url /pulls` timing out, `wait --text "Security
+  Reviewer"` not finding text that was on the page. The tell: `agent-browser get
+  url` after opening `localhost:3000` reported **:3100**. Nothing is wrong with
+  the app or the flows when this happens. Drive the browser from ONE process at
+  a time; if a suite is running, wait for it.
+
 - **2026-08-04** — `./scripts/e2e.sh` fails with `'tsx' is not recognized` right
   after "running e2e flows". The script installs deps for `server/`, `client/`
   and `reviewer-core/` but NOT for `e2e/` itself — CI does that in a separate

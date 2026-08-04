@@ -1,0 +1,28 @@
+{
+  "name": "Skills Lab lists the seeded skills, previews one, and shows the agent's linked count",
+  "description": "Loads /skills and confirms the three seeded skills render (pr-quality-rubric, secret-leakage-gate, no-then-chains), opens the rubric and confirms its immutable body renders in the Preview pane, then opens the Security Reviewer's Skills tab in the agent editor and confirms the linked count ('2 of 3 enabled') — the seed links General→[rubric] and Security→[rubric, secret-gate]. Read-only seeded data throughout: nothing here attaches, reorders or runs anything, so no model call is triggered.",
+  "steps": [
+    { "cmd": ["open", "{BASE}/skills"], "label": "load the Skills Lab" },
+    { "cmd": ["wait", "--url", "/skills"], "label": "skills route reached" },
+    { "cmd": ["wait", "--load", "networkidle"], "label": "skills fetch settles" },
+    { "cmd": ["wait", "--text", "pr-quality-rubric"], "label": "seeded rubric skill is listed" },
+    { "cmd": ["wait", "--text", "secret-leakage-gate"], "label": "seeded security skill is listed" },
+    { "cmd": ["wait", "--text", "no-then-chains"], "label": "seeded convention skill is listed" },
+    { "cmd": ["find", "text", "pr-quality-rubric", "click"], "label": "open the rubric skill" },
+    { "cmd": ["wait", "--url", "tab=config"], "label": "skill detail route reached (lands on Config)" },
+    { "cmd": ["wait", "--load", "networkidle"], "label": "skill detail settles" },
+    { "cmd": ["wait", "--text", "Versions"], "label": "the editor tab strip has rendered" },
+    { "cmd": ["find", "role", "button", "click", "--name", "Preview"], "label": "switch to the Preview pane" },
+    { "cmd": ["wait", "--url", "tab=preview"], "label": "preview tab is active in the URL" },
+    { "cmd": ["wait", "--text", "PR Quality Rubric"], "label": "the skill body renders (its H1) in Preview" },
+    { "cmd": ["open", "{BASE}/agents"], "label": "load the agents list" },
+    { "cmd": ["wait", "--load", "networkidle"], "label": "agents fetch settles" },
+    { "cmd": ["find", "text", "Security Reviewer", "click"], "label": "open the Security Reviewer editor" },
+    { "cmd": ["wait", "--url", "/agents/"], "label": "agent editor route reached" },
+    { "cmd": ["find", "role", "button", "click", "--name", "Skills"], "label": "switch to the Skills tab" },
+    { "cmd": ["wait", "--url", "tab=skills"], "label": "skills tab is active in the URL" },
+    { "cmd": ["wait", "--load", "networkidle"], "label": "linked-skill fetch settles" },
+    { "cmd": ["wait", "--text", "2 of 3 enabled"], "label": "the seeded links are counted in the header" },
+    { "cmd": ["wait", "--text", "Order matters"], "label": "the prompt-order hint renders" }
+  ]
+}

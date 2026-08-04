@@ -17,6 +17,13 @@
  *                   A wire-crossing change to one copy only is a silent drift.
  *   do-not-touch  — AGENTS.md names three paths that must never be edited:
  *                   runtime clones, applied migrations, the vendored UI kit.
+ *                   One narrow exception: the vendored UI kit may be edited in
+ *                   place when the PR body carries a `Vendor-update: <path>`
+ *                   line naming each file. The rule is not relaxed by that line
+ *                   — it is made VISIBLE. "fix upstream, then re-vendor" cannot
+ *                   be verified by CI, but "the author stated this in the PR
+ *                   body, next to the diff" can, and a reviewer can then judge
+ *                   the claim. An undeclared edit still fails exactly as before.
  *   baseline      — scripts/pr-gate-baseline.json is a shrink-only ratchet.
  *                   Growing it re-permits a finding instead of fixing it.
  *
@@ -52,26 +59,100 @@ function git(gitArgs, { quiet = false } = {}) {
   });
 }
 
-const changed = git(['diff', '--name-only', `${BASE}...HEAD`])
+/**
+ * Changed paths with their git status letter (A added, M modified, D deleted,
+ * R renamed). The status matters: "never edit an applied migration" must not
+ * fire on a NEWLY ADDED one, which is exactly what the convention tells you to
+ * write instead. A name-only diff cannot tell the two apart, so the rule used to
+ * block every schema change it was meant to permit.
+ */
+const changedWithStatus = git(['diff', '--name-status', `${BASE}...HEAD`])
   .split('\n')
-  .map((s) => s.trim())
-  .filter(Boolean);
+  .map((line) => line.trim())
+  .filter(Boolean)
+  .map((line) => {
+    const [status, ...rest] = line.split('\t');
+    // A rename is `R096<TAB>old<TAB>new` — the last field is the current path.
+    return { status: status.charAt(0), file: rest[rest.length - 1] };
+  })
+  .filter((e) => e.file);
+
+const changed = changedWithStatus.map((e) => e.file);
+const statusOf = new Map(changedWithStatus.map((e) => [e.file, e.status]));
 
 const violations = [];
 const notes = [];
 
+const body = BODY_FILE ? readBodyOrEmpty(BODY_FILE) : '';
+
+function readBodyOrEmpty(path) {
+  try {
+    return readFileSync(path, 'utf8');
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Paths named on `Vendor-update:` lines in the PR body. One line may name
+ * several files (comma- or space-separated), and there may be several lines.
+ * Backticks and a leading `./` are tolerated because PR bodies are written by
+ * hand; a bare directory is NOT — the declaration has to be as specific as the
+ * diff it excuses, or it degenerates into "vendor changes allowed".
+ */
+function declaredVendorUpdates(prBody) {
+  const declared = new Set();
+  for (const [, rest] of prBody.matchAll(/^[ \t]*Vendor-update:[ \t]*(.+)$/gim)) {
+    for (const token of rest.split(/[\s,;]+/)) {
+      const path = token.replace(/[`'"]/g, '').replace(/\\/g, '/').replace(/^\.\//, '');
+      if (path.includes('/') && !path.endsWith('/')) declared.add(path);
+    }
+  }
+  return declared;
+}
+
 // --- do-not-touch (AGENTS.md) ------------------------------------------------
+const VENDOR_UI = /^(client|server)\/src\/vendor\/ui\//;
 const FORBIDDEN = [
   { re: /^server\/clones\//, why: 'runtime clone checkouts are not source' },
   {
     re: /^server\/src\/db\/migrations\/.*\.sql$/,
     why: 'migrations are applied — add a new one instead of editing history',
+    // Adding a migration IS the prescribed fix, so only an edit is a violation.
+    addedIsFine: true,
   },
-  { re: /^(client|server)\/src\/vendor\/ui\//, why: 'vendored UI kit — fix upstream, then re-vendor' },
+  { re: VENDOR_UI, why: 'vendored UI kit — fix upstream, then re-vendor' },
 ];
+const declaredVendor = declaredVendorUpdates(body);
+const acceptedVendor = [];
+let sawUndeclaredVendor = false;
 for (const file of changed) {
   const hit = FORBIDDEN.find((f) => f.re.test(file));
-  if (hit) violations.push(`do-not-touch: ${file} — ${hit.why}`);
+  if (!hit) continue;
+  if (hit.addedIsFine && statusOf.get(file) === 'A') continue;
+  // The only exception, and only for the vendored kit: clones and applied
+  // migrations have no declaration that could make editing them correct.
+  if (VENDOR_UI.test(file) && declaredVendor.has(file)) {
+    acceptedVendor.push(file);
+    continue;
+  }
+  if (VENDOR_UI.test(file)) sawUndeclaredVendor = true;
+  violations.push(`do-not-touch: ${file} — ${hit.why}`);
+}
+if (acceptedVendor.length) {
+  // Printed, not silent: the point of the exception is that the reviewer sees
+  // which vendored files were edited in place and can check the claim.
+  notes.push(
+    `do-not-touch: ${acceptedVendor.length} vendored file(s) edited in place and declared ` +
+      `in the PR body — ${acceptedVendor.join(', ')}. Review these against upstream.`
+  );
+}
+if (sawUndeclaredVendor) {
+  notes.push(
+    `do-not-touch: a vendored UI file may be edited in place only when the PR body has a ` +
+      `line "Vendor-update: <path>" naming it. Declaring it does not make the edit right — ` +
+      `it puts the claim in front of the reviewer.`
+  );
 }
 
 // --- contract mirror ---------------------------------------------------------
@@ -125,12 +206,6 @@ if (changed.includes(BASELINE)) {
 
 // --- PR body has an Insights section -----------------------------------------
 if (BODY_FILE) {
-  let body = '';
-  try {
-    body = readFileSync(BODY_FILE, 'utf8');
-  } catch {
-    body = '';
-  }
   // A heading named Insights, at any level, anywhere in the body. AGENTS.md says
   // "ends with", but trailing bot/attribution footers get appended after it, so
   // requiring literal last-position would fail honest PRs.
