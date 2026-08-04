@@ -49,8 +49,18 @@ export function EvalsTab({ skill }: { skill: Skill }) {
       { onSuccess: (run) => setResults((prev) => ({ ...prev, [id]: run })) },
     );
 
+  // Merge, never replace. Replacing the map made this callback's result depend
+  // on `list` as captured when the click happened: a case added or removed by a
+  // refetch in flight would drop every result keyed off the old list, and a
+  // single run that landed in between would be discarded. Merging keeps both —
+  // the run-all entries win for the cases it actually ran, and nothing else is
+  // touched. (The buttons are also disabled while any run is pending, so the
+  // overlap is narrow; this makes the state update correct rather than merely
+  // unlikely to be wrong.)
   const onRunAll = () =>
-    runAll.mutate(skill.id, { onSuccess: (runs) => setResults(indexRunsByCase(list, runs)) });
+    runAll.mutate(skill.id, {
+      onSuccess: (runs) => setResults((prev) => ({ ...prev, ...indexRunsByCase(list, runs) })),
+    });
 
   const onDelete = (c: EvalCase) => {
     if (!window.confirm(t("evals.deleteConfirm", { name: c.name }))) return;

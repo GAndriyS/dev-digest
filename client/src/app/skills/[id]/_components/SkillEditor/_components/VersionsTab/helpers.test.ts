@@ -59,3 +59,54 @@ describe("formatVersionDate", () => {
     expect(formatVersionDate("not-a-date")).toBe("not-a-date");
   });
 });
+
+describe("diffLines — identical head/tail are peeled before the LCS", () => {
+  it("gives the same rows as a full alignment for an edit in the middle", () => {
+    const before = ["a", "b", "OLD", "d", "e"].join("\n");
+    const after = ["a", "b", "NEW", "d", "e"].join("\n");
+    expect(diffLines(before, after).map((r) => [r.kind, r.text, r.leftNo, r.rightNo])).toEqual([
+      ["context", "a", 1, 1],
+      ["context", "b", 2, 2],
+      ["del", "OLD", 3, null],
+      ["add", "NEW", null, 3],
+      ["context", "d", 4, 4],
+      ["context", "e", 5, 5],
+    ]);
+  });
+
+  it("numbers the tail correctly when the sides have different lengths", () => {
+    const before = ["head", "x", "tail"].join("\n");
+    const after = ["head", "x", "y", "tail"].join("\n");
+    const rows = diffLines(before, after);
+    expect(rows.map((r) => [r.kind, r.text])).toEqual([
+      ["context", "head"],
+      ["context", "x"],
+      ["add", "y"],
+      ["context", "tail"],
+    ]);
+    const last = rows[rows.length - 1];
+    expect([last?.leftNo, last?.rightNo]).toEqual([3, 4]);
+  });
+
+  it("stays exact on a one-line edit far beyond the LCS guard", () => {
+    // Without peeling this is 4000x4000 = 16M cells (~64 MB) and would fall
+    // back to "everything replaced". Peeling leaves a 1-line middle.
+    const lines = Array.from({ length: 4000 }, (_, k) => `line ${k}`);
+    const before = lines.join("\n");
+    const edited = [...lines];
+    edited[2000] = "line 2000 CHANGED";
+    const rows = diffLines(before, edited.join("\n"));
+    expect(countChanges(rows)).toEqual({ added: 1, removed: 1 });
+    expect(rows).toHaveLength(4001);
+    const del = rows.find((r) => r.kind === "del");
+    expect([del?.text, del?.leftNo]).toEqual(["line 2000", 2001]);
+  });
+
+  it("still degrades to wholesale when the DIFFERING middle is too large", () => {
+    const before = Array.from({ length: 2000 }, (_, k) => `a${k}`).join("\n");
+    const after = Array.from({ length: 2000 }, (_, k) => `b${k}`).join("\n");
+    const rows = diffLines(before, after);
+    expect(countChanges(rows)).toEqual({ added: 2000, removed: 2000 });
+    expect(rows.some((r) => r.kind === "context")).toBe(false);
+  });
+});
