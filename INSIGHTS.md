@@ -75,6 +75,14 @@ live in `<package>/INSIGHTS.md`. Maintained by the `engineering-insights` skill.
 
 ## Tool & Library Notes
 
+- **2026-08-04** — `gh pr checks <n>` shows only the LATEST run per check name,
+  so a failed run that was later superseded by a passing one is invisible: the
+  table read "all pass" while the PR was showing a red X. Verify with
+  `gh pr view <n> --json statusCheckRollup -q '.statusCheckRollup[] |
+  "\(.name)\t\(.conclusion)"'`, which lists every run — two rows with the same
+  name and different conclusions is exactly the case `gh pr checks` hides. Do
+  not report CI as green off `gh pr checks` alone.
+
 - **2026-08-04** — `skills-lock.json` tracks ONLY skills vendored from upstream
   GitHub repos; hand-written ones (`engineering-insights`, `react-best-practices`,
   `mermaid-diagram`, `security`, `react-testing-library`, and now
