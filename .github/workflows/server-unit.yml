@@ -65,6 +65,13 @@ jobs:
 
       - run: pnpm typecheck
 
+      # Onion-architecture boundaries (see .claude/skills/onion-architecture).
+      # Both trees are cruised from server/: reviewer-core is consumed as source
+      # through a tsconfig path alias and has no tooling of its own. Inlined
+      # rather than a package script for the same reason as the unit step below.
+      - name: Architecture boundaries
+        run: pnpm exec depcruise src ../reviewer-core/src --config .dependency-cruiser.cjs
+
   unit:
     name: tests
     runs-on: ubuntu-latest
