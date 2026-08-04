@@ -49,13 +49,6 @@ promotion rules → root `INSIGHTS.md`.
 
 ## Recurring Errors & Fixes
 
-- **2026-07-31** — `test/indexer-pipeline.test.ts` fails 6/11 on Windows with
-  `ENOENT … \src\util.ts`: its fixture writer splits paths on `lastIndexOf('/')`
-  to mkdir the parent, which never matches a backslash path, so the parent dir
-  is never created. **Pre-existing, not yours** — confirmed by `git stash` +
-  re-run on a clean tree. CI is Linux-only so it is green there. Don't chase it
-  when a server suite comes back 6-red on Windows.
-
 - **2026-07-31** — A CLI guard of the form
   ``import.meta.url === `file://${process.argv[1]}` `` never matches on Windows
   (backslash argv path vs `file:///E:/...` URL), so the script exits 0 having
