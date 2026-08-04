@@ -7,9 +7,9 @@ For humans maintaining this skill. The agent reads `SKILL.md`; you read this.
 Three parts that must stay in sync:
 
 1. **`SKILL.md` + `routing.md`** — the review workflow and its tables.
-2. **`scripts/pr-gate-check.mjs`** — the PreToolUse hook that refuses
-   `gh pr create` without a fresh passing stamp. Reviews nothing; validates a
-   stamp in milliseconds.
+2. **`scripts/pr-gate-check.mjs`** — the stamp validator. Reviews nothing;
+   answers "is there a fresh passing review for exactly this tree?" in
+   milliseconds. **Not wired up by default** — see "Invocation" below.
 3. **`scripts/pr-gate-ci.mjs` + `.github/workflows/pr-gate.yml`** — the CI half,
    because a local hook cannot hold GitHub's Merge button.
 
@@ -38,7 +38,27 @@ find bugs. That is also why the vendored `security` skill is not routed: it
 assumes Express + MongoDB + Mongoose, and this stack is Fastify +
 Drizzle/Postgres, so its examples do not match the code under review.
 
-## Turning it on
+## Invocation — manual, on purpose
+
+`.claude/settings.json` ships with **no hooks**. `/pr-self-review` is run by
+hand; nothing intercepts `gh pr create`.
+
+The first version did wire a PreToolUse hook, and it worked — verified end to
+end against a real `gh pr create`. It was removed because an automatic gate at
+the moment a change is finished is friction, and the first time it is wrong at
+an inconvenient hour it gets deleted outright, value and all. Manual invocation
+keeps it a tool rather than a toll.
+
+To arm it for a team that wants it enforced, copy the `hooks` block from
+`.claude/settings.json.hook-example` into `.claude/settings.json`. That file
+exists precisely so the working configuration is not lost, only unplugged.
+Record the switch in `CHANGELOG.md` — it changes whether this skill can stop
+someone's work.
+
+CI is unaffected: `.github/workflows/pr-gate.yml` runs on every PR regardless of
+local settings, and it is the half a branch-protection rule can hold Merge on.
+
+## Turning the blocking verdict on
 
 It ships in **`report-only`**. Nothing is blocked; the report says what would
 have been. Run it on a few real PRs first, read the findings, and only then set

@@ -1,8 +1,8 @@
 ---
 name: pr-self-review
-description: "Reviews all open local changes with the repo's own skills before a pull request is opened, and blocks the PR on a critical finding. Runs the deterministic gates (typecheck, dependency-cruiser, check-ui-conventions, tests), routes UI skills onto client/ files and backend architecture skills onto server/ and reviewer-core/ files, delegates bug-hunting to /code-review and security to /security-review, then writes a verdict stamp that a PreToolUse hook checks before `gh pr create`. Use when the user says they are about to open a PR, asks to self-review or pre-review the branch, wants to know whether the changes are ready to push or merge, or invokes /pr-self-review. Also use after finishing a feature and before creating the pull request, even when not asked — the hook will refuse `gh pr create` without a fresh passing run. Not for reviewing someone else's already-open PR (use /review) and not a substitute for /code-review on its own."
+description: "Reviews all open local changes with the repo's own skills before a pull request is opened, and blocks the PR on a critical finding. Runs the deterministic gates (typecheck, dependency-cruiser, check-ui-conventions, tests), routes UI skills onto client/ files and backend architecture skills onto server/ and reviewer-core/ files, delegates bug-hunting to /code-review and security to /security-review, then writes a verdict stamp and a drafted PR body. Invoked manually — nothing auto-fires it. Use when the user says they are about to open a PR, asks to self-review or pre-review the branch, wants to know whether the changes are ready to push or merge, or invokes /pr-self-review. Also use after finishing a feature and before creating the pull request, even when not asked, since no hook will do it for you. Not for reviewing someone else's already-open PR (use /review) and not a substitute for /code-review on its own."
 metadata:
-  version: 1.0.0
+  version: 2.0.0
   tags: pr, review, gate, ci, pre-merge, skills-routing, quality, hooks
 ---
 
@@ -171,13 +171,31 @@ always English.
 concatenated with `git diff HEAD`, first 16 hex chars — the same computation the
 validator performs, so any edit after the review invalidates it.
 
-## What the hook does
+## Invocation — manual by default
 
-`.claude/settings.json` runs `node scripts/pr-gate-check.mjs` before
-`gh pr create`. It reviews nothing; it only checks that a stamp exists, matches
-this exact tree, and says PASS. Blocking is deliberate friction at the one
-moment when fixing something is still cheap.
+**Auto-invocation is OFF.** `.claude/settings.json` ships with no hooks, so
+nothing intercepts `gh pr create`. Run this skill by hand before opening a PR:
 
-To disagree with the gate, waive the finding with a stated reason. Do not edit
-the hook out — a gate that gets deleted the first time it is inconvenient
-protected nothing.
+```
+/pr-self-review
+```
+
+That is a deliberate choice, not an oversight. A gate that fires automatically
+on every `gh pr create` is friction at exactly the moment a change is finished,
+and the first time it is wrong at an inconvenient hour it gets deleted — taking
+its value with it. Running it on purpose keeps it something you consult rather
+than something you route around.
+
+The stamp validator still exists and still works, so the gate can be armed when
+a team wants it enforced: copy the `hooks` block from
+`.claude/settings.json.hook-example` into `.claude/settings.json`. From then on
+`gh pr create` refuses to run without a fresh passing stamp for the exact tree.
+Do that as a deliberate decision, and say so in `CHANGELOG.md` — it changes
+whether this skill can stop someone's work.
+
+CI enforcement is unaffected either way: `.github/workflows/pr-gate.yml` runs on
+every PR regardless of local settings, and it is what a branch-protection rule
+can actually hold the Merge button on.
+
+To disagree with a finding, waive it with a stated reason (see
+[waivers.md](waivers.md)) rather than skipping the review.

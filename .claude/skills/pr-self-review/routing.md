@@ -10,13 +10,18 @@ mode: report-only
 ```
 
 `report-only` — findings are reported, the stamp is written with `verdict: PASS`
-regardless, nothing is blocked. This is the adoption setting.
-`blocking` — a critical finding writes `verdict: BLOCKED` and the hook refuses
-`gh pr create`.
+regardless. This is the adoption setting.
+`blocking` — a critical finding writes `verdict: BLOCKED`.
+
+What a `BLOCKED` verdict actually stops depends on the second switch: the
+PreToolUse hook is **not registered by default** (see the skill README), so
+today a blocked verdict is a loud report and nothing more. Arming the hook from
+`.claude/settings.json.hook-example` is what makes it refuse `gh pr create`.
+Two independent switches on purpose — "how harshly do I judge" and "does the
+judgement stop anything" are different decisions.
 
 Flip to `blocking` once a few real PRs have gone through and the finding quality
-is known. Change it here **and** say so in `CHANGELOG.md` — this is the one
-setting that changes whether the skill can stop someone's work.
+is known. Change it here **and** say so in `CHANGELOG.md`.
 
 The mode is copied into the stamp on every run. `scripts/pr-gate-check.mjs`
 reads it from the stamp, not from this file, so flipping the mode never

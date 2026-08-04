@@ -12,6 +12,27 @@ Semver for this skill:
 - **minor** — new checks, new routing entries, new stages that do not newly block.
 - **patch** — wording, caps, link fixes, syncing a command with CI.
 
+## 2.0.0 — 2026-08-04
+
+**Auto-invocation removed.** `.claude/settings.json` no longer registers the
+PreToolUse hook, so nothing intercepts `gh pr create` — the skill is invoked by
+hand. The working hook configuration is parked in
+`.claude/settings.json.hook-example`, so arming it is a copy-paste rather than a
+rewrite.
+
+Major, by this skill's own policy: it changes whether the skill can stop
+someone's work. The direction is the opposite of the usual major bump — it
+blocks *less* — but the rule is about the blocking behaviour changing at all,
+and prose that lied about it would be worse than either setting.
+
+The hook was never broken. It was verified end to end against a real
+`gh pr create` (blocked with no stamp, passed with a valid one, blocked again
+once the tree changed). It is unplugged because an automatic gate at the moment
+a change is finished is friction, and a gate that annoys gets deleted whole.
+
+CI is untouched: `pr-gate.yml` still runs on every PR, which is the half that a
+branch-protection rule can actually hold Merge on.
+
 ## 1.0.0 — 2026-08-04
 
 Initial release. Ships in **`report-only`**: findings are reported, nothing is

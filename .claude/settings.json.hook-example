@@ -1,0 +1,19 @@
+{
+  "//": "OPT-IN auto-invocation for pr-self-review. NOT active — .claude/settings.json ships without hooks on purpose, so /pr-self-review is invoked by hand. Copy the `hooks` block into .claude/settings.json to make `gh pr create` refuse to run without a fresh passing review stamp. See .claude/skills/pr-self-review/README.md.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node scripts/pr-gate-check.mjs",
+            "if": "Bash(gh pr create*)",
+            "timeout": 15,
+            "statusMessage": "Checking PR self-review gate…"
+          }
+        ]
+      }
+    ]
+  }
+}
