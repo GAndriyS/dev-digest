@@ -1,6 +1,6 @@
 ---
 name: react-best-practices
-description: "Modern React best practices and anti-pattern catalog (2025-26). Use when writing, reviewing, or refactoring React components, hooks, and state management. Covers component design, state patterns, hooks misuse, performance, data fetching, and code organization."
+description: "Modern React best practices and anti-pattern catalog (2025-26). Use when writing, reviewing, or refactoring React components, hooks, and state management — is this code CORRECT. Covers derived vs stored state, hooks misuse, effect and dependency mistakes, key props, conditional rendering, memoization and re-render performance, data fetching, error boundaries, and accessibility. Not for placement questions — which folder something belongs in, where constants, helpers or business logic go, splitting a large component, barrel files, removing duplication — those are owned by frontend-ui-architecture."
 ---
 
 # React Best Practices & Anti-Patterns
@@ -114,6 +114,10 @@ New arrays, objects, and functions created inline in JSX props break `React.memo
 
 ## Tailwind CSS (MEDIUM)
 
+Applies only to Tailwind-based projects. This repo's `client/` styles with
+colocated `styles.ts` `CSSProperties` objects instead — see
+[frontend-ui-architecture](../frontend-ui-architecture/SKILL.md).
+
 - Use utility classes for all styling — no inline `style={}` objects
 - Use responsive prefixes (`sm:`, `md:`, `lg:`) for responsive design
 - Extract repeated class combinations into reusable components (Button, Card, Badge)
@@ -166,10 +170,12 @@ New arrays, objects, and functions created inline in JSX props break `React.memo
 
 ## Code Organization (MEDIUM)
 
-### Feature-Based Structure
-- Colocate component + hook + helpers + tests per feature
-- Shared utilities go in `utils/` or `components/ui/`
+Placement decisions — which folder a component belongs in, where constants,
+helpers and business logic go, when to promote code to shared, barrel files —
+are owned by [frontend-ui-architecture](../frontend-ui-architecture/SKILL.md).
+Consult it instead of guessing; the rules below are only the file-local ones.
 
 ### File Quality
 - Order: imports, constants, helpers, component, exports
+- Colocate component + hook + helpers + tests per feature
 - Reuse existing types and constants over creating new ones
