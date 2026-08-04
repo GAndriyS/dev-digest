@@ -1,16 +1,4 @@
-import type { SkillStats, SkillType } from "@devdigest/shared";
-
-/** Accent per skill type so the rail is scannable without reading the badge. */
-const TYPE_COLORS: Record<SkillType, string> = {
-  rubric: "var(--accent)",
-  convention: "var(--sugg)",
-  security: "var(--crit)",
-  custom: "var(--text-secondary)",
-};
-
-export function typeColor(type: SkillType): string {
-  return TYPE_COLORS[type] ?? "var(--text-secondary)";
-}
+import type { SkillStats } from "@devdigest/shared";
 
 /**
  * Values for the `listItem.stats` line: "N agents · X% pull · Y% accept".

@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
-import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup, within } from "@testing-library/react";
 import { NextIntlClientProvider } from "next-intl";
 import type { Skill, SkillStats } from "@devdigest/shared";
 import messages from "../../../../../messages/en/skills.json";
@@ -33,7 +33,19 @@ vi.mock("@/lib/hooks/skills", () => ({
     refetch: vi.fn(),
   }),
   useUpdateSkill: () => ({ mutate: updateMutate, isPending: false }),
-  useCreateSkill: () => ({ mutateAsync: vi.fn(), isPending: false, isError: false, error: null }),
+  useCreateSkill: () => ({
+    mutate: vi.fn(),
+    mutateAsync: vi.fn(),
+    isPending: false,
+    isError: false,
+    error: null,
+  }),
+  useImportSkillPreview: () => ({
+    mutate: vi.fn(),
+    isPending: false,
+    isError: false,
+    error: null,
+  }),
   useSkillStats: () => ({ data: state.stats }),
 }));
 
@@ -45,7 +57,7 @@ const skill = (id: string, name: string, over: Partial<Skill> = {}): Skill => ({
   description: `${name} description`,
   type: "rubric",
   source: "manual",
-  body: "# body",
+  body: `# ${name}\n\nBe **specific**.`,
   enabled: true,
   version: 1,
   ...over,
@@ -61,6 +73,11 @@ function renderView() {
   );
 }
 
+/** The add menu is a dropdown: open it before its entries exist in the DOM. */
+function openAddMenu() {
+  fireEvent.click(screen.getByText("Add Skill"));
+}
+
 beforeEach(() => {
   state.skills = [];
   state.isError = false;
@@ -71,7 +88,7 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("SkillsListView", () => {
-  it("prompts for a selection in the detail pane", () => {
+  it("prompts for a selection until a card is picked", () => {
     renderView();
     expect(screen.getByText("Select a skill")).toBeInTheDocument();
   });
@@ -88,14 +105,22 @@ describe("SkillsListView", () => {
     expect(screen.getByText("Retry")).toBeInTheDocument();
   });
 
-  it("lists skills with their type and source badges", () => {
+  it("renders a card per skill with its name, type, description and toggle", () => {
     state.skills = [skill("s1", "pr-quality-rubric", { source: "community" })];
     renderView();
-    expect(screen.getByText("pr-quality-rubric")).toBeInTheDocument();
-    expect(screen.getByText("rubric")).toBeInTheDocument();
-    expect(screen.getByText("Community")).toBeInTheDocument();
+    const card = screen.getByRole("button", { name: /pr-quality-rubric/ });
+    expect(within(card).getByText("pr-quality-rubric")).toBeInTheDocument();
+    expect(within(card).getByText("rubric")).toBeInTheDocument();
+    expect(within(card).getByText("pr-quality-rubric description")).toBeInTheDocument();
+    expect(within(card).getByRole("switch")).toBeInTheDocument();
     // A community import is unvetted — say so on the card.
-    expect(screen.getByText("needs vetting")).toBeInTheDocument();
+    expect(within(card).getByText("needs vetting")).toBeInTheDocument();
+  });
+
+  it("renders one card per skill rather than a single rail", () => {
+    state.skills = [skill("s1", "alpha"), skill("s2", "beta"), skill("s3", "gamma")];
+    renderView();
+    expect(screen.getAllByRole("switch")).toHaveLength(3);
   });
 
   it("renders the usage line once stats arrive", () => {
@@ -122,25 +147,79 @@ describe("SkillsListView", () => {
     fireEvent.change(search, { target: { value: "zzz" } });
     expect(screen.getByText("No matching skills")).toBeInTheDocument();
   });
+});
 
-  it("opens the editor on the Config tab when a card is clicked", () => {
+describe("SkillsListView › side preview", () => {
+  it("opens the preview beside the grid when a card is selected", () => {
     state.skills = [skill("s1", "alpha")];
     renderView();
     fireEvent.click(screen.getByText("alpha"));
+
+    expect(screen.queryByText("Select a skill")).not.toBeInTheDocument();
+    expect(screen.getByText("Rendered body")).toBeInTheDocument();
+    // The body is RENDERED, not echoed: the bold run is an element.
+    expect(screen.getByText("specific").tagName).toBe("STRONG");
+    // …and its metadata comes along.
+    expect(screen.getByText("v1")).toBeInTheDocument();
+    expect(screen.getByText("Enabled")).toBeInTheDocument();
+  });
+
+  it("selects rather than navigates, and offers the editor as a link", () => {
+    state.skills = [skill("s1", "alpha")];
+    renderView();
+    fireEvent.click(screen.getByText("alpha"));
+    expect(push).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByText("Open in the editor"));
     expect(push).toHaveBeenCalledWith("/skills/s1?tab=config");
   });
 
-  it("toggles enabled without navigating", () => {
+  it("swaps the pane when another card is selected", () => {
+    state.skills = [skill("s1", "alpha"), skill("s2", "beta")];
+    renderView();
+    fireEvent.click(screen.getByText("alpha"));
+    fireEvent.click(screen.getByText("beta"));
+    // Scoped to the <aside>: both descriptions also exist on their own cards.
+    const pane = within(screen.getByRole("complementary"));
+    expect(pane.getByText("beta description")).toBeInTheDocument();
+    expect(pane.queryByText("alpha description")).not.toBeInTheDocument();
+  });
+
+  it("toggles enabled without selecting the card", () => {
     state.skills = [skill("s1", "alpha")];
     renderView();
     fireEvent.click(screen.getByRole("switch"));
     expect(updateMutate).toHaveBeenCalledWith({ id: "s1", patch: { enabled: false } });
+    expect(screen.getByText("Select a skill")).toBeInTheDocument();
     expect(push).not.toHaveBeenCalled();
   });
+});
 
-  it("opens the add drawer", () => {
+describe("SkillsListView › add menu", () => {
+  // A populated workspace: the empty state's CTA carries the same "Import from
+  // file" label, and two matches would make the assertions ambiguous.
+  beforeEach(() => {
+    state.skills = [skill("s1", "alpha")];
+  });
+
+  it("offers both creating and importing", () => {
     renderView();
-    fireEvent.click(screen.getByText("Add Skill"));
+    openAddMenu();
+    expect(screen.getByText("Create from scratch")).toBeInTheDocument();
+    expect(screen.getByText("Import from file")).toBeInTheDocument();
+  });
+
+  it("opens the authoring drawer from the create entry", () => {
+    renderView();
+    openAddMenu();
+    fireEvent.click(screen.getByText("Create from scratch"));
     expect(screen.getByText("Add a skill")).toBeInTheDocument();
+  });
+
+  it("opens the import drawer from the import entry", () => {
+    renderView();
+    openAddMenu();
+    fireEvent.click(screen.getByText("Import from file"));
+    expect(screen.getByText("Import a skill")).toBeInTheDocument();
   });
 });

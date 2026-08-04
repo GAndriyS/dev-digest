@@ -79,7 +79,7 @@ export function AddSkillDrawer({ onClose }: { onClose: () => void }) {
       <FormField label={t("file.nameLabel")} hint={t("file.nameHint")}>
         <TextInput value={name} onChange={setName} placeholder={t("file.namePlaceholder")} />
       </FormField>
-      <FormField label={t("file.descriptionLabel")}>
+      <FormField label={t("file.descriptionLabel")} hint={t("descriptionCaption")}>
         <TextInput
           value={description}
           onChange={setDescription}

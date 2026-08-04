@@ -106,6 +106,11 @@ describe("SkillEditor › ConfigTab", () => {
     expect(screen.getByText("Save").closest("button")).not.toBeDisabled();
   });
 
+  it("captions the description as the skill's interface", () => {
+    renderEditor();
+    expect(screen.getByText(/only thing an agent reads/)).toBeInTheDocument();
+  });
+
   it("says a body edit mints a new version", () => {
     renderEditor();
     expect(

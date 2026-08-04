@@ -66,7 +66,10 @@ export function ConfigTab({ skill }: { skill: Skill }) {
       <FormField label={t("config.nameLabel")} required>
         <TextInput value={name} onChange={setName} />
       </FormField>
-      <FormField label={t("config.descriptionLabel")}>
+      {/* The caption is not decoration: the description is the skill's
+          interface — an agent reads it to decide whether to apply the skill —
+          so the UI has to say that where it is written. */}
+      <FormField label={t("config.descriptionLabel")} hint={t("descriptionCaption")}>
         <TextInput
           value={description}
           onChange={setDescription}

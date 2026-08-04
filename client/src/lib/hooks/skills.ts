@@ -16,6 +16,8 @@ import type {
   EvalCaseInput,
   EvalRun,
   Skill,
+  SkillImportPreview,
+  SkillImportRequest,
   SkillInput,
   SkillPatch,
   SkillStats,
@@ -78,6 +80,26 @@ export function useDeleteSkill() {
       qc.invalidateQueries({ queryKey: ["skills"] });
       qc.removeQueries({ queryKey: ["skill", id] });
     },
+  });
+}
+
+// ---- Import preview (POST /skills/import/preview) ----
+
+/**
+ * Ask what an uploaded file WOULD produce. The endpoint is a dry run: it writes
+ * no row, unpacks nothing to disk and executes nothing from an archive, so the
+ * "saved only after confirmation" promise holds by construction — confirming is
+ * a separate, ordinary `POST /skills` (`useCreateSkill`).
+ *
+ * A mutation rather than a query: it is a POST with a body, it is not
+ * addressable by a cache key, and re-picking the same file must re-run the
+ * extraction rather than serve a cached one. It is deliberately given no
+ * `onSuccess` cache work — there is nothing to invalidate until the user saves.
+ */
+export function useImportSkillPreview() {
+  return useMutation({
+    mutationFn: (input: SkillImportRequest) =>
+      api.post<SkillImportPreview>("/skills/import/preview", input),
   });
 }
 

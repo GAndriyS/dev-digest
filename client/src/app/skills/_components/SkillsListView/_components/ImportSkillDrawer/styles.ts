@@ -1,0 +1,72 @@
+import type { CSSProperties } from "react";
+
+/** Co-located styles for ImportSkillDrawer. */
+export const s = {
+  footer: { display: "flex", gap: 10, justifyContent: "flex-end" } satisfies CSSProperties,
+  error: {
+    marginBottom: 16,
+    padding: "10px 12px",
+    borderRadius: 7,
+    border: "1px solid var(--crit)",
+    background: "var(--crit-bg)",
+    color: "var(--text-primary)",
+    fontSize: 13,
+  } satisfies CSSProperties,
+  fileInput: {
+    fontSize: 13,
+    color: "var(--text-secondary)",
+    width: "100%",
+  } satisfies CSSProperties,
+  status: { fontSize: 13, color: "var(--text-muted)", marginBottom: 16 } satisfies CSSProperties,
+  result: { borderTop: "1px solid var(--border)", paddingTop: 18 } satisfies CSSProperties,
+  resultHeader: {
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 4,
+  } satisfies CSSProperties,
+  h3: { fontSize: 15, fontWeight: 700, flex: 1, minWidth: 0 } satisfies CSSProperties,
+  unsavedNote: {
+    fontSize: 12.5,
+    lineHeight: 1.5,
+    color: "var(--text-secondary)",
+    padding: "8px 12px",
+    borderRadius: 7,
+    border: "1px solid var(--warn)",
+    background: "var(--warn-bg)",
+    margin: "8px 0 18px",
+  } satisfies CSSProperties,
+  h4: { fontSize: 13, fontWeight: 700, marginTop: 4 } satisfies CSSProperties,
+  hint: { fontSize: 12, color: "var(--text-muted)", margin: "4px 0 10px" } satisfies CSSProperties,
+  frame: {
+    padding: 14,
+    borderRadius: 8,
+    border: "1px solid var(--border)",
+    background: "var(--bg-primary)",
+    fontSize: 13,
+    color: "var(--text-secondary)",
+    maxHeight: 320,
+    overflow: "auto",
+  } satisfies CSSProperties,
+  empty: { fontSize: 13, color: "var(--text-muted)", fontStyle: "italic" } satisfies CSSProperties,
+  skipped: {
+    marginTop: 20,
+    padding: "12px 14px",
+    borderRadius: 8,
+    border: "1px solid var(--border)",
+    background: "var(--bg-surface)",
+  } satisfies CSSProperties,
+  skippedList: {
+    listStyle: "none",
+    display: "flex",
+    flexDirection: "column",
+    gap: 4,
+    margin: "10px 0",
+  } satisfies CSSProperties,
+  skippedItem: { fontSize: 12, color: "var(--text-muted)" } satisfies CSSProperties,
+  skippedNote: {
+    fontSize: 12.5,
+    lineHeight: 1.5,
+    color: "var(--text-secondary)",
+  } satisfies CSSProperties,
+} as const;

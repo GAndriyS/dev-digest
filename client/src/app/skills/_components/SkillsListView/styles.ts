@@ -1,26 +1,21 @@
 import type { CSSProperties } from "react";
-import { CONTENT_HEIGHT, RAIL_WIDTH } from "./constants";
+import { CARD_GRID_COLS, PANE_MAX_HEIGHT, PANE_WIDTH } from "./constants";
 
-/** Co-located styles for the SkillsListView master/detail shell. */
+/** Co-located styles for the SkillsListView grid + side preview. */
 export const s = {
-  split: { display: "flex", height: CONTENT_HEIGHT } satisfies CSSProperties,
-  rail: {
-    width: RAIL_WIDTH,
-    flexShrink: 0,
-    borderRight: "1px solid var(--border)",
-    background: "var(--bg-surface)",
-    display: "flex",
-    flexDirection: "column",
-    minHeight: 0,
-  } satisfies CSSProperties,
-  railHeader: { padding: "16px 16px 12px" } satisfies CSSProperties,
-  railTitleRow: {
+  page: { padding: "24px 32px 44px", maxWidth: 1360, margin: "0 auto" } satisfies CSSProperties,
+  header: {
     display: "flex",
     alignItems: "center",
-    gap: 10,
-    marginBottom: 12,
+    gap: 14,
+    marginBottom: 20,
   } satisfies CSSProperties,
-  h1: { fontSize: 18, fontWeight: 700, flex: 1, letterSpacing: "-0.02em" } satisfies CSSProperties,
+  h1: {
+    fontSize: 24,
+    fontWeight: 700,
+    flex: 1,
+    letterSpacing: "-0.02em",
+  } satisfies CSSProperties,
   search: {
     display: "flex",
     alignItems: "center",
@@ -28,7 +23,8 @@ export const s = {
     padding: "8px 12px",
     borderRadius: 7,
     border: "1px solid var(--border)",
-    background: "var(--bg-elevated)",
+    background: "var(--bg-surface)",
+    width: 220,
   } satisfies CSSProperties,
   searchIcon: { color: "var(--text-muted)" } satisfies CSSProperties,
   searchInput: {
@@ -39,7 +35,20 @@ export const s = {
     outline: "none",
     color: "var(--text-primary)",
   } satisfies CSSProperties,
-  railBody: { flex: 1, overflow: "auto", padding: "0 12px 16px", minHeight: 0 } satisfies CSSProperties,
-  skeletons: { display: "flex", flexDirection: "column", gap: 10, padding: "4px 0" } satisfies CSSProperties,
-  pane: { flex: 1, display: "grid", placeItems: "center", minWidth: 0 } satisfies CSSProperties,
+  // The pane sits beside the grid rather than over it: the grid keeps its
+  // scroll position while a selection is inspected.
+  split: { display: "flex", alignItems: "flex-start", gap: 20 } satisfies CSSProperties,
+  main: { flex: 1, minWidth: 0 } satisfies CSSProperties,
+  grid: { display: "grid", gridTemplateColumns: CARD_GRID_COLS, gap: 14 } satisfies CSSProperties,
+  pane: {
+    width: PANE_WIDTH,
+    flexShrink: 0,
+    position: "sticky",
+    top: 20,
+    maxHeight: PANE_MAX_HEIGHT,
+    overflow: "auto",
+    borderRadius: 10,
+    border: "1px solid var(--border)",
+    background: "var(--bg-surface)",
+  } satisfies CSSProperties,
 } as const;

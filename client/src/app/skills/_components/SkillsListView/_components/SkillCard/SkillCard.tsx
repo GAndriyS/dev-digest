@@ -1,4 +1,4 @@
-/* SkillCard — one row in the /skills master rail: name, type + source badges,
+/* SkillCard — one card in the /skills grid: name, type + source badges,
    description, enabled toggle and the usage line. The usage numbers come from
    this skill's own stats query (one per card — the list is workspace-sized, and
    React Query dedupes it with the Stats tab's copy). */
@@ -9,7 +9,8 @@ import { useTranslations } from "next-intl";
 import { Badge, Icon, Toggle } from "@devdigest/ui";
 import type { Skill } from "@devdigest/shared";
 import { useSkillStats } from "@/lib/hooks/skills";
-import { statsLine, typeColor } from "./helpers";
+import { isUntrusted, typeColor } from "../../helpers";
+import { statsLine } from "./helpers";
 import { s } from "./styles";
 
 export function SkillCard({
@@ -27,10 +28,22 @@ export function SkillCard({
   const { data: stats } = useSkillStats(skill.id);
   const color = typeColor(skill.type);
   // 'manual' and 'extracted' are ours; a URL/community import is unvetted.
-  const untrusted = skill.source === "imported_url" || skill.source === "community";
+  const untrusted = isUntrusted(skill.source);
 
   return (
-    <div onClick={onClick} style={s.card(!!active, skill.enabled)}>
+    <div
+      onClick={onClick}
+      role="button"
+      tabIndex={0}
+      aria-pressed={!!active}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onClick?.();
+        }
+      }}
+      style={s.card(!!active, skill.enabled)}
+    >
       <div style={s.headerRow}>
         <div style={s.iconBox(color)}>
           <Icon.Sparkles size={15} />

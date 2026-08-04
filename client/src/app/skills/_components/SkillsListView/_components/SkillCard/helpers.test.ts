@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { SkillStats } from "@devdigest/shared";
-import { statsLine, typeColor } from "./helpers";
+import { statsLine } from "./helpers";
 
 const stats = (over: Partial<SkillStats> = {}): SkillStats => ({
   used_by: [],
@@ -29,12 +29,5 @@ describe("statsLine", () => {
   it("counts the linked agents", () => {
     const used_by = [{ agent_id: "a1", agent_name: "A", order: 0, agent_enabled: true }];
     expect(statsLine(stats({ used_by }), "—").agents).toBe(1);
-  });
-});
-
-describe("typeColor", () => {
-  it("gives every contract type its own accent", () => {
-    expect(typeColor("security")).toBe("var(--crit)");
-    expect(typeColor("rubric")).not.toBe(typeColor("security"));
   });
 });

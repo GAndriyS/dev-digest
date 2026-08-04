@@ -1,6 +1,6 @@
 {
   "name": "Skills Lab lists the seeded skills, previews one, and shows the agent's linked count",
-  "description": "Loads /skills and confirms the three seeded skills render (pr-quality-rubric, secret-leakage-gate, no-then-chains), opens the rubric and confirms its immutable body renders in the Preview pane, then opens the Security Reviewer's Skills tab in the agent editor and confirms the linked count ('2 of 3 enabled') — the seed links General→[rubric] and Security→[rubric, secret-gate]. Read-only seeded data throughout: nothing here attaches, reorders or runs anything, so no model call is triggered.",
+  "description": "Loads /skills and confirms the seeded skills render as a card grid, selects the rubric card (which opens the side preview rather than navigating — the grid keeps its scroll and toggles stay live), follows 'Open in the editor' into the full editor, and confirms the immutable body renders in the Preview tab. Then opens the Security Reviewer's Skills tab in the agent editor and confirms the linked count. Read-only seeded data throughout: nothing here attaches, reorders or runs anything, so no model call is triggered.",
   "steps": [
     { "cmd": ["open", "{BASE}/skills"], "label": "load the Skills Lab" },
     { "cmd": ["wait", "--url", "/skills"], "label": "skills route reached" },
@@ -8,7 +8,9 @@
     { "cmd": ["wait", "--text", "pr-quality-rubric"], "label": "seeded rubric skill is listed" },
     { "cmd": ["wait", "--text", "secret-leakage-gate"], "label": "seeded security skill is listed" },
     { "cmd": ["wait", "--text", "no-then-chains"], "label": "seeded convention skill is listed" },
-    { "cmd": ["find", "text", "pr-quality-rubric", "click"], "label": "open the rubric skill" },
+    { "cmd": ["find", "text", "pr-quality-rubric", "click"], "label": "select the rubric card" },
+    { "cmd": ["wait", "--text", "Open in the editor"], "label": "the side preview pane opened (selection, not navigation)" },
+    { "cmd": ["find", "role", "button", "click", "--name", "Open in the editor"], "label": "open the full editor" },
     { "cmd": ["wait", "--url", "tab=config"], "label": "skill detail route reached (lands on Config)" },
     { "cmd": ["wait", "--load", "networkidle"], "label": "skill detail settles" },
     { "cmd": ["wait", "--text", "Versions"], "label": "the editor tab strip has rendered" },
@@ -22,7 +24,7 @@
     { "cmd": ["find", "role", "button", "click", "--name", "Skills"], "label": "switch to the Skills tab" },
     { "cmd": ["wait", "--url", "tab=skills"], "label": "skills tab is active in the URL" },
     { "cmd": ["wait", "--load", "networkidle"], "label": "linked-skill fetch settles" },
-    { "cmd": ["wait", "--text", "2 of 3 enabled"], "label": "the seeded links are counted in the header" },
+    { "cmd": ["wait", "--text", "2 of 5 enabled"], "label": "the seeded links are counted against the whole skill library" },
     { "cmd": ["wait", "--text", "Order matters"], "label": "the prompt-order hint renders" }
   ]
 }
