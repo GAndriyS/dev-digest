@@ -140,6 +140,70 @@ export const CommunitySkill = z.object({
 });
 export type CommunitySkill = z.infer<typeof CommunitySkill>;
 
+/**
+ * Create payload. `source` is a provenance label, not a behaviour switch — the
+ * only flow that writes anything but 'manual' today is the conventions
+ * extractor ('extracted', with evidence_files).
+ */
+export const SkillInput = z.object({
+  name: z.string().min(1),
+  description: z.string().default(''),
+  type: SkillType.default('custom'),
+  source: SkillSource.default('manual'),
+  body: z.string().min(1),
+  enabled: z.boolean().default(true),
+  evidence_files: z.array(z.string()).nullish(),
+});
+export type SkillInput = z.infer<typeof SkillInput>;
+
+/**
+ * Update payload. Changing `body` mints a new immutable version (the UI copy
+ * promises exactly that); metadata-only edits leave the version alone, so
+ * renaming a skill does not invalidate an eval run that scored its text.
+ */
+export const SkillPatch = SkillInput.partial();
+export type SkillPatch = z.infer<typeof SkillPatch>;
+
+/** One entry in a skill's immutable body history. `body` is omitted in lists. */
+export const SkillVersion = z.object({
+  skill_id: z.string(),
+  version: z.number().int(),
+  body: z.string().nullish(),
+  body_chars: z.number().int(),
+  created_at: z.string(),
+});
+export type SkillVersion = z.infer<typeof SkillVersion>;
+
+/** An agent that has this skill linked, with its position in the prompt. */
+export const SkillUsage = z.object({
+  agent_id: z.string(),
+  agent_name: z.string(),
+  order: z.number().int(),
+  agent_enabled: z.boolean(),
+});
+export type SkillUsage = z.infer<typeof SkillUsage>;
+
+/**
+ * Skill dashboard numbers. Attribution is RUN-level, not finding-level: the
+ * engine renders every linked skill into one `## Skills / rules` block, so a
+ * finding cannot honestly be traced to one skill. `findings_30d` therefore
+ * counts findings from runs that INCLUDED this skill — a correlation, and the
+ * UI says so. Per-finding attribution would require the model to cite the
+ * skill, which it is not asked to do.
+ */
+export const SkillStats = z.object({
+  used_by: z.array(SkillUsage),
+  pull_count_30d: z.number().int(),
+  runs_total: z.number().int(),
+  findings_30d: z.number().int(),
+  /** accepted / (accepted + dismissed), 0..1, or null when nothing was triaged. */
+  accept_rate: z.number().min(0).max(1).nullish(),
+  findings_by_category: z.array(
+    z.object({ category: z.string(), count: z.number().int() }),
+  ),
+});
+export type SkillStats = z.infer<typeof SkillStats>;
+
 // ---- Conventions ----
 export const ConventionCandidate = z.object({
   id: z.string(),

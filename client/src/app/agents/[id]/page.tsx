@@ -10,9 +10,10 @@ import { AppShell } from "../../../components/app-shell";
 import { AgentCard } from "../_components/AgentCard";
 import { AgentEditor } from "./_components/AgentEditor";
 import { useAgents, useAgent, useUpdateAgent } from "../../../lib/hooks/agents";
+import { useAgentSkills } from "../../../lib/hooks/skills";
 import { ApiError } from "../../../lib/api";
 
-const VALID_TABS = ["config"];
+const VALID_TABS = ["config", "skills"];
 
 export default function AgentEditorPage() {
   const params = useParams<{ id: string }>();
@@ -22,6 +23,11 @@ export default function AgentEditorPage() {
 
   const { data: agents } = useAgents();
   const { data: agent, isLoading, isError, error, refetch } = useAgent(id);
+  // Skill counts are per-agent, and there is no bulk endpoint — so the sidebar
+  // shows the badge for the agent whose links we already have loaded (the same
+  // query the Skills tab uses, served from cache) and omits it for the rest.
+  // A count per card would cost one request per agent for a decorative badge.
+  const { data: activeSkillLinks } = useAgentSkills(id);
   const update = useUpdateAgent();
 
   const tab = VALID_TABS.includes(search.get("tab") ?? "") ? search.get("tab")! : "config";
@@ -85,6 +91,7 @@ export default function AgentEditorPage() {
                 key={a.id}
                 ag={a}
                 active={a.id === id}
+                skillCount={a.id === id ? activeSkillLinks?.length : undefined}
                 onClick={() => router.push(`/agents/${a.id}?tab=${tab}`)}
                 onToggle={(enabled) => update.mutate({ id: a.id, patch: { enabled } })}
               />

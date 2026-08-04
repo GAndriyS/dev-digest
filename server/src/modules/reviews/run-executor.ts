@@ -152,6 +152,10 @@ export class ReviewRunExecutor {
 
     runLog.info(`Starting review with agent "${agent.name}" (${agent.provider}/${agent.model})`);
 
+    // Hoisted so the failure path below can report the skills this run actually
+    // assembled instead of hardcoding "no skills" into every failed trace.
+    let skillBodies: string[] = [];
+
     try {
       // Resolve the agent's LLM provider. (container.llm throws if the provider
       // key is missing — caught below and persisted as a failed run.)
@@ -181,6 +185,41 @@ export class ReviewRunExecutor {
       const repoMap = repoIntelOn ? await this.buildRepoMapDigest(pull.repoId, runLog) : undefined;
       const rankNote = repoIntelOn ? await this.buildRankNote(pull.repoId, diff, runLog) : '';
 
+      // L02 — the agent's linked skills, resolved to BODIES in prompt order.
+      // Disabled skills are skipped: "enabled" is the kill switch the Skills Lab
+      // offers, and a skill that is off must not reach the model through a link
+      // someone forgot to remove. `container.agentsRepo` is the sanctioned path
+      // — reaching into modules/agents/repository.ts would be a boundary break.
+      const linkedSkills = (await this.agents.linkedSkills(agent.id)).filter(
+        (l) => l.skill.enabled,
+      );
+      skillBodies = linkedSkills.map((l) => l.skill.body);
+      if (linkedSkills.length > 0) {
+        runLog.info(
+          `Skills: ${linkedSkills.length} linked skill(s) in prompt order — ${linkedSkills
+            .map((l) => `${l.skill.name} v${l.skill.version}`)
+            .join(', ')}`,
+        );
+      }
+
+      // Record WHICH skills (and which body version) went into this run, BEFORE
+      // the model call. `agent_skills` only holds today's links, so without this
+      // row the attribution is unrecoverable the moment anyone re-orders or
+      // unlinks. `order` is the PROMPT position (post-filter), not the link's
+      // stored order, because that is the thing that actually shaped the answer.
+      await this.container.skillsRepo
+        .recordRunSkills(
+          runId,
+          linkedSkills.map((l, i) => ({
+            skillId: l.skill.id,
+            skillVersion: l.skill.version,
+            order: i,
+          })),
+        )
+        .catch((err) =>
+          runLog.info(`run_skills not recorded — ${(err as Error).message}`),
+        );
+
       const task = taskLine(pull) + rankNote;
 
       // ---- Engine: assemble → single-pass → grounding -----------------------
@@ -195,6 +234,10 @@ export class ReviewRunExecutor {
         // Per-agent review strategy (configured in the Agent editor); falls back
         // to the studio default. single-pass = whole diff in one call.
         strategy: agent.strategy ?? REVIEW_STRATEGY,
+        // L02 — resolved skill bodies. Omitted when empty so the prompt is
+        // byte-identical to the no-skills baseline (reviewer-core renders no
+        // `## Skills / rules` section for an empty slot).
+        ...(skillBodies.length > 0 ? { skills: skillBodies } : {}),
         // T1.3 — pass the callers digest only when we built one. assemblePrompt
         // omits the section when this is empty/undefined.
         ...(callersDigest ? { callers: callersDigest } : {}),
@@ -308,7 +351,10 @@ export class ReviewRunExecutor {
         })
         .catch(() => undefined);
       await this.repo
-        .saveRunTrace(runId, this.traceFromBuffer(runId, pull, agent, '0/0 passed', Date.now() - start))
+        .saveRunTrace(
+          runId,
+          this.traceFromBuffer(runId, pull, agent, '0/0 passed', Date.now() - start, skillBodies),
+        )
         .catch(() => undefined);
       this.container.runBus.complete(runId);
       throw err;
@@ -413,6 +459,13 @@ export class ReviewRunExecutor {
     agent: AgentRow,
     grounding: string,
     durationMs = 0,
+    /**
+     * Skill bodies that had already been assembled when the run died. Empty on
+     * a pre-work failure (nothing was resolved yet) — which is why this renders
+     * `null` rather than being hardcoded to it: a run that failed WITH skills
+     * loaded must show them, or the trace lies about what was in the prompt.
+     */
+    skills: string[] = [],
   ): RunTrace {
     return {
       config: {
@@ -431,7 +484,14 @@ export class ReviewRunExecutor {
         findings: 0,
         grounding,
       },
-      prompt_assembly: { system: agent.systemPrompt, skills: null, memory: null, specs: null, user: '' },
+      prompt_assembly: {
+        system: agent.systemPrompt,
+        // Same join reviewer-core's assemblePrompt uses for the skills slot.
+        skills: skills.length > 0 ? skills.join('\n\n') : null,
+        memory: null,
+        specs: null,
+        user: '',
+      },
       tool_calls: [],
       raw_output: '',
       memory_pulled: [],

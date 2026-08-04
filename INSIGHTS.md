@@ -28,7 +28,27 @@ live in `<package>/INSIGHTS.md`. Maintained by the `engineering-insights` skill.
 
 ## What Works
 
+- **2026-08-04** — Splitting a feature across parallel subagents works when the
+  split is by FILE OWNERSHIP, not by concern: each agent got an explicit
+  "you own these paths, these are someone else's" list and nothing collided
+  across three agents touching the same two packages. What it does NOT catch is
+  the seams BETWEEN agents — both cross-agent bugs this session (a hook calling
+  `PUT` on a route registered as `POST`, and two incompatible shapes for the same
+  jsonb column) typechecked cleanly on both sides and would have shipped. Budget
+  an integration pass that exercises every cross-agent contract against a live
+  server; unit tests on either side of a seam agree with themselves by
+  construction.
+
 ## What Doesn't Work
+
+- **2026-08-04** — Declaring a table in the schema file it "belongs" to can
+  close an import cycle that dependency-cruiser rejects: `run_skills` references
+  both `agent_runs` and `skills`, and putting it in `schema/skills.ts` created
+  `skills → runs → agents → skills`. Drizzle reads the barrel, not file paths,
+  so the emitted SQL is identical wherever the table is declared — put a
+  cross-domain table in the DOWNSTREAM-most schema file (`runs.ts` here) and
+  leave a pointer comment behind. Caught only by depcruise, after `pnpm
+  db:generate` had already produced a correct migration.
 
 ## Codebase Patterns
 

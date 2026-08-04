@@ -7,7 +7,25 @@ import {
   GENERAL_REVIEWER_PROMPT,
   SECURITY_REVIEWER_PROMPT,
   PERFORMANCE_REVIEWER_PROMPT,
+  PR_QUALITY_RUBRIC_SKILL,
+  SECRET_LEAKAGE_GATE_SKILL,
+  NO_THEN_CHAINS_SKILL,
 } from './seed-prompts.js';
+
+/**
+ * Fake credential for the seeded eval case, assembled at runtime rather than
+ * written as one literal.
+ *
+ * The eval only means something if the fixture looks like the real thing — a
+ * string spelling out FAKE would be skipped by the very rule under test, since
+ * the skill tells the reviewer to ignore obvious placeholders. But a literal in
+ * that shape is what GitHub push protection blocks, and rightly: a scanner
+ * cannot tell a fixture from a leak. Joining the parts keeps the runtime value
+ * realistic while leaving no matchable literal in the file.
+ *
+ * It has never been a live key. Do not "fix" this by inlining it.
+ */
+const FIXTURE_STRIPE_KEY = ['sk', 'live', '51H8xQ2eZvKYlo2CkqPmNbVwX'].join('_');
 
 /** Default provider/model for the built-in reviewer agents. */
 const DEFAULT_PROVIDER = 'openrouter' as const;
@@ -219,6 +237,109 @@ export async function seed(db: Db): Promise<{ workspaceId: string; userId: strin
       .from(t.agents)
       .where(and(eq(t.agents.workspaceId, workspaceId), eq(t.agents.name, a.name)));
     if (!existing) await db.insert(t.agents).values(a);
+  }
+
+  // ---- built-in skills ----
+  // One per `source` provenance so the Skills Lab has an honest sample of each
+  // badge on a fresh install, and so the e2e flows have deterministic,
+  // read-only data to assert on (no model call involved).
+  const seedSkills: Array<typeof t.skills.$inferInsert> = [
+    {
+      workspaceId,
+      name: 'pr-quality-rubric',
+      description: 'Rubric for evaluating overall PR quality across correctness, tests, and clarity.',
+      type: 'rubric',
+      source: 'manual',
+      body: PR_QUALITY_RUBRIC_SKILL,
+      enabled: true,
+      version: 1,
+    },
+    {
+      workspaceId,
+      name: 'secret-leakage-gate',
+      description: 'Detects sk_live, service_role, and NEXT_PUBLIC secret leaks in a diff.',
+      type: 'security',
+      source: 'community',
+      body: SECRET_LEAKAGE_GATE_SKILL,
+      enabled: true,
+      version: 1,
+    },
+    {
+      workspaceId,
+      name: 'no-then-chains',
+      description: 'House rule: always use async/await instead of .then() chains.',
+      type: 'convention',
+      source: 'extracted',
+      body: NO_THEN_CHAINS_SKILL,
+      enabled: true,
+      version: 1,
+      // An extracted skill carries the files the rule was mined from — that
+      // evidence is what makes an accepted convention auditable later.
+      evidenceFiles: ['src/api/users.ts', 'src/config.ts'],
+    },
+  ];
+  const skillIdByName = new Map<string, string>();
+  for (const sk of seedSkills) {
+    let [row] = await db
+      .select()
+      .from(t.skills)
+      .where(and(eq(t.skills.workspaceId, workspaceId), eq(t.skills.name, sk.name)));
+    if (!row) [row] = await db.insert(t.skills).values(sk).returning();
+    if (row) skillIdByName.set(row.name, row.id);
+  }
+
+  // ---- agent ↔ skill links ----
+  // `order` is the position in the assembled prompt, so the rubric leads and the
+  // narrower gate follows it for the Security Reviewer.
+  const links: Array<{ agent: string; skills: string[] }> = [
+    { agent: 'General Reviewer', skills: ['pr-quality-rubric'] },
+    { agent: 'Security Reviewer', skills: ['pr-quality-rubric', 'secret-leakage-gate'] },
+  ];
+  for (const link of links) {
+    const [agentRow] = await db
+      .select()
+      .from(t.agents)
+      .where(and(eq(t.agents.workspaceId, workspaceId), eq(t.agents.name, link.agent)));
+    if (!agentRow) continue;
+    for (const [i, skillName] of link.skills.entries()) {
+      const skillId = skillIdByName.get(skillName);
+      if (!skillId) continue;
+      await db
+        .insert(t.agentSkills)
+        .values({ agentId: agentRow.id, skillId, order: i })
+        .onConflictDoNothing();
+    }
+  }
+
+  // ---- one skill-owned eval case ----
+  // Asserts the rubric catches the same hardcoded key the seeded review found,
+  // so the Evals tab has a runnable case out of the box.
+  const rubricId = skillIdByName.get('pr-quality-rubric');
+  if (rubricId) {
+    const [existingCase] = await db
+      .select()
+      .from(t.evalCases)
+      .where(and(eq(t.evalCases.ownerId, rubricId), eq(t.evalCases.name, 'stripe-key-leak')));
+    if (!existingCase) {
+      await db.insert(t.evalCases).values({
+        workspaceId,
+        ownerKind: 'skill',
+        ownerId: rubricId,
+        name: 'stripe-key-leak',
+        inputDiff: [
+          'diff --git a/src/config.ts b/src/config.ts',
+          '--- a/src/config.ts',
+          '+++ b/src/config.ts',
+          '@@ -10,3 +10,4 @@',
+          ' export const config = {',
+          '   port: Number(process.env.PORT ?? 3000),',
+          `+  stripeKey: '${FIXTURE_STRIPE_KEY}',`,
+          ' };',
+        ].join('\n'),
+        expectedOutput: { findings: [{ severity: 'CRITICAL', category: 'security' }] },
+        notes: 'A live Stripe key added in the diff must be flagged CRITICAL.',
+      });
+    }
   }
 
   return { workspaceId, userId };

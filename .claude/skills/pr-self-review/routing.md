@@ -73,6 +73,23 @@ encode the two couplings a top-level-directory split would miss.
 them is itself a CRITICAL finding — they are not review targets, they are
 tripwires.
 
+**One exception — a declared vendor update.** `**/src/vendor/ui/**` may be
+edited in place when the PR body carries a line naming each edited file:
+
+```
+Vendor-update: client/src/vendor/ui/nav.ts
+```
+
+Then it is not a finding; instead list the declared files in the report so they
+reach the reviewer's eye. The declaration does not make the edit correct — "fix
+upstream, then re-vendor" is still the rule, and no machine can check that it
+was followed. What the line buys is *visibility*: the claim sits in the PR body
+next to the diff, where a human can judge it. An **undeclared** edit, or a
+declaration naming a directory rather than a file, stays CRITICAL. Clones and
+applied migrations have no such exception — no declaration makes editing them
+right. `scripts/pr-gate-ci.mjs` enforces exactly this in CI; prose and gate must
+not drift.
+
 ## Skill map
 
 | Slice | Skills | Condition |

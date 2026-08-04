@@ -290,3 +290,69 @@ findings list; NEVER approve while reporting a CRITICAL. No findings ⇒ approve
   the mechanism and the scale trigger in the rationale and a concrete fix.
 - Set \`kind\` to "finding" and leave \`trifecta_components\` / \`evidence\` null — those
   are only for a security agent's lethal-trifecta data-flow findings.`;
+
+/**
+ * Built-in skill bodies used by the seed.
+ *
+ * A skill is pure configuration text: it is appended to the agent's system
+ * prompt as part of the `## Skills / rules` section (see
+ * `docs/agent-prompts/README.md` for the assembled prompt layout). It carries
+ * no code and no tools — everything a skill can do, it does by saying it.
+ *
+ * These three cover the three `source` provenances the UI renders a badge for,
+ * so the Skills Lab has something honest to show on a fresh install.
+ */
+
+export const PR_QUALITY_RUBRIC_SKILL = `# PR Quality Rubric
+
+Evaluate the pull request against the following dimensions. For each, return a
+finding only when the issue is **worth the author's time** — aim for 5 high-signal
+findings, not 50.
+
+## Correctness
+- Does the change do what the PR description claims?
+- Are edge cases (empty input, nulls, concurrency) handled?
+
+## Security
+- Any secrets, tokens, or credentials in the diff?
+- Untrusted input reaching a sink (SQL, shell, fetch)?
+
+## Tests
+- New branches covered by assertions?
+- Are tests meaningful (not just snapshot churn)?
+
+## Scope
+- Does the diff stay within the stated intent?
+- Flag out-of-scope changes separately rather than blocking.`;
+
+export const SECRET_LEAKAGE_GATE_SKILL = `# Secret Leakage Gate
+
+Treat any credential material added in this diff as CRITICAL, regardless of how
+the surrounding code uses it. A key that reaches version control is compromised
+the moment it is pushed — rotation is the only remedy, so the review must catch
+it before merge.
+
+## Flag as CRITICAL
+- Live-looking API keys: \`sk_live_\`, \`sk-\`, \`ghp_\`, \`xoxb-\`, AWS \`AKIA…\`.
+- Service-role / admin tokens of any provider, including in test fixtures.
+- Private keys (\`BEGIN … PRIVATE KEY\`), \`.pem\`, \`.p12\`, keystore blobs.
+- Anything secret assigned to a \`NEXT_PUBLIC_*\` / \`VITE_*\` name — that prefix
+  ships the value to the browser bundle.
+
+## Do not flag
+- Obvious placeholders: \`xxx\`, \`changeme\`, \`<your-key>\`, \`sk_test_…\`.
+- Reads from \`process.env\` with no literal value in the diff.
+
+Cite the exact file and line. Name the provider when you can identify it, and
+say plainly that the credential must be rotated, not just removed.`;
+
+export const NO_THEN_CHAINS_SKILL = `# House rule: async/await over .then() chains
+
+This codebase uses \`async\`/\`await\` throughout. A \`.then()\` chain in new code is
+inconsistent with every neighbouring file, and in practice is where unhandled
+rejections and lost error context come from.
+
+- Flag \`.then(\` / \`.catch(\` chains introduced by this diff as a WARNING.
+- Suggest the \`await\` form, with \`try\`/\`catch\` when the chain had a \`.catch\`.
+- Do not flag \`Promise.all\` / \`Promise.allSettled\` — those are idiomatic here.
+- Do not flag \`.then()\` in files the diff only moved or reformatted.`;
