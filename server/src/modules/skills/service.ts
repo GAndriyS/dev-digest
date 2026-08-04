@@ -5,6 +5,7 @@ import type {
   LLMProvider,
   Provider,
   Skill,
+  SkillImportPreview,
   SkillSource,
   SkillStats,
   SkillType,
@@ -33,6 +34,7 @@ import {
   toSkillDto,
   toSkillVersionDto,
 } from './helpers.js';
+import { buildSkillImportPreview, decodeImportPayload } from './import.js';
 
 /**
  * A1 — skills service. Business logic for the Skills Lab: CRUD, the immutable
@@ -142,6 +144,28 @@ export class SkillsService {
     const ok = await this.repo.deleteById(workspaceId, id);
     if (!ok) throw new NotFoundError('Skill not found');
     return id;
+  }
+
+  // ---- import (L02) -------------------------------------------------------
+
+  /**
+   * Preview the skill inside an uploaded `.md` or `.zip`. READ-ONLY by design:
+   * nothing is written to the database, nothing is unpacked to disk, and no part
+   * of an archive other than one markdown entry is ever decompressed.
+   *
+   * There is no `importConfirm` counterpart on purpose. Confirmation is the
+   * ordinary `POST /skills` with the (possibly user-edited) preview fields and
+   * `source: 'imported_url'`. Persisting a "pending import" would mean a second
+   * lifecycle to expire, and abandoning a preview would leave a row behind.
+   *
+   * No `workspaceId`: there is nothing to scope. Every rule lives in `import.ts`
+   * as a pure function, so the parser is tested without a container.
+   */
+  async importPreview(input: {
+    filename: string;
+    content_base64: string;
+  }): Promise<SkillImportPreview> {
+    return buildSkillImportPreview(input.filename, decodeImportPayload(input.content_base64));
   }
 
   // ---- version history ----------------------------------------------------

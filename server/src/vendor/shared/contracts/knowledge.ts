@@ -204,6 +204,46 @@ export const SkillStats = z.object({
 });
 export type SkillStats = z.infer<typeof SkillStats>;
 
+// ---- Skill import ----
+
+/**
+ * Import request. The file arrives base64-encoded inside a normal JSON body so
+ * one contract carries both a text `.md` and a binary `.zip` without dragging a
+ * multipart parser into the edge. `filename` is what the extension is read from
+ * — the bytes are never sniffed — so it must be the real name the user picked.
+ *
+ * The route caps the encoded length; a data-URL prefix (`data:...;base64,`), as
+ * produced by `FileReader.readAsDataURL`, is tolerated and stripped.
+ */
+export const SkillImportRequest = z.object({
+  filename: z.string().min(1),
+  content_base64: z.string().min(1),
+});
+export type SkillImportRequest = z.infer<typeof SkillImportRequest>;
+
+/**
+ * Import PREVIEW — the extracted skill core, persisted nowhere.
+ *
+ * `POST /skills/import/preview` only reads: no row is written, no file is
+ * unpacked to disk, and nothing in the archive is executed. Confirmation is the
+ * ordinary `POST /skills` — the client posts these fields back (adding
+ * `source: 'imported_url'`), so an unconfirmed import leaves no trace.
+ *
+ * `source_files` are the markdown entries the preview drew from, the one that
+ * produced `body` first. `skipped_files` are entries that were deliberately not
+ * read — executables, images, anything that is not markdown. Showing them is the
+ * point: the user sees exactly what was ignored.
+ */
+export const SkillImportPreview = z.object({
+  name: z.string(),
+  description: z.string(),
+  type: SkillType,
+  body: z.string(),
+  source_files: z.array(z.string()),
+  skipped_files: z.array(z.string()),
+});
+export type SkillImportPreview = z.infer<typeof SkillImportPreview>;
+
 // ---- Conventions ----
 export const ConventionCandidate = z.object({
   id: z.string(),

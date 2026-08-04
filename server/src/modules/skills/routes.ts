@@ -1,9 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import { SkillInput, SkillPatch, SkillType } from '@devdigest/shared';
+import { SkillImportRequest, SkillInput, SkillPatch, SkillType } from '@devdigest/shared';
 import { getContext } from '../_shared/context.js';
 import { IdParams } from '../_shared/schemas.js';
+import { IMPORT_BODY_LIMIT_BYTES } from './constants.js';
 import { ExpectedEvalOutput } from './helpers.js';
 import { SkillsService } from './service.js';
 
@@ -12,6 +13,7 @@ import { SkillsService } from './service.js';
  *
  *   GET    /skills                                → list (?type=, ?enabled=)
  *   POST   /skills                                → create (201)
+ *   POST   /skills/import/preview                 → preview an uploaded .md/.zip (saves nothing)
  *   GET    /skills/:id                            → one skill
  *   PUT    /skills/:id                            → update (changed body ⇒ new version)
  *   DELETE /skills/:id                            → delete
@@ -93,6 +95,25 @@ export default async function skillsRoutes(appBase: FastifyInstance) {
     reply.status(201);
     return skill;
   });
+
+  /**
+   * Import step 1 of 2 — PREVIEW. Reads the upload and answers with the skill
+   * core it found; writes nothing. Step 2 is `POST /skills` above, with the
+   * confirmed fields and `source: 'imported_url'`.
+   *
+   * `bodyLimit` is raised for this one route: the global limit in `app.ts` is
+   * 1 MiB, which would 413 a legitimate archive before the handler could apply
+   * (and explain) its own caps. It stays pinned to `MAX_IMPORT_BASE64_CHARS`, so
+   * there is exactly one number to change.
+   *
+   * No `getContext`: the preview reads a file the caller already has and stores
+   * nothing, so there is no workspace to scope it to.
+   */
+  app.post(
+    '/skills/import/preview',
+    { bodyLimit: IMPORT_BODY_LIMIT_BYTES, schema: { body: SkillImportRequest } },
+    async (req) => service.importPreview(req.body),
+  );
 
   app.get('/skills/:id', { schema: { params: IdParams } }, async (req) => {
     const { workspaceId } = await getContext(app.container, req);

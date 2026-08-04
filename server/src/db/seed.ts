@@ -7,9 +7,13 @@ import {
   GENERAL_REVIEWER_PROMPT,
   SECURITY_REVIEWER_PROMPT,
   PERFORMANCE_REVIEWER_PROMPT,
+  TEST_QUALITY_REVIEWER_PROMPT,
+  API_CONTRACT_REVIEWER_PROMPT,
   PR_QUALITY_RUBRIC_SKILL,
   SECRET_LEAKAGE_GATE_SKILL,
   NO_THEN_CHAINS_SKILL,
+  TEST_QUALITY_RUBRIC_SKILL,
+  API_CONTRACT_GATE_SKILL,
 } from './seed-prompts.js';
 
 /**
@@ -37,11 +41,19 @@ const DEFAULT_MODEL = 'deepseek/deepseek-v4-flash';
  *
  * Seeds: default workspace + system user + membership, default settings,
  * demo repo (acme/payments-api), PR #482 with files/commits, a sample review
- * with a few findings, and the three built-in agents (General + Security +
- * Performance), all on the default openrouter/deepseek-v4-flash provider+model.
+ * with a few findings, and the built-in agents (General + Security +
+ * Performance, plus L02's Test Quality + API Contract reviewers), all on the
+ * default openrouter/deepseek-v4-flash provider+model — with their skills and
+ * `agent_skills` links.
  *
- * Course lessons populate the other tables (skills, conventions, memory, eval,
- * …) once their features are built — they start empty here.
+ * Course lessons populate the other tables (conventions, memory, …) once their
+ * features are built — they start empty here.
+ *
+ * Idempotency is per-row and by NAME: every block selects first and inserts only
+ * when nothing matches, so re-running adds the new lesson's rows to an existing
+ * database without touching or duplicating what is already there. It follows
+ * that editing a prompt or skill body here does NOT update a workspace that has
+ * already been seeded — the DB row is the source of truth at run time.
  */
 
 export const DEFAULT_WORKSPACE_NAME = 'default';
@@ -230,6 +242,33 @@ export async function seed(db: Db): Promise<{ workspaceId: string; userId: strin
       version: 1,
       createdBy: userId,
     },
+    // L02 — the two agents the Skills Lab control experiment runs on. Each is
+    // paired with exactly ONE skill below, so linking or unlinking that skill is
+    // the single variable between two runs of the same diff.
+    {
+      workspaceId,
+      name: 'Test Quality Reviewer',
+      description:
+        'Checks test quality: uncovered branches, missed corner cases, over-mocking, and flaky patterns.',
+      provider: DEFAULT_PROVIDER,
+      model: DEFAULT_MODEL,
+      systemPrompt: TEST_QUALITY_REVIEWER_PROMPT,
+      enabled: true,
+      version: 1,
+      createdBy: userId,
+    },
+    {
+      workspaceId,
+      name: 'API Contract Reviewer',
+      description:
+        'Flags breaking changes to route signatures, request/response shapes and status codes.',
+      provider: DEFAULT_PROVIDER,
+      model: DEFAULT_MODEL,
+      systemPrompt: API_CONTRACT_REVIEWER_PROMPT,
+      enabled: true,
+      version: 1,
+      createdBy: userId,
+    },
   ];
   for (const a of seedAgents) {
     const [existing] = await db
@@ -277,6 +316,33 @@ export async function seed(db: Db): Promise<{ workspaceId: string; userId: strin
       // evidence is what makes an accepted convention auditable later.
       evidenceFiles: ['src/api/users.ts', 'src/config.ts'],
     },
+    // L02 — one skill per new agent, written to be MEASURED: each rule names a
+    // code shape and a severity, so "with the skill" vs "without it" on the same
+    // diff is a difference you can point at.
+    {
+      workspaceId,
+      name: 'test-quality-rubric',
+      description:
+        'Flags untested branches, missing empty/null/boundary cases, mock-only assertions, and flaky time/order/network patterns.',
+      type: 'rubric',
+      source: 'manual',
+      body: TEST_QUALITY_RUBRIC_SKILL,
+      enabled: true,
+      version: 1,
+    },
+    {
+      workspaceId,
+      name: 'api-contract-gate',
+      description:
+        'Treats a changed route signature, a removed or renamed response field, and a changed status code as BREAKING.',
+      type: 'convention',
+      // The one seeded skill that arrived through the L02 import flow, so a
+      // fresh install shows the `imported_url` badge on something real.
+      source: 'imported_url',
+      body: API_CONTRACT_GATE_SKILL,
+      enabled: true,
+      version: 1,
+    },
   ];
   const skillIdByName = new Map<string, string>();
   for (const sk of seedSkills) {
@@ -291,9 +357,15 @@ export async function seed(db: Db): Promise<{ workspaceId: string; userId: strin
   // ---- agent ↔ skill links ----
   // `order` is the position in the assembled prompt, so the rubric leads and the
   // narrower gate follows it for the Security Reviewer.
+  //
+  // The two L02 agents get exactly ONE skill each, and nothing else: the whole
+  // point is that the skill is the only variable, so adding the general rubric
+  // alongside would confound the comparison.
   const links: Array<{ agent: string; skills: string[] }> = [
     { agent: 'General Reviewer', skills: ['pr-quality-rubric'] },
     { agent: 'Security Reviewer', skills: ['pr-quality-rubric', 'secret-leakage-gate'] },
+    { agent: 'Test Quality Reviewer', skills: ['test-quality-rubric'] },
+    { agent: 'API Contract Reviewer', skills: ['api-contract-gate'] },
   ];
   for (const link of links) {
     const [agentRow] = await db
