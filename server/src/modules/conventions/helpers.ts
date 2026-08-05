@@ -1,0 +1,177 @@
+import { z } from 'zod';
+import type { ChatMessage, ConventionCandidate } from '@devdigest/shared';
+import type { ConventionRow } from './repository.js';
+import { MAX_CANDIDATES, MAX_FILE_CHARS } from './constants.js';
+
+/**
+ * L03 — pure helpers for the conventions extractor. No I/O, no container: the
+ * evidence gate is the part most worth testing, so it is kept callable with
+ * plain strings.
+ */
+
+/**
+ * What the model is asked to return. Deliberately NOT `ConventionCandidate`:
+ * `id` and `status` are the server's to assign, and `evidence_line` is derived
+ * from the file rather than trusted from the model. Asking for fewer fields
+ * also means fewer ways for a strict-schema call to fail.
+ */
+export const ExtractedConvention = z.object({
+  category: z.string(),
+  rule: z.string(),
+  evidence_path: z.string(),
+  evidence_snippet: z.string(),
+  confidence: z.number().min(0).max(1),
+});
+export type ExtractedConvention = z.infer<typeof ExtractedConvention>;
+
+export const ConventionExtraction = z.object({
+  conventions: z.array(ExtractedConvention),
+});
+export type ConventionExtraction = z.infer<typeof ConventionExtraction>;
+
+export interface SampleFile {
+  path: string;
+  content: string;
+}
+
+/** Truncate to the head — conventions show up in imports and the first handler. */
+export function clipFile(content: string): string {
+  return content.length <= MAX_FILE_CHARS ? content : `${content.slice(0, MAX_FILE_CHARS)}\n…`;
+}
+
+/**
+ * One user message listing every sampled file with its path. Paths are repeated
+ * verbatim in the fences because `evidence_path` has to match one of them
+ * exactly for the candidate to survive verification.
+ */
+export function buildExtractionMessages(files: SampleFile[], systemPrompt: string): ChatMessage[] {
+  const excerpts = files
+    .map((f) => `### ${f.path}\n\`\`\`\n${clipFile(f.content)}\n\`\`\``)
+    .join('\n\n');
+  return [
+    { role: 'system', content: systemPrompt },
+    {
+      role: 'user',
+      content:
+        `Here are ${files.length} excerpts from one repository. ` +
+        `Report at most ${MAX_CANDIDATES} conventions this repo consistently follows.\n\n` +
+        `${excerpts}`,
+    },
+  ];
+}
+
+/**
+ * Collapse a line to its comparable form: inner whitespace runs become one
+ * space, edges are trimmed. Indentation and alignment are exactly the details a
+ * model reformats when it copies, and none of them change what the code says.
+ */
+function normalizeLine(line: string): string {
+  return line.replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Find where `snippet` occurs in `content` and return its 1-based start line, or
+ * `null` when it does not occur.
+ *
+ * Matching is per line and by containment rather than equality: a model that
+ * copies `return ok(items);` out of `  return ok(items); // fast path` has still
+ * pointed at real code, and demanding the whole line back would throw away true
+ * evidence. What containment will not do is invent — every snippet line must
+ * appear, in order, in consecutive lines of the file.
+ *
+ * The line number matters as much as the boolean: it is what the UI deep-links
+ * to on GitHub, and the model's own count is not reliable enough to publish.
+ */
+export function locateSnippet(content: string, snippet: string): number | null {
+  const fileLines = content.split(/\r?\n/).map(normalizeLine);
+  const needle = snippet
+    .split(/\r?\n/)
+    .map(normalizeLine)
+    .filter((l) => l.length > 0);
+  if (needle.length === 0) return null;
+
+  for (let i = 0; i + needle.length <= fileLines.length; i++) {
+    let hit = true;
+    for (let j = 0; j < needle.length; j++) {
+      if (!fileLines[i + j]!.includes(needle[j]!)) {
+        hit = false;
+        break;
+      }
+    }
+    if (hit) return i + 1;
+  }
+  return null;
+}
+
+/** Rules that differ only in casing, spacing or trailing punctuation are one rule. */
+export function normalizeRule(rule: string): string {
+  return rule
+    .toLowerCase()
+    .replace(/[.\s]+$/, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+export interface VerifiedConvention extends ExtractedConvention {
+  evidence_line: number;
+}
+
+export interface VerificationOutcome {
+  kept: VerifiedConvention[];
+  dropped: number;
+}
+
+/**
+ * The evidence gate. A candidate survives only when the file it names was
+ * actually sampled AND its snippet can be located in that file; the located
+ * line replaces whatever the model may have thought.
+ *
+ * Duplicates are dropped against `existingRules` (rules already stored for this
+ * repo, including ones the user rejected) and against each other, so a re-scan
+ * does not resurrect a rejected rule under a slightly different wording.
+ */
+export function verifyCandidates(
+  candidates: ExtractedConvention[],
+  files: SampleFile[],
+  existingRules: string[] = [],
+): VerificationOutcome {
+  const byPath = new Map(files.map((f) => [f.path, f.content]));
+  const seen = new Set(existingRules.map(normalizeRule));
+  const kept: VerifiedConvention[] = [];
+  let dropped = 0;
+
+  for (const c of candidates) {
+    const content = byPath.get(c.evidence_path);
+    if (content === undefined) {
+      dropped++;
+      continue;
+    }
+    const line = locateSnippet(content, c.evidence_snippet);
+    if (line === null) {
+      dropped++;
+      continue;
+    }
+    const key = normalizeRule(c.rule);
+    if (key.length === 0 || seen.has(key)) {
+      dropped++;
+      continue;
+    }
+    seen.add(key);
+    kept.push({ ...c, evidence_line: line });
+  }
+  return { kept, dropped };
+}
+
+/** Row → wire DTO. Nullable evidence columns are pre-existing; default them. */
+export function toConventionDto(row: ConventionRow): ConventionCandidate {
+  return {
+    id: row.id,
+    category: row.category,
+    rule: row.rule,
+    evidence_path: row.evidencePath ?? '',
+    evidence_snippet: row.evidenceSnippet ?? '',
+    evidence_line: row.evidenceLine,
+    confidence: row.confidence ?? 0,
+    status: row.status,
+  };
+}
