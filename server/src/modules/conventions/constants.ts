@@ -39,6 +39,17 @@ export const SAMPLE_COUNT = 12;
  */
 export const MAX_FILE_CHARS = 6_000;
 
+/**
+ * Per-file read cap in BYTES, checked with `stat` before the file is opened.
+ *
+ * `MAX_FILE_CHARS` bounds the prompt, not the read: without this a repo shipping
+ * a gigabyte-sized `.prettierrc` would be pulled into memory in full — up to 21
+ * of them in parallel — and only truncated afterwards. Any imported repo can be
+ * hostile, so the cheap check has to come first. Generously above any real
+ * config or source file, so nothing legitimate is skipped.
+ */
+export const MAX_FILE_BYTES = 2_000_000;
+
 /** Upper bound on candidates asked of the model — a rubric, not a transcript. */
 export const MAX_CANDIDATES = 8;
 

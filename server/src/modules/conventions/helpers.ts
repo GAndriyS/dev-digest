@@ -1,3 +1,4 @@
+import { sep as pathSep } from 'node:path';
 import { z } from 'zod';
 import type { ChatMessage, ConventionCandidate } from '@devdigest/shared';
 import type { ConventionRow } from './repository.js';
@@ -32,6 +33,18 @@ export type ConventionExtraction = z.infer<typeof ConventionExtraction>;
 export interface SampleFile {
   path: string;
   content: string;
+}
+
+/**
+ * Is `real` the clone root itself, or something beneath it?
+ *
+ * Both paths must already be resolved (`realpath`), because the whole point is
+ * to judge where a file physically IS rather than how it was spelled. The
+ * separator in the prefix is not decoration: without it `/clones/repo-evil`
+ * passes as being inside `/clones/repo`.
+ */
+export function isInsideRoot(root: string, real: string, sep = pathSep): boolean {
+  return real === root || real.startsWith(root + sep);
 }
 
 /** Truncate to the head — conventions show up in imports and the first handler. */
@@ -77,13 +90,24 @@ function normalizeLine(line: string): string {
  * copies `return ok(items);` out of `  return ok(items); // fast path` has still
  * pointed at real code, and demanding the whole line back would throw away true
  * evidence. What containment will not do is invent — every snippet line must
- * appear, in order, in consecutive lines of the file.
+ * appear, in order, in consecutive NON-BLANK lines of the file.
+ *
+ * Blank lines are dropped from BOTH sides, and the file's real line numbers are
+ * carried alongside so the located line stays true. Dropping them on the snippet
+ * side only was worse than it looked: a snippet copied character-for-character
+ * across a blank line — exactly what the system prompt demands — could never
+ * match, and the honest rule was then counted in `dropped_no_evidence`, the
+ * field the UI presents as the measure of what the model made up.
  *
  * The line number matters as much as the boolean: it is what the UI deep-links
  * to on GitHub, and the model's own count is not reliable enough to publish.
  */
 export function locateSnippet(content: string, snippet: string): number | null {
-  const fileLines = content.split(/\r?\n/).map(normalizeLine);
+  const fileLines: { text: string; lineNo: number }[] = [];
+  content.split(/\r?\n/).forEach((raw, i) => {
+    const text = normalizeLine(raw);
+    if (text.length > 0) fileLines.push({ text, lineNo: i + 1 });
+  });
   const needle = snippet
     .split(/\r?\n/)
     .map(normalizeLine)
@@ -97,12 +121,12 @@ export function locateSnippet(content: string, snippet: string): number | null {
   for (let i = 0; i + needle.length <= fileLines.length; i++) {
     let hit = true;
     for (let j = 0; j < needle.length; j++) {
-      if (!fileLines[i + j]!.includes(needle[j]!)) {
+      if (!fileLines[i + j]!.text.includes(needle[j]!)) {
         hit = false;
         break;
       }
     }
-    if (hit) return i + 1;
+    if (hit) return fileLines[i]!.lineNo;
   }
   return null;
 }

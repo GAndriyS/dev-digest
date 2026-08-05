@@ -3,6 +3,7 @@ import {
   ExtractedConvention,
   buildExtractionMessages,
   clipFile,
+  isInsideRoot,
   locateSnippet,
   normalizeRule,
   verifyCandidates,
@@ -58,6 +59,24 @@ describe('locateSnippet', () => {
     expect(locateSnippet(FILE, 'import { Redis } from "ioredis";\n\nimport { config }')).toBe(1);
   });
 
+  it('matches a verbatim snippet that spans a blank line in the FILE', () => {
+    // The direction that matters in production: the prompt demands lines copied
+    // character-for-character, and file lines 2-4 have a blank between them.
+    // Dropping blanks on the snippet side only made this honest copy unmatchable
+    // and counted it as a fabrication.
+    const snippet = [
+      'import { config } from "./config";',
+      '',
+      'export const redis = new Redis(config.redisUrl);',
+    ].join('\n');
+    expect(locateSnippet(FILE, snippet)).toBe(2);
+  });
+
+  it('reports the file’s real line number, not the blank-stripped one', () => {
+    // Two blank lines precede line 7 in FILE. A condensed index would say 5.
+    expect(locateSnippet(FILE, 'const user = await db.users.find(id);')).toBe(7);
+  });
+
   it('returns null when the code is not in the file', () => {
     expect(locateSnippet(FILE, 'export const mongo = new Mongo();')).toBeNull();
   });
@@ -84,6 +103,33 @@ describe('locateSnippet', () => {
     // Both lines exist, but line 4 and line 7 are not adjacent.
     const snippet = 'export const redis = new Redis(config.redisUrl);\nreturn ok(user);';
     expect(locateSnippet(FILE, snippet)).toBeNull();
+  });
+});
+
+describe('isInsideRoot', () => {
+  // The predicate behind the sampler's symlink guard: any public repo can be
+  // imported, so a file that resolves outside the clone must never be read.
+  it('accepts the root itself and paths beneath it', () => {
+    expect(isInsideRoot('/clones/repo', '/clones/repo', '/')).toBe(true);
+    expect(isInsideRoot('/clones/repo', '/clones/repo/src/index.ts', '/')).toBe(true);
+  });
+
+  it('rejects a sibling whose name merely starts with the root', () => {
+    // The trap the trailing separator exists for.
+    expect(isInsideRoot('/clones/repo', '/clones/repo-evil/secrets.json', '/')).toBe(false);
+  });
+
+  it('rejects a path that resolved out of the clone entirely', () => {
+    // What a committed `tsconfig.json -> ~/.devdigest/secrets.json` looks like
+    // once realpath has collapsed the link.
+    expect(isInsideRoot('/clones/repo', '/home/user/.devdigest/secrets.json', '/')).toBe(false);
+  });
+
+  it('works with Windows separators', () => {
+    expect(isInsideRoot('C:\\clones\\repo', 'C:\\clones\\repo\\tsconfig.json', '\\')).toBe(true);
+    expect(isInsideRoot('C:\\clones\\repo', 'C:\\Users\\PC\\.devdigest\\secrets.json', '\\')).toBe(
+      false,
+    );
   });
 });
 

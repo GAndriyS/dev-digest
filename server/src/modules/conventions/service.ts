@@ -1,5 +1,5 @@
-import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { readFile, realpath, stat } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import type {
   ConventionCandidate,
   ConventionExtractResult,
@@ -14,6 +14,7 @@ import {
   EXTRACTION_SCHEMA_NAME,
   EXTRACTION_SYSTEM_PROMPT,
   MAX_CANDIDATES,
+  MAX_FILE_BYTES,
   NO_PROVIDER_KEY_CODE,
   NO_SAMPLES_CODE,
   REPO_NOT_CLONED_CODE,
@@ -22,6 +23,7 @@ import {
 import {
   ConventionExtraction,
   buildExtractionMessages,
+  isInsideRoot,
   toConventionDto,
   verifyCandidates,
   type SampleFile,
@@ -179,12 +181,41 @@ export class ConventionsService {
     const ranked = await this.container.repoIntel.getConventionSamples(repoId, SAMPLE_COUNT);
     const paths = [...CONFIG_FILES, ...ranked];
 
+    // Resolve the clone root once, through symlinks, so every candidate path can
+    // be compared against its real location rather than its spelling.
+    const root = await realpath(clonePath).catch(() => null);
+    if (root === null) return [];
+
     const read = await Promise.all(
       paths.map(async (path) => {
-        const content = await readFile(join(clonePath, path), 'utf8').catch(() => null);
+        const content = await this.readInsideClone(root, path);
         return content === null ? null : { path, content };
       }),
     );
     return read.filter((f): f is SampleFile => f !== null && f.content.trim().length > 0);
+  }
+
+  /**
+   * Read one sampled file, or `null` for anything that is not a plain file
+   * living inside the clone.
+   *
+   * The containment check is not paranoia about `..`: git tree entries cannot
+   * contain it and `CONFIG_FILES` is a static list, so the reachable attack is a
+   * SYMLINK. Any public repo can be imported, and a repo committing
+   * `tsconfig.json -> ~/.devdigest/secrets.json` would otherwise have this
+   * function read the secrets file, ship it to a third-party model, and — since
+   * anything the model quotes back does locate in "the file" — store it as
+   * evidence and render it in the UI. `realpath` collapses the link first, so
+   * the escape is visible before the file is opened.
+   */
+  private async readInsideClone(root: string, relPath: string): Promise<string | null> {
+    const real = await realpath(resolve(root, relPath)).catch(() => null);
+    if (real === null) return null;
+    if (!isInsideRoot(root, real)) return null;
+
+    const info = await stat(real).catch(() => null);
+    if (info === null || !info.isFile() || info.size > MAX_FILE_BYTES) return null;
+
+    return readFile(real, 'utf8').catch(() => null);
   }
 }
