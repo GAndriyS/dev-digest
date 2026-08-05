@@ -60,7 +60,7 @@ export function SkillsListView() {
             width={220}
             align="right"
             trigger={
-              <Button kind="primary" size="sm" icon="Plus" iconRight="ChevronDown">
+              <Button kind="primary" size="sm" icon="Plus" iconRight="ChevronDown" style={s.addButton}>
                 {t("page.addSkill")}
               </Button>
             }

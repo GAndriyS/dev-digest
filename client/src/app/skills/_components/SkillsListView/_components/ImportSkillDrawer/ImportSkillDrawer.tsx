@@ -36,6 +36,8 @@ export function ImportSkillDrawer({ onClose }: { onClose: () => void }) {
   const preview = useImportSkillPreview();
   const create = useCreateSkill();
 
+  // The visible trigger is a Button; the native input is hidden behind this ref.
+  const fileRef = React.useRef<HTMLInputElement>(null);
   const [filename, setFilename] = React.useState("");
   const [reading, setReading] = React.useState(false);
   const [readError, setReadError] = React.useState<string | null>(null);
@@ -148,13 +150,22 @@ export function ImportSkillDrawer({ onClose }: { onClose: () => void }) {
       )}
 
       <FormField label={t("import.fileLabel")} hint={t("import.fileHint")} required>
-        <input
-          type="file"
-          accept={FILE_ACCEPT}
-          aria-label={t("import.fileLabel")}
-          onChange={(e) => void onPick(e.target.files?.[0])}
-          style={s.fileInput}
-        />
+        <div style={s.filePicker}>
+          <input
+            ref={fileRef}
+            type="file"
+            accept={FILE_ACCEPT}
+            aria-label={t("import.fileLabel")}
+            onChange={(e) => void onPick(e.target.files?.[0])}
+            style={s.fileInput}
+          />
+          <Button kind="secondary" icon="Upload" onClick={() => fileRef.current?.click()}>
+            {t("import.choose")}
+          </Button>
+          <span style={filename ? s.fileName : s.fileNamePlaceholder}>
+            {filename || t("import.noFile")}
+          </span>
+        </div>
       </FormField>
 
       {busy && (

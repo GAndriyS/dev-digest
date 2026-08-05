@@ -12,11 +12,24 @@ export const s = {
     color: "var(--text-primary)",
     fontSize: 13,
   } satisfies CSSProperties,
+  filePicker: { display: "flex", alignItems: "center", gap: 12 } satisfies CSSProperties,
+  // The native control renders an unstyleable button that reads as body text in
+  // this theme, so the Button beside it is the affordance. Kept in the DOM and
+  // visually hidden rather than `display: none` — it stays reachable by its
+  // label, which is how both assistive tech and the drawer's tests find it.
   fileInput: {
-    fontSize: 13,
-    color: "var(--text-secondary)",
-    width: "100%",
+    position: "absolute",
+    width: 1,
+    height: 1,
+    padding: 0,
+    margin: -1,
+    overflow: "hidden",
+    clip: "rect(0 0 0 0)",
+    whiteSpace: "nowrap",
+    border: 0,
   } satisfies CSSProperties,
+  fileName: { fontSize: 13, color: "var(--text-primary)", minWidth: 0 } satisfies CSSProperties,
+  fileNamePlaceholder: { fontSize: 13, color: "var(--text-muted)" } satisfies CSSProperties,
   status: { fontSize: 13, color: "var(--text-muted)", marginBottom: 16 } satisfies CSSProperties,
   result: { borderTop: "1px solid var(--border)", paddingTop: 18 } satisfies CSSProperties,
   resultHeader: {

@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import { CARD_GRID_COLS, PANE_MAX_HEIGHT, PANE_WIDTH } from "./constants";
+import { CARD_GRID_COLS, HEADER_CONTROL_HEIGHT, PANE_MAX_HEIGHT, PANE_WIDTH } from "./constants";
 
 /** Co-located styles for the SkillsListView grid + side preview. */
 export const s = {
@@ -20,12 +20,15 @@ export const s = {
     display: "flex",
     alignItems: "center",
     gap: 10,
-    padding: "8px 12px",
+    height: HEADER_CONTROL_HEIGHT,
+    padding: "0 12px",
     borderRadius: 7,
     border: "1px solid var(--border)",
     background: "var(--bg-surface)",
     width: 220,
   } satisfies CSSProperties,
+  /** Overrides the Button's own padding-derived height. Spread last by Button. */
+  addButton: { height: HEADER_CONTROL_HEIGHT } satisfies CSSProperties,
   searchIcon: { color: "var(--text-muted)" } satisfies CSSProperties,
   searchInput: {
     flex: 1,

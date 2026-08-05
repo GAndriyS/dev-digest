@@ -70,6 +70,7 @@
     "fileLabel": "Skill file",
     "fileHint": "A Markdown file (.md, .markdown) or a .zip archive. Only Markdown entries are read; nothing in an archive is executed.",
     "choose": "Choose a file",
+    "noFile": "No file selected",
     "unsupported": "Unsupported file — pick a .md, .markdown or .zip file.",
     "readFailed": "Could not read that file.",
     "reading": "Reading {filename}…",
