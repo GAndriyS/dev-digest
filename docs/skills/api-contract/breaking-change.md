@@ -18,7 +18,7 @@ catching at review time.
 
 Reconstruct the OLD contract from the removed (`-`) lines and the NEW one from
 the added (`+`) lines, then compare them field by field. Judge the contract, not
-the intent: a commit titled "cleanup" that renames a response field is a
+the intent: a commit titled "cleanup" that tightens a request field is a
 breaking change, and the PR description is not evidence to the contrary.
 
 ## Report as CRITICAL
@@ -30,46 +30,55 @@ breaking change, and the PR description is not evidence to the contrary.
   required.
 - A request field renamed, retyped, or removed.
 - Validation tightened so values the endpoint used to accept are now rejected —
-  a new `min`, `max`, `enum`, `uuid`, or format constraint.
+  a new `min`, `max`, `uuid`, or format constraint, or an enum member dropped.
 - A default value changed, so an unchanged call now behaves differently.
 
 ## Not breaking
 
 - A new **optional** request field.
-- A new response field added alongside the existing ones.
 - A new route, or a new method on an existing path.
+- Validation loosened so previously rejected input is now accepted.
 - Internal refactoring behind an unchanged signature.
 
 ## Examples
 
-**Bad — flag this (CRITICAL).** An optional field becomes required, so every
-existing caller that omitted it now gets a 422:
+**Bad — flag this (CRITICAL).** Written as a tidy-up of a listing endpoint, but
+it rejects calls that used to work:
 
 ```diff
-       body: z.object({
-         url: z.string().url(),
--        secret: z.string().optional(),
-+        secret: z.string(),
-+        events: z.array(z.string()).min(1),
+       query: z.object({
+         region: z.string(),
+-        cursor: z.string().optional(),
+-        sort: z.enum(['created', 'name', 'legacy_rank']).optional(),
++        cursor: z.string(),
++        sort: z.enum(['created', 'name']).optional(),
        }),
 ```
 
-Two breaks here, not one: `secret` became required, and `events` was added as a
-required field. Report both, cite the added lines.
+Two breaks, not one. `cursor` became required, so every first-page call now
+422s; and `legacy_rank` left the enum, so callers still sending it are rejected
+on a value the endpoint accepted yesterday. Report both, cite the added lines.
 
 **Good — do not flag.** Purely additive; every existing call still compiles and
 still means what it meant:
 
 ```diff
-       body: z.object({
-         url: z.string().url(),
-         secret: z.string().optional(),
-+        description: z.string().optional(),
+       query: z.object({
+         region: z.string(),
+         cursor: z.string().optional(),
++        include_archived: z.boolean().optional(),
        }),
 ```
 
+## Stay in your lane
+
+Request and route surface only. The response shape belongs to
+`response-schema`, whether a removal was announced belongs to
+`deprecation-policy`, and the version number belongs to `semver-discipline`.
+Report each break once, under the skill that owns it.
+
 ## Writing the finding
 
-Name the old shape and the new one explicitly ("`secret` was optional, is now
+Name the old shape and the new one explicitly ("`cursor` was optional, is now
 required"), say who breaks (existing callers that omit it) and what they will
 see (a 422). Cite the exact `file:line` of the added line that does it.

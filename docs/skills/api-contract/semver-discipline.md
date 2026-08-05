@@ -8,8 +8,8 @@ type: convention
 
 A version number is a promise about upgrade safety. When the diff breaks a
 contract but bumps only the minor or patch digit, every consumer with a caret
-range (`^2.4.1`) pulls the break in automatically, on a routine install, with no
-one having decided to.
+range pulls the break in automatically, on a routine install, with no one having
+decided to.
 
 The wrong version is not a paperwork error. It converts a controlled break into
 an uncontrolled one, so report it with the severity of the break it hides.
@@ -39,27 +39,35 @@ contract change in the same PR:
 
 ## Examples
 
-**Bad — flag this (CRITICAL).** The same PR renames a response field, and:
+**Bad — flag this (CRITICAL).** The same PR removes a field consumers read, and
+versions it like a feature:
 
 ```diff
  {
-   "name": "@acme/payments-api",
--  "version": "2.4.1",
-+  "version": "2.5.0",
+   "name": "@example/catalog-api",
+-  "version": "4.2.7",
++  "version": "4.3.0",
    "private": false,
 ```
 
-`2.5.0` is a minor bump. Anyone on `^2.4.1` upgrades silently into a renamed
-field. This needs `3.0.0`.
+`4.3.0` is a minor bump, so anyone on `^4.2.7` upgrades into the removal on
+their next install without reading a changelog. This needs `5.0.0`.
 
-**Good — do not flag.** A breaking change, correctly announced:
+**Good — do not flag.** The same break, correctly announced:
 
 ```diff
--  "version": "2.4.1",
-+  "version": "3.0.0",
+-  "version": "4.2.7",
++  "version": "5.0.0",
 ```
 
 **Also good.** An additive-only PR under a minor bump — that is exactly right.
+
+## Stay in your lane
+
+Only the version number. Do not re-report the underlying break; find it, name it
+in one clause as the thing that forces the major, and let `breaking-change`,
+`response-schema` or `deprecation-policy` own the finding about the change
+itself. One version line, one finding.
 
 ## Writing the finding
 

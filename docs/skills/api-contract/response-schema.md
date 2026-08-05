@@ -15,20 +15,23 @@ Treat the response shape as published the moment it ships.
 
 ## Report as CRITICAL
 
-- A response field **removed** or **renamed**. A case change counts:
-  `callbackUrl` → `callback_url` is a rename, not formatting.
-- A field's type changed (`string` → `number`, scalar → object, object → array).
+- A response field **removed** or **renamed**. Re-spelling a key is a rename,
+  not formatting: changing `unitPrice` to `unit_price` deletes `unitPrice` as
+  far as every consumer is concerned.
+- A field's type changed (`string` → `number`, scalar → object, object → array),
+  or a list wrapped or unwrapped (`[...]` ↔ `{ items: [...] }`).
 - A field that was always present becoming optional or nullable — every consumer
   that dereferences it without a guard now has a latent crash.
-- A **status code** changed for the same outcome. `200` → `204` is breaking:
-  the body disappears, and clients that parse it get an empty-body error.
-- An enum member removed, or an existing member's value changed.
+- A **status code** changed for the same outcome. Any change counts: clients
+  assert on the number, and a code with no body leaves nothing to parse.
+- An enum member removed from a response, or an existing member's value changed.
 
 ## Report as WARNING
 
 - A new enum member added to a field consumers switch on exhaustively.
-- A field's meaning changed while its name and type stayed the same — the most
-  dangerous kind, because no type checker anywhere will catch it.
+- A field's meaning or units changed while its name and type stayed the same —
+  seconds to milliseconds, cents to dollars. The most dangerous kind, because no
+  type checker anywhere will catch it.
 
 ## Not breaking
 
@@ -37,30 +40,37 @@ Treat the response shape as published the moment it ships.
 
 ## Examples
 
-**Bad — flag this (CRITICAL).** Two renames and a status change in one hunk:
+**Bad — flag this (CRITICAL).** A rename and a status change in one hunk:
 
 ```diff
-     const hook = await createWebhook(req.body);
--    reply.status(200);
--    return { id: hook.id, callbackUrl: hook.url, isActive: hook.active };
-+    reply.status(204);
-+    return { id: hook.id, callback_url: hook.url, enabled: hook.active };
+     const order = await placeOrder(req.body);
+-    reply.status(201);
+-    return { id: order.id, unitPrice: order.price, placedAt: order.created };
++    reply.status(202);
++    return { id: order.id, unit_price: order.price, placedAt: order.created };
 ```
 
-Every consumer reading `callbackUrl` or `isActive` now reads `undefined` — and
-with `204` there is no body to read at all, so even the correctly-renamed
-`callback_url` never arrives. Report the renames and the status change
+Every consumer reading `unitPrice` now reads `undefined` — silently, since the
+key is simply absent rather than an error. Separately, a client that branches on
+`201` no longer takes that branch. Report the rename and the status change
 separately; they break different things and have different fixes.
 
 **Good — do not flag.** Additive, and the old fields still mean what they meant:
 
 ```diff
--    return { id: hook.id, callbackUrl: hook.url };
-+    return { id: hook.id, callbackUrl: hook.url, createdAt: hook.createdAt };
+-    return { id: order.id, unitPrice: order.price };
++    return { id: order.id, unitPrice: order.price, currency: order.currency };
 ```
+
+## Stay in your lane
+
+The response shape and the status code only. Request fields, query parameters
+and route paths belong to `breaking-change`; whether a removed field was ever
+announced belongs to `deprecation-policy`; the version number belongs to
+`semver-discipline`.
 
 ## Writing the finding
 
 State the old field name and the new one, and say what a consumer sees when it
-reads the old one (`undefined`, not an error). For a status change, say what
-happens to the body. Cite the added line.
+reads the old one (`undefined`, not an error). For a status change, say which
+client branch stops firing and what happens to the body. Cite the added line.
