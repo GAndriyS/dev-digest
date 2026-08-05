@@ -18,14 +18,18 @@ export interface NavGroup {
   items: NavItemDef[];
 }
 
-/* DECLARED VENDOR UPDATE (L02, Skills Lab). `src/vendor/ui` is normally fixed
-   upstream and re-vendored; this NAV table is edited in place on purpose,
-   because the Skills entry has no other home and everything downstream already
-   expects it (`activeKeyFor('/skills')`, `shell.json` `nav.skills`, and both the
-   command palette and the g-chord, which derive from NAV). The edit is DATA
-   ONLY — no structural change to this module — and it is declared to the
-   reviewer by a `Vendor-update:` line in the PR body, which is what lets
-   `scripts/pr-gate-ci.mjs` accept it. */
+/* DECLARED VENDOR UPDATE (L02, Skills Lab; extended L03, Conventions).
+   `src/vendor/ui` is normally fixed upstream and re-vendored; this NAV table is
+   edited in place on purpose, because the Skills entry has no other home and
+   everything downstream already expects it (`activeKeyFor('/skills')`,
+   `shell.json` `nav.skills`, and both the command palette and the g-chord, which
+   derive from NAV). The edit is DATA ONLY — no structural change to this module
+   — and it is declared to the reviewer by a `Vendor-update:` line in the PR
+   body, which is what lets `scripts/pr-gate-ci.mjs` accept it.
+
+   L03 adds the Conventions entry on the same terms: `activeKeyFor` already maps
+   `/conventions` and `shell.json` already carries `nav.conventions`, so the NAV
+   row is the only thing that was missing. */
 export const NAV: NavGroup[] = [
   {
     section: "WORKSPACE",
@@ -37,6 +41,7 @@ export const NAV: NavGroup[] = [
     section: "SKILLS LAB",
     items: [
       { key: "skills", label: "Skills", icon: "Sparkles", href: "/skills", gKey: "s" },
+      { key: "conventions", label: "Conventions", icon: "ListChecks", href: "/repos/:repoId/conventions", gKey: "c" },
       { key: "agents", label: "Agents", icon: "Cpu", href: "/agents", gKey: "a" },
     ],
   },
@@ -67,6 +72,7 @@ export const SHORTCUTS: ShortcutDef[] = [
   { keys: "?", label: "Show keyboard shortcuts", group: "Global" },
   { keys: "g p", label: "Go to Pull Requests", group: "Navigation" },
   { keys: "g s", label: "Go to Skills", group: "Navigation" },
+  { keys: "g c", label: "Go to Conventions", group: "Navigation" },
   { keys: "g a", label: "Go to Agents", group: "Navigation" },
   { keys: "j / k", label: "Next / previous finding", group: "Findings" },
   { keys: "a", label: "Accept finding", group: "Findings" },
