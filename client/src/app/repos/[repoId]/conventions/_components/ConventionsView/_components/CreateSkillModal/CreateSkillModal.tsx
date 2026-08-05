@@ -23,9 +23,9 @@ import { SkillType, type ConventionCandidate, type SkillType as SkillTypeT } fro
 import { useCreateSkill } from "@/lib/hooks/skills";
 import { useToast } from "@/lib/toast";
 import { ApiError } from "@/lib/api";
-import { BODY_ROWS, CREATE_MODAL_WIDTH } from "../../constants";
 import { buildConventionsSkill, defaultSkillName } from "../../helpers";
-import { s } from "../../styles";
+import { BODY_ROWS, CREATE_MODAL_WIDTH } from "./constants";
+import { s } from "./styles";
 
 export function CreateSkillModal({
   accepted,
@@ -123,13 +123,13 @@ export function CreateSkillModal({
         <TextInput value={description} onChange={setDescription} />
       </FormField>
 
-      <div style={s.modalRow}>
-        <div style={s.modalCol}>
+      <div style={s.row}>
+        <div style={s.col}>
           <FormField label={t("modal.typeLabel")}>
             <SelectInput value={type} onChange={(v) => setType(v as SkillTypeT)} options={typeOptions} />
           </FormField>
         </div>
-        <div style={s.modalCol}>
+        <div style={s.col}>
           <FormField label={t("modal.enabledLabel")} hint={t("modal.enabledHint")}>
             <div style={s.toggleRow}>
               <Toggle on={enabled} onChange={setEnabled} />

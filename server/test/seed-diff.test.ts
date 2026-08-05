@@ -5,12 +5,17 @@ import { parseUnifiedDiff } from '../src/adapters/git/diff-parser.js';
 /**
  * Pins the PR #483 fixture — the Skills Lab control experiment's diff.
  *
- * Every `@@` header states how many lines its hunk covers on each side, and the
- * grounding gate builds each hunk's new-side line set from that arithmetic. A
- * header that disagrees with its body does not fail loudly: the diff still
- * parses, the review still runs, and every finding is then dropped for citing
- * lines "outside the hunk". The experiment would read as "the skills changed
- * nothing" when in fact the fixture was broken. Hence this test.
+ * The field the grounding gate actually depends on is the `@@` NEW-SIDE START:
+ * `parseUnifiedDiff` numbers the hunk from it, and `groundFindings` keeps a
+ * finding only if its line falls in that band. Shift the start by one and every
+ * finding is dropped for citing lines "outside the hunk" — silently, because
+ * the diff still parses and the review still runs. The experiment would then
+ * read as "the skills changed nothing" when in fact the fixture was broken.
+ *
+ * So the start is pinned by asserting the EXACT line set, and by tying specific
+ * numbers to the content that must be on them. The header counts are checked
+ * separately, for diff fidelity rather than for grounding — a wrong `newLines`
+ * would not drop anything, since the parser populates the line array itself.
  */
 
 /** Rebuild the diff exactly as `diffFromPrFiles` does before parsing. */
@@ -26,8 +31,8 @@ function parseFixture() {
 }
 
 /** Count what a hunk body actually contains, independent of its header. */
-function bodyCounts(patch: string) {
-  const [, ...body] = patch.split('\n');
+function bodyCounts(hunk: string) {
+  const [, ...body] = hunk.split('\n');
   let context = 0;
   let removed = 0;
   let added = 0;
@@ -37,6 +42,31 @@ function bodyCounts(patch: string) {
     else context++;
   }
   return { context, removed, added };
+}
+
+/** Split a patch into hunks — the fixture is one per file today, not by rule. */
+function hunksOf(patch: string): string[] {
+  return patch
+    .split(/\n(?=@@)/)
+    .map((h) => h.trim())
+    .filter(Boolean);
+}
+
+/**
+ * Walk a hunk body and return new-side line number → line content, so an
+ * assertion can say "line 25 is the callback_url line" instead of trusting the
+ * header. Removed lines do not exist on the new side and are skipped.
+ */
+function newSideLines(hunk: string): Map<number, string> {
+  const lines = hunk.split('\n');
+  const start = Number(lines[0]!.match(/\+(\d+)/)![1]);
+  const out = new Map<number, string>();
+  let n = start;
+  for (const line of lines.slice(1)) {
+    if (line.startsWith('-')) continue;
+    out.set(n++, line.slice(1));
+  }
+  return out;
 }
 
 describe('PR #483 fixture', () => {
@@ -50,46 +80,74 @@ describe('PR #483 fixture', () => {
   });
 
   it.each(BREAKING_PR_FILES.map((f) => [f.path, f.patch] as const))(
-    '%s: the @@ header agrees with the hunk body',
+    '%s: every @@ header agrees with its hunk body',
     (_path, patch) => {
-      const header = patch.split('\n')[0]!;
-      const m = header.match(/^@@ -(\d+),(\d+) \+(\d+),(\d+) @@/);
-      expect(m, `unparsable hunk header: ${header}`).not.toBeNull();
-      const [, , oldCount, , newCount] = m!.map(Number) as unknown as number[];
-      const { context, removed, added } = bodyCounts(patch);
-      expect(oldCount).toBe(context + removed);
-      expect(newCount).toBe(context + added);
+      const hunks = hunksOf(patch);
+      expect(hunks.length).toBeGreaterThan(0);
+      for (const hunk of hunks) {
+        const header = hunk.split('\n')[0]!;
+        // The counts are optional in unified diff — git omits them for a
+        // single-line range — so do not demand them.
+        const m = header.match(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/);
+        expect(m, `unparsable hunk header: ${header}`).not.toBeNull();
+        const oldCount = m![2] === undefined ? 1 : Number(m![2]);
+        const newCount = m![4] === undefined ? 1 : Number(m![4]);
+        const { context, removed, added } = bodyCounts(hunk);
+        expect(oldCount, `old count in ${header}`).toBe(context + removed);
+        expect(newCount, `new count in ${header}`).toBe(context + added);
+      }
     },
   );
 
-  it('grounds findings on the lines the breaking changes actually landed on', () => {
+  it('numbers the new side exactly — an off-by-one start would fail here', () => {
     const diff = parseFixture();
     const linesOf = (path: string) => {
       const file = diff.files.find((f) => f.path === path)!;
-      return new Set(file.hunks.flatMap((h) => [...h.newLineNumbers]));
+      return file.hunks.flatMap((h) => [...h.newLineNumbers]).sort((a, b) => a - b);
     };
 
-    // The renamed response field and the 204 — a finding citing either of these
-    // must survive grounding, or the experiment cannot show anything.
-    const webhooks = linesOf('src/api/public/webhooks.ts');
-    expect(webhooks).toContain(18); // secret made required
-    expect(webhooks).toContain(19); // new required `events`
-    expect(webhooks).toContain(24); // 200 → 204
-    expect(webhooks).toContain(25); // callbackUrl → callback_url
+    // The WHOLE set, not membership: `toContain` on a contiguous band passes
+    // for any start within the band's width, which is exactly the corruption
+    // this test exists to catch.
+    expect(linesOf('src/api/public/webhooks.ts')).toEqual(
+      Array.from({ length: 13 }, (_, i) => 14 + i),
+    );
+    expect(linesOf('src/api/public/types.ts')).toEqual([3, 4, 5, 6]);
+    expect(linesOf('package.json')).toEqual([1, 2, 3, 4, 5]);
+  });
 
-    const types = linesOf('src/api/public/types.ts');
-    expect(types).toContain(4); // callback_url replaces the @deprecated field
-    expect(types).toContain(5);
+  it('puts the breaking changes on the lines a finding would cite', () => {
+    const byPath = new Map(BREAKING_PR_FILES.map((f) => [f.path, f.patch]));
+    const at = (path: string) => newSideLines(hunksOf(byPath.get(path)!)[0]!);
 
-    const pkg = linesOf('package.json');
-    expect(pkg).toContain(3); // 2.4.1 → 2.5.0, a minor bump for a breaking change
+    // Tie number to content, so a shifted hunk cannot satisfy this by accident.
+    const webhooks = at('src/api/public/webhooks.ts');
+    expect(webhooks.get(18)).toContain('secret: z.string(),');
+    expect(webhooks.get(19)).toContain('events: z.array');
+    expect(webhooks.get(24)).toContain('reply.status(204)');
+    expect(webhooks.get(25)).toContain('callback_url');
+
+    const types = at('src/api/public/types.ts');
+    expect(types.get(4)).toContain('callback_url');
+    expect(types.get(5)).toContain('enabled');
+
+    expect(at('package.json').get(3)).toContain('"version": "2.5.0"');
   });
 
   it('states additions/deletions that match the hunk bodies', () => {
+    let totalAdded = 0;
+    let totalRemoved = 0;
     for (const f of BREAKING_PR_FILES) {
-      const { added, removed } = bodyCounts(f.patch);
+      const counts = hunksOf(f.patch).map(bodyCounts);
+      const added = counts.reduce((n, c) => n + c.added, 0);
+      const removed = counts.reduce((n, c) => n + c.removed, 0);
       expect(f.additions, `${f.path} additions`).toBe(added);
       expect(f.deletions, `${f.path} deletions`).toBe(removed);
+      totalAdded += added;
+      totalRemoved += removed;
     }
+    // The PR row's own totals are hand-written in seed.ts; keep them honest.
+    expect(totalAdded, 'PR additions total').toBe(7);
+    expect(totalRemoved, 'PR deletions total').toBe(7);
   });
 });

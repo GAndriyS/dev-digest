@@ -165,14 +165,17 @@
   border-radius: 6px;
 }
 
-/* ---- GFM tables ---- */
+/* ---- GFM tables ----
+   `display: block` would buy horizontal scrolling at the cost of the element's
+   ARIA table semantics — Chrome and Safari derive table/row/cell roles from
+   computed display, so a wide table would read to a screen reader as an
+   undifferentiated run of text. That is the exact failure this whole block
+   exists to fix for headings and lists, so the table keeps its display and the
+   scrolling is not worth buying that way. */
 .dd-md table {
-  display: block;
-  width: max-content;
   max-width: 100%;
   margin: 0 0 12px;
   border-collapse: collapse;
-  overflow-x: auto;
   font-size: 0.94em;
 }
 .dd-md th,

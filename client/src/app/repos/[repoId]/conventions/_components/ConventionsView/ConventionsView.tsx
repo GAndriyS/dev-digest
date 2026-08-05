@@ -6,6 +6,7 @@
 "use client";
 
 import React from "react";
+import { useParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { Button, EmptyState, ErrorState, Skeleton } from "@devdigest/ui";
 import type { ConventionCandidate } from "@devdigest/shared";
@@ -20,7 +21,10 @@ import { LOADING_CARDS } from "./constants";
 import { acceptedOf, sortForReview } from "./helpers";
 import { s } from "./styles";
 
-export function ConventionsView({ repoId }: { repoId: string }) {
+export function ConventionsView() {
+  // Reads its own route param rather than taking it as a prop, so the route
+  // entry stays a server component like every other page in the app.
+  const { repoId } = useParams<{ repoId: string }>();
   const t = useTranslations("conventions");
   const { activeRepo } = useActiveRepo();
   const repoNotFound = useRepoNotFound(repoId);
@@ -57,10 +61,10 @@ export function ConventionsView({ repoId }: { repoId: string }) {
 
   return (
     <AppShell crumb={crumb}>
-      {creating && (
+      {creating && activeRepo && (
         <CreateSkillModal
           accepted={accepted}
-          repoFullName={activeRepo?.full_name ?? repoName}
+          repoFullName={activeRepo.full_name}
           onClose={() => setCreating(false)}
         />
       )}
@@ -94,26 +98,34 @@ export function ConventionsView({ repoId }: { repoId: string }) {
         )}
 
         {list.length > 0 && (
-          <>
-            <div style={s.toolbar}>
-              <span style={s.count}>
-                {t("page.acceptedCount", { accepted: accepted.length, total: list.length })}
-              </span>
-              <Button
-                kind="primary"
-                icon="Sparkles"
-                disabled={accepted.length === 0}
-                onClick={() => setCreating(true)}
-              >
-                {t("page.createSkill")}
-              </Button>
-            </div>
-            {extract.data && extract.data.dropped_no_evidence > 0 && (
-              <div style={s.dropped}>
+          <div style={s.toolbar}>
+            <span style={s.count}>
+              {t("page.acceptedCount", { accepted: accepted.length, total: list.length })}
+            </span>
+            <Button
+              kind="primary"
+              icon="Sparkles"
+              disabled={accepted.length === 0 || !activeRepo}
+              onClick={() => setCreating(true)}
+            >
+              {t("page.createSkill")}
+            </Button>
+          </div>
+        )}
+
+        {/* Outside the list guard on purpose. A scan where EVERY candidate was
+            discarded returns an empty list, and without this the user would see
+            "nothing found" — which reads as "this repo has no conventions" when
+            what actually happened is that the model invented all of them. */}
+        {extract.data && (
+          <div style={s.scanSummary}>
+            <span>{t("page.scanned", { files: extract.data.sampled_files.length })}</span>
+            {extract.data.dropped_no_evidence > 0 && (
+              <span style={s.dropped}>
                 {t("page.droppedNoEvidence", { count: extract.data.dropped_no_evidence })}
-              </div>
+              </span>
             )}
-          </>
+          </div>
         )}
 
         {isLoading ? (
@@ -141,7 +153,10 @@ export function ConventionsView({ repoId }: { repoId: string }) {
                 candidate={c}
                 repoFullName={activeRepo?.full_name}
                 defaultBranch={activeRepo?.default_branch}
-                pending={update.isPending}
+                // Scoped to the row actually in flight. One shared mutation
+                // means `update.isPending` alone would freeze every card on the
+                // page for each click, and triage is rapid-fire by nature.
+                pending={update.isPending && update.variables?.id === c.id}
                 onStatus={(status) => setStatus(c, status)}
                 onRule={(rule) => update.mutate({ id: c.id, patch: { rule } })}
               />

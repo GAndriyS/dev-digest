@@ -19,6 +19,19 @@ append-only. Entry format and promotion rules → root `INSIGHTS.md`.
 
 ## Codebase Patterns
 
+- **2026-08-05** — The `Markdown` primitive emits a `.dd-md` wrapper and maps
+  only `p`/`strong`/`code`/`a` through react-markdown's `components`. Everything
+  else falls through to Tailwind Preflight, which flattens `h1`…`h6` to
+  `font-size: inherit; font-weight: inherit` and sets `list-style: none` — so a
+  skill body rendered as one flat wall of text is NOT a markdown-parsing bug,
+  the HTML is correct and unstyled. Measured before the fix: `h1` and `h2`
+  computed to 13px/400, identical to a `<p>`. `.dd-md` carried no rules at all
+  and is the seam to style from `app/globals.css`; the primitive itself is
+  vendored. Two traps when doing so: the primitive sets the inline-code chip via
+  an INLINE style that react-markdown also applies to fenced blocks, so undoing
+  it on `pre code` needs `!important`; and do not claim `color` on `.dd-md` —
+  six call sites render Markdown inside containers that set their own.
+
 - **2026-08-04** — The PR list defaults to the **Needs review** filter, so on a
   dev database where the seeded PR has already been reviewed the table reads
   "No pull requests" while the header above it says "1 open". That is the filter,

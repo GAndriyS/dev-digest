@@ -260,7 +260,9 @@ export type ConventionStatus = z.infer<typeof ConventionStatus>;
  */
 export const ConventionCandidate = z.object({
   id: z.string(),
-  category: z.string(),
+  // Bounded because the model fills it and the UI renders it verbatim as a
+  // badge: an unconstrained string lets a returned sentence become a label.
+  category: z.string().min(1).max(32),
   rule: z.string(),
   evidence_path: z.string(),
   evidence_snippet: z.string(),
@@ -270,13 +272,24 @@ export const ConventionCandidate = z.object({
 });
 export type ConventionCandidate = z.infer<typeof ConventionCandidate>;
 
-/** Accept/reject, or correct the rule's wording before it becomes a skill. */
+/**
+ * Accept/reject, or correct the rule's wording before it becomes a skill.
+ *
+ * `.strict()` and the refinement together close a silent-success hole: zod
+ * strips unknown keys by default, so `{"staus":"accepted"}` would otherwise
+ * validate, hit the no-op branch, and answer 200 having changed nothing. A
+ * typo at the wire boundary should 422, not look like it worked.
+ */
 export const ConventionPatch = z
   .object({
     rule: z.string().min(1),
     status: ConventionStatus,
   })
-  .partial();
+  .partial()
+  .strict()
+  .refine((v) => v.rule !== undefined || v.status !== undefined, {
+    message: 'Provide at least one of: rule, status',
+  });
 export type ConventionPatch = z.infer<typeof ConventionPatch>;
 
 /**

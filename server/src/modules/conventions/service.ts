@@ -13,6 +13,7 @@ import {
   CONFIG_FILES,
   EXTRACTION_SCHEMA_NAME,
   EXTRACTION_SYSTEM_PROMPT,
+  MAX_CANDIDATES,
   NO_PROVIDER_KEY_CODE,
   NO_SAMPLES_CODE,
   REPO_NOT_CLONED_CODE,
@@ -132,9 +133,12 @@ export class ConventionsService {
     });
 
     const existing = await this.repo.existingRules(workspaceId, repoId);
-    const { kept, dropped } = verifyCandidates(result.data.conventions, files, existing);
+    // The prompt asks for at most MAX_CANDIDATES, but a prompt is a request and
+    // the sampled files are attacker-influenced (any public repo can be
+    // imported). Enforce the bound in code before any of it reaches the DB.
+    const proposed = result.data.conventions.slice(0, MAX_CANDIDATES);
+    const { kept, droppedNoEvidence } = verifyCandidates(proposed, files, existing);
 
-    await this.repo.deletePending(workspaceId, repoId);
     const inserts: InsertConvention[] = kept.map((c) => ({
       workspaceId,
       repoId,
@@ -145,7 +149,10 @@ export class ConventionsService {
       evidenceLine: c.evidence_line,
       confidence: c.confidence,
     }));
-    await this.repo.insertMany(inserts);
+    // One transaction: a failed insert after a committed delete would leave the
+    // user with an emptied triage list and no way back except another paid
+    // model call. It also serializes a double-clicked Re-scan.
+    await this.repo.replacePending(workspaceId, repoId, inserts);
 
     // Return the whole list, not just the new rows: the client renders one list
     // and previously accepted rules are still part of it.
@@ -153,7 +160,9 @@ export class ConventionsService {
     return {
       candidates: rows.map(toConventionDto),
       sampled_files: files.map((f) => f.path),
-      dropped_no_evidence: dropped,
+      // Only the evidence failures. Duplicates are counted separately and are
+      // not evidence of fabrication — see `verifyCandidates`.
+      dropped_no_evidence: droppedNoEvidence,
     };
   }
 

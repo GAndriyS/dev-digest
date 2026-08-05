@@ -43,6 +43,17 @@ export const MAX_FILE_CHARS = 6_000;
 export const MAX_CANDIDATES = 8;
 
 /**
+ * Shortest snippet that counts as evidence, after whitespace normalization.
+ *
+ * Without a floor the gate is far weaker than it looks: matching is per-line
+ * containment, so a snippet of `}` or `const` occurs in almost any file, and a
+ * model could attach a ubiquitous fragment to an invented rule and pass. The
+ * point of the gate is that evidence is SPECIFIC to the claim; a fragment that
+ * matches everywhere identifies nothing.
+ */
+export const MIN_SNIPPET_CHARS = 15;
+
+/**
  * Names the JSON schema in the provider request. The mock LLM adapter keys its
  * per-call fixtures off this exact string (`structuredBySchema`), so tests can
  * drive the extractor without a network call.

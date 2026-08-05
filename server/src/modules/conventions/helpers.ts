@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { ChatMessage, ConventionCandidate } from '@devdigest/shared';
 import type { ConventionRow } from './repository.js';
-import { MAX_CANDIDATES, MAX_FILE_CHARS } from './constants.js';
+import { MAX_CANDIDATES, MAX_FILE_CHARS, MIN_SNIPPET_CHARS } from './constants.js';
 
 /**
  * L03 — pure helpers for the conventions extractor. No I/O, no container: the
@@ -89,6 +89,10 @@ export function locateSnippet(content: string, snippet: string): number | null {
     .map(normalizeLine)
     .filter((l) => l.length > 0);
   if (needle.length === 0) return null;
+  // Reject evidence too short to identify anything. `}` or `const` matches in
+  // almost any file, so accepting it would let an invented rule pass the gate
+  // wearing a fragment that points nowhere in particular.
+  if (needle.join(' ').length < MIN_SNIPPET_CHARS) return null;
 
   for (let i = 0; i + needle.length <= fileLines.length; i++) {
     let hit = true;
@@ -118,7 +122,10 @@ export interface VerifiedConvention extends ExtractedConvention {
 
 export interface VerificationOutcome {
   kept: VerifiedConvention[];
-  dropped: number;
+  /** Snippet could not be located, or named a file that was never sampled. */
+  droppedNoEvidence: number;
+  /** Perfectly grounded, but restates a rule already stored for this repo. */
+  droppedDuplicate: number;
 }
 
 /**
@@ -129,6 +136,11 @@ export interface VerificationOutcome {
  * Duplicates are dropped against `existingRules` (rules already stored for this
  * repo, including ones the user rejected) and against each other, so a re-scan
  * does not resurrect a rejected rule under a slightly different wording.
+ *
+ * The two reasons for dropping are counted separately and must stay that way:
+ * only the evidence failures say anything about whether the model invented
+ * something. A re-scan that correctly re-proposes known rules would otherwise
+ * report as a scan full of fabrications.
  */
 export function verifyCandidates(
   candidates: ExtractedConvention[],
@@ -138,28 +150,29 @@ export function verifyCandidates(
   const byPath = new Map(files.map((f) => [f.path, f.content]));
   const seen = new Set(existingRules.map(normalizeRule));
   const kept: VerifiedConvention[] = [];
-  let dropped = 0;
+  let droppedNoEvidence = 0;
+  let droppedDuplicate = 0;
 
   for (const c of candidates) {
     const content = byPath.get(c.evidence_path);
     if (content === undefined) {
-      dropped++;
+      droppedNoEvidence++;
       continue;
     }
     const line = locateSnippet(content, c.evidence_snippet);
     if (line === null) {
-      dropped++;
+      droppedNoEvidence++;
       continue;
     }
     const key = normalizeRule(c.rule);
     if (key.length === 0 || seen.has(key)) {
-      dropped++;
+      droppedDuplicate++;
       continue;
     }
     seen.add(key);
     kept.push({ ...c, evidence_line: line });
   }
-  return { kept, dropped };
+  return { kept, droppedNoEvidence, droppedDuplicate };
 }
 
 /** Row → wire DTO. Nullable evidence columns are pre-existing; default them. */

@@ -49,6 +49,13 @@ export const s = {
     borderBottom: "1px solid var(--border)",
   } satisfies CSSProperties,
   snippetPath: { flex: 1, minWidth: 0 } satisfies CSSProperties,
+  pathLink: {
+    fontSize: 12.5,
+    color: "var(--accent-text)",
+    textDecoration: "underline",
+    textUnderlineOffset: 2,
+  } satisfies CSSProperties,
+  pathPlain: { fontSize: 12.5, color: "var(--text-muted)" } satisfies CSSProperties,
   snippet: {
     margin: 0,
     padding: "10px 12px",

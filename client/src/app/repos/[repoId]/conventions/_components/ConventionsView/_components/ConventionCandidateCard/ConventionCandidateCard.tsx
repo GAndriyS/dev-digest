@@ -8,7 +8,7 @@
 
 import React from "react";
 import { useTranslations } from "next-intl";
-import { Badge, Button, MonoLink, ProgressBar, Textarea } from "@devdigest/ui";
+import { Badge, Button, ProgressBar, Textarea } from "@devdigest/ui";
 import type { ConventionCandidate } from "@devdigest/shared";
 import { githubBlobUrl } from "@/lib/github-urls";
 import { s } from "./styles";
@@ -99,7 +99,25 @@ export function ConventionCandidateCard({
           <div style={s.snippetWrap}>
             <div style={s.snippetHead}>
               <div style={s.snippetPath}>
-                <MonoLink href={href}>{pathLabel}</MonoLink>
+                {/* Only a link when there is somewhere to go. MonoLink with no
+                    href falls back to a <button> that looks clickable, focuses,
+                    and does nothing — worse than plain text. */}
+                {href ? (
+                  <a
+                    className="mono"
+                    href={href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title={t("card.openOnGitHub", { path: pathLabel })}
+                    style={s.pathLink}
+                  >
+                    {pathLabel}
+                  </a>
+                ) : (
+                  <span className="mono" style={s.pathPlain}>
+                    {pathLabel}
+                  </span>
+                )}
               </div>
             </div>
             <pre className="mono" style={s.snippet}>
@@ -125,12 +143,17 @@ export function ConventionCandidateCard({
       </div>
 
       <div style={s.actions}>
+        {/* These are toggles — clicking the active one clears it back to
+            pending — so the state has to be announced. Without aria-pressed the
+            only cues are the label text and a border tint. `active` is not
+            passed: Button honours it for `tertiary` only, so on these kinds it
+            would be a prop implying a pressed style that never paints. */}
         <Button
           kind="primary"
           size="sm"
           icon="Check"
           disabled={pending}
-          active={candidate.status === "accepted"}
+          aria-pressed={candidate.status === "accepted"}
           onClick={() => onStatus("accepted")}
         >
           {candidate.status === "accepted" ? t("card.accepted") : t("card.accept")}
@@ -140,7 +163,7 @@ export function ConventionCandidateCard({
           size="sm"
           icon="X"
           disabled={pending}
-          active={candidate.status === "rejected"}
+          aria-pressed={candidate.status === "rejected"}
           onClick={() => onStatus("rejected")}
         >
           {candidate.status === "rejected" ? t("card.rejected") : t("card.reject")}

@@ -75,6 +75,32 @@ live in `<package>/INSIGHTS.md`. Maintained by the `engineering-insights` skill.
 
 ## Tool & Library Notes
 
+- **2026-08-05** — Every CI workflow pins `pnpm` **10** via
+  `pnpm/action-setup@v4`, but nothing in the repo pinned it locally, so corepack
+  installed latest (11.x) on a fresh machine. pnpm 11 turns un-triaged
+  dependency build scripts into a FATAL error and writes `pnpm-workspace.yaml`
+  stubs asking you to triage each one — the untracked stubs that keep appearing
+  are that, not a repo file. The builds were never the problem: esbuild's
+  postinstall is not required, because `@esbuild/<platform>` ships the prebuilt
+  binary and the JS API resolves it from there. Fixed at the root by
+  `.nvmrc` (22) + `"packageManager": "pnpm@10.34.5"` in `server/` and `client/`.
+  One-time cost when switching major: pnpm 10 refuses to reuse a
+  pnpm-11-built `node_modules` and aborts with
+  `ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY` — rerun with
+  `pnpm install --config.confirmModulesPurge=false`.
+
+- **2026-08-05** — `drizzle-kit generate` stops with an INTERACTIVE prompt when
+  one diff both adds and drops a column ("is `category` created, or renamed from
+  `accepted`?"). It cannot be answered by piping keystrokes, and wrapping it in
+  `script` to fake a pty hangs. Split the change into two generates instead —
+  add the new columns, then drop the old one — so neither diff is ambiguous.
+
+- **2026-08-05** — In `docker-compose.override.yml`, `ports:` is a SEQUENCE, and
+  Compose *appends* an override's sequence to the base rather than replacing it:
+  a remap to `5433:5432` still tried to bind 5432 and still collided. The tag
+  `ports: !override` is what replaces the list. Verify with
+  `docker compose config` before concluding the override "did not apply".
+
 - **2026-08-04** — `gh pr checks <n>` shows only the LATEST run per check name,
   so a failed run that was later superseded by a passing one is invisible: the
   table read "all pass" while the PR was showing a red X. Verify with

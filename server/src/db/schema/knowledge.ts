@@ -70,5 +70,9 @@ export const conventions = pgTable(
       .default('pending'),
     createdAt: now(),
   },
-  (t) => ({ repoIdx: index('conventions_repo_idx').on(t.repoId) }),
+  // Tenancy column leftmost: every query in ConventionsRepository filters
+  // workspace_id AND repo_id, and workspace_id is a cascading FK that would
+  // otherwise seq-scan this table when a workspace is deleted. Matches the
+  // `memory` table above.
+  (t) => ({ repoIdx: index('conventions_repo_idx').on(t.workspaceId, t.repoId) }),
 );

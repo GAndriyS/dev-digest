@@ -7,11 +7,12 @@ import * as t from '../../db/schema.js';
  * L03 — conventions data-access layer. The ONLY place that touches the
  * `conventions` table. Every query is scoped by `workspaceId` (tenancy guard).
  *
- * It also reads the two `repos` columns the extractor needs (`clonePath` for
- * reading files, `fullName`/`defaultBranch` for the UI's GitHub links). That
- * duplicates a little of the repos repository on purpose: a module may not
- * import another module's repository (`no-cross-module-internals`), and the
- * alternative — widening a shared facade for two columns — is the bigger change.
+ * It also reads the one `repos` column the extractor needs — `clonePath`, to
+ * find the files to sample. That duplicates a little of the repos repository on
+ * purpose: a module may not import another module's repository
+ * (`no-cross-module-internals`), and widening a shared facade for one column is
+ * the bigger change. The UI's GitHub deep-links do NOT come from here; the
+ * client already holds the repo's full name and branch from its own repo list.
  */
 
 export type ConventionRow = typeof t.conventions.$inferSelect;
@@ -29,8 +30,6 @@ export interface InsertConvention {
 
 export interface RepoBasics {
   id: string;
-  fullName: string;
-  defaultBranch: string;
   clonePath: string | null;
 }
 
@@ -39,12 +38,7 @@ export class ConventionsRepository {
 
   async repoBasics(workspaceId: string, repoId: string): Promise<RepoBasics | undefined> {
     const [row] = await this.db
-      .select({
-        id: t.repos.id,
-        fullName: t.repos.fullName,
-        defaultBranch: t.repos.defaultBranch,
-        clonePath: t.repos.clonePath,
-      })
+      .select({ id: t.repos.id, clonePath: t.repos.clonePath })
       .from(t.repos)
       .where(and(eq(t.repos.workspaceId, workspaceId), eq(t.repos.id, repoId)));
     return row;
@@ -68,25 +62,32 @@ export class ConventionsRepository {
   }
 
   /**
-   * Drop only the untouched candidates of a repo. Accepted and rejected rows are
-   * user decisions and survive a re-scan — that is what makes "Re-scan" safe to
-   * press twice.
+   * Swap a repo's untouched candidates for a fresh set, atomically.
+   *
+   * Only `pending` rows go: accepted and rejected are user decisions and
+   * survive, which is what makes "Re-scan" safe to press twice. The delete and
+   * the insert share one transaction because half of this operation is worse
+   * than none of it — a failed insert after a committed delete leaves an empty
+   * triage list recoverable only by paying for another model call.
    */
-  async deletePending(workspaceId: string, repoId: string): Promise<void> {
-    await this.db
-      .delete(t.conventions)
-      .where(
-        and(
-          eq(t.conventions.workspaceId, workspaceId),
-          eq(t.conventions.repoId, repoId),
-          eq(t.conventions.status, 'pending'),
-        ),
-      );
-  }
-
-  async insertMany(values: InsertConvention[]): Promise<ConventionRow[]> {
-    if (values.length === 0) return [];
-    return this.db.insert(t.conventions).values(values).returning();
+  async replacePending(
+    workspaceId: string,
+    repoId: string,
+    values: InsertConvention[],
+  ): Promise<ConventionRow[]> {
+    return this.db.transaction(async (tx) => {
+      await tx
+        .delete(t.conventions)
+        .where(
+          and(
+            eq(t.conventions.workspaceId, workspaceId),
+            eq(t.conventions.repoId, repoId),
+            eq(t.conventions.status, 'pending'),
+          ),
+        );
+      if (values.length === 0) return [];
+      return tx.insert(t.conventions).values(values).returning();
+    });
   }
 
   async update(

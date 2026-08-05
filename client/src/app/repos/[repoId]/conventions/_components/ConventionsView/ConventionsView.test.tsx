@@ -17,11 +17,16 @@ const state = {
   isError: false,
   extractPending: false,
   repoNotFound: false,
+  extractData: undefined as { sampled_files: string[]; dropped_no_evidence: number } | undefined,
 };
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
   useParams: () => ({ repoId: "r1" }),
+}));
+
+vi.mock("@/components/repo-not-found", () => ({
+  RepoNotFound: () => <div>REPO_NOT_FOUND</div>,
 }));
 
 // The app chrome is not what this view is about; render its children only.
@@ -59,9 +64,9 @@ vi.mock("@/lib/hooks/conventions", () => ({
     isPending: state.extractPending,
     isError: false,
     error: null,
-    data: undefined,
+    data: state.extractData,
   }),
-  useUpdateConvention: () => ({ mutate: updateMutate, isPending: false }),
+  useUpdateConvention: () => ({ mutate: updateMutate, isPending: false, variables: undefined }),
 }));
 
 import { ConventionsView } from "./ConventionsView";
@@ -87,7 +92,7 @@ function renderView() {
       messages={{ conventions: messages, skills: skillMessages, common: commonMessages }}
     >
       <ToastProvider>
-        <ConventionsView repoId="r1" />
+        <ConventionsView />
       </ToastProvider>
     </NextIntlClientProvider>,
   );
@@ -99,6 +104,7 @@ beforeEach(() => {
   state.isError = false;
   state.extractPending = false;
   state.repoNotFound = false;
+  state.extractData = undefined;
   extractMutate.mockReset();
   updateMutate.mockReset();
   createSkillMutate.mockReset();
@@ -226,6 +232,46 @@ describe("ConventionsView", () => {
 
   it("shows the repo-not-found state for a stale repo id", () => {
     state.repoNotFound = true;
+    renderView();
+    // Assert positively: an absence-only check also passes if the component
+    // renders nothing at all.
+    expect(screen.getByText("REPO_NOT_FOUND")).toBeInTheDocument();
+    expect(screen.queryByText("No conventions extracted yet")).not.toBeInTheDocument();
+  });
+
+  it("reports discarded candidates even when every one of them was dropped", () => {
+    // The worst case: the model invented everything, so the list is empty. If
+    // the notice were inside the list guard the user would be told "nothing
+    // found" — which reads as "this repo has no conventions".
+    state.data = [];
+    state.extractData = { sampled_files: ["a.ts", "b.ts"], dropped_no_evidence: 2 };
+    renderView();
+    expect(
+      screen.getByText("2 candidates discarded — evidence not found in the repo"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Scanned 2 files")).toBeInTheDocument();
+  });
+
+  it("does not cry fabrication when nothing was dropped", () => {
+    state.data = [candidate()];
+    state.extractData = { sampled_files: ["a.ts"], dropped_no_evidence: 0 };
+    renderView();
+    expect(screen.getByText("Scanned 1 file")).toBeInTheDocument();
+    expect(screen.queryByText(/discarded/)).not.toBeInTheDocument();
+  });
+
+  it("disables the scan button while a scan is running", () => {
+    state.extractPending = true;
+    renderView();
+    const scanning = screen.getByText("Scanning…").closest("button");
+    expect(scanning).toBeDisabled();
+    fireEvent.click(scanning!);
+    expect(extractMutate).not.toHaveBeenCalled();
+  });
+
+  it("shows skeletons rather than the empty state while loading", () => {
+    state.data = undefined;
+    state.isLoading = true;
     renderView();
     expect(screen.queryByText("No conventions extracted yet")).not.toBeInTheDocument();
   });

@@ -26,11 +26,15 @@ export const s = {
     marginBottom: 16,
   } satisfies CSSProperties,
   count: { fontSize: 13, color: "var(--text-secondary)", flex: 1 } satisfies CSSProperties,
-  dropped: {
+  scanSummary: {
+    display: "flex",
+    gap: 10,
+    flexWrap: "wrap",
     fontSize: 12.5,
     color: "var(--text-muted)",
     marginBottom: 14,
   } satisfies CSSProperties,
+  dropped: { color: "var(--warn)" } satisfies CSSProperties,
   list: { display: "flex", flexDirection: "column", gap: 12 } satisfies CSSProperties,
   error: {
     marginBottom: 16,
@@ -42,23 +46,4 @@ export const s = {
     fontSize: 13,
   } satisfies CSSProperties,
 
-  // ---- create-skill modal ----
-  banner: {
-    display: "flex",
-    gap: 10,
-    alignItems: "flex-start",
-    padding: "10px 12px",
-    borderRadius: 7,
-    border: "1px solid var(--accent)",
-    background: "var(--accent-bg)",
-    fontSize: 12.5,
-    lineHeight: 1.5,
-    color: "var(--text-secondary)",
-    marginBottom: 18,
-  } satisfies CSSProperties,
-  bannerIcon: { color: "var(--accent-text)", flexShrink: 0, marginTop: 1 } satisfies CSSProperties,
-  modalRow: { display: "flex", gap: 16 } satisfies CSSProperties,
-  modalCol: { flex: 1, minWidth: 0 } satisfies CSSProperties,
-  toggleRow: { display: "flex", alignItems: "center", gap: 10 } satisfies CSSProperties,
-  footer: { display: "flex", gap: 10, justifyContent: "flex-end" } satisfies CSSProperties,
 } as const;

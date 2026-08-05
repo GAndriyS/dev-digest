@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ExtractedConvention,
   buildExtractionMessages,
   clipFile,
   locateSnippet,
   normalizeRule,
   verifyCandidates,
-  type ExtractedConvention,
   type SampleFile,
 } from './helpers.js';
-import { MAX_FILE_CHARS } from './constants.js';
+import { MAX_FILE_CHARS, MIN_SNIPPET_CHARS } from './constants.js';
 
 const FILE = `import { Redis } from "ioredis";
 import { config } from "./config";
@@ -44,7 +44,9 @@ describe('locateSnippet', () => {
   });
 
   it('matches a snippet that is only part of the line', () => {
-    expect(locateSnippet(FILE, 'new Redis(')).toBe(4);
+    // A model that copies the expression without the `export const` prefix has
+    // still pointed at real code. Long enough to clear the substance floor.
+    expect(locateSnippet(FILE, 'new Redis(config.redisUrl)')).toBe(4);
   });
 
   it('matches consecutive lines and reports the first', () => {
@@ -64,6 +66,20 @@ describe('locateSnippet', () => {
     expect(locateSnippet(FILE, '   \n  ')).toBeNull();
   });
 
+  it.each(['}', '});', 'const', 'import'])(
+    'refuses %j — a fragment that matches everywhere identifies nothing',
+    (fragment) => {
+      // Without a substance floor these all "locate", and a model could attach
+      // one to an invented rule and pass the evidence gate.
+      expect(locateSnippet(FILE, fragment)).toBeNull();
+    },
+  );
+
+  it('accepts a snippet just over the substance floor', () => {
+    expect('return ok(user);'.length).toBeGreaterThanOrEqual(MIN_SNIPPET_CHARS);
+    expect(locateSnippet(FILE, 'return ok(user);')).toBe(8);
+  });
+
   it('does not match lines that are non-consecutive in the file', () => {
     // Both lines exist, but line 4 and line 7 are not adjacent.
     const snippet = 'export const redis = new Redis(config.redisUrl);\nreturn ok(user);';
@@ -72,65 +88,86 @@ describe('locateSnippet', () => {
 });
 
 describe('normalizeRule', () => {
-  it('folds case, trailing punctuation and repeated spaces together', () => {
-    expect(normalizeRule('Always  use async/await.')).toBe(normalizeRule('always use async/await'));
+  // Against a literal, not against itself: `normalizeRule(a) === normalizeRule(b)`
+  // is also satisfied by a normalizer that collapses every input to one token,
+  // which would make every candidate after the first look like a duplicate.
+  it('produces the expected normal form', () => {
+    expect(normalizeRule('Always  use async/await.')).toBe('always use async/await');
+  });
+
+  it('keeps genuinely different rules apart', () => {
+    expect(normalizeRule('Use async/await')).not.toBe(normalizeRule('Use Result types'));
   });
 });
 
 describe('verifyCandidates', () => {
   it('keeps a grounded candidate and attaches the derived line', () => {
-    const { kept, dropped } = verifyCandidates([candidate()], FILES);
-    expect(dropped).toBe(0);
+    const { kept, droppedNoEvidence } = verifyCandidates([candidate()], FILES);
+    expect(droppedNoEvidence).toBe(0);
     expect(kept).toHaveLength(1);
     expect(kept[0]!.evidence_line).toBe(4);
   });
 
-  it('overrides a line number the model got wrong', () => {
-    // Nothing in ExtractedConvention carries a line — proving the point that the
-    // derived value is the only source. Guard against that changing silently.
-    const { kept } = verifyCandidates([candidate()], FILES);
-    expect(kept[0]!.evidence_line).toBe(4);
+  it('gives the model no way to supply a line — the derived one is the only source', () => {
+    // Structural: ExtractedConvention has no line field, and a model that sends
+    // one anyway has it stripped. If someone adds one to the schema, this fails.
     expect('evidence_line' in candidate()).toBe(false);
+    const parsed = ExtractedConvention.parse({ ...candidate(), evidence_line: 99 });
+    expect(parsed).not.toHaveProperty('evidence_line');
+  });
+
+  it('keeps two genuinely different rules in one batch', () => {
+    // The mirror of the dedupe tests: proves normalization separates as well as
+    // it collapses, so an over-eager normalizer cannot silently swallow rules.
+    const { kept, droppedDuplicate } = verifyCandidates(
+      [candidate(), candidate({ rule: 'Handlers return ok() rather than raw values' })],
+      FILES,
+    );
+    expect(kept).toHaveLength(2);
+    expect(droppedDuplicate).toBe(0);
   });
 
   it('drops a candidate whose snippet is not in the named file', () => {
-    const { kept, dropped } = verifyCandidates(
+    const { kept, droppedNoEvidence } = verifyCandidates(
       [candidate({ evidence_snippet: 'export const mongo = new Mongo();' })],
       FILES,
     );
     expect(kept).toHaveLength(0);
-    expect(dropped).toBe(1);
+    expect(droppedNoEvidence).toBe(1);
   });
 
   it('drops a candidate naming a file that was never sampled', () => {
-    const { kept, dropped } = verifyCandidates(
+    const { kept, droppedNoEvidence } = verifyCandidates(
       [candidate({ evidence_path: 'src/does/not/exist.ts' })],
       FILES,
     );
     expect(kept).toHaveLength(0);
-    expect(dropped).toBe(1);
+    expect(droppedNoEvidence).toBe(1);
   });
 
   it('drops a rule the user already rejected, even reworded', () => {
-    const { kept, dropped } = verifyCandidates([candidate()], FILES, [
+    const { kept, droppedDuplicate, droppedNoEvidence } = verifyCandidates([candidate()], FILES, [
       'Redis  access goes through a single exported client.',
     ]);
     expect(kept).toHaveLength(0);
-    expect(dropped).toBe(1);
+    // Counted as a duplicate, NOT as missing evidence: the model behaved
+    // correctly here, and the wire field must not call this a fabrication.
+    expect(droppedDuplicate).toBe(1);
+    expect(droppedNoEvidence).toBe(0);
   });
 
   it('drops duplicates within one batch', () => {
-    const { kept, dropped } = verifyCandidates([candidate(), candidate()], FILES);
+    const { kept, droppedDuplicate } = verifyCandidates([candidate(), candidate()], FILES);
     expect(kept).toHaveLength(1);
-    expect(dropped).toBe(1);
+    expect(droppedDuplicate).toBe(1);
   });
 
   it('keeps grounded candidates when others in the batch are dropped', () => {
     const good = candidate();
     const bad = candidate({ rule: 'Invented rule', evidence_snippet: 'nothing like this' });
-    const { kept, dropped } = verifyCandidates([bad, good], FILES);
+    const { kept, droppedNoEvidence } = verifyCandidates([bad, good], FILES);
     expect(kept.map((k) => k.rule)).toEqual([good.rule]);
-    expect(dropped).toBe(1);
+    expect(droppedNoEvidence).toBe(1);
   });
 });
 
@@ -152,9 +189,13 @@ describe('clipFile', () => {
     expect(clipFile('short')).toBe('short');
   });
 
-  it('truncates a file past the cap', () => {
-    const clipped = clipFile('x'.repeat(MAX_FILE_CHARS + 500));
-    expect(clipped.length).toBeLessThan(MAX_FILE_CHARS + 10);
-    expect(clipped.endsWith('…')).toBe(true);
+  it('truncates from the TAIL, keeping the head', () => {
+    // Markers on both ends: a homogeneous fixture cannot tell head-truncation
+    // from tail-truncation, and slicing the wrong end would send the model the
+    // bottom of every large file while still passing a length check.
+    const clipped = clipFile(`HEAD_MARKER${'x'.repeat(MAX_FILE_CHARS)}TAIL_MARKER`);
+    expect(clipped.startsWith('HEAD_MARKER')).toBe(true);
+    expect(clipped).not.toContain('TAIL_MARKER');
+    expect(clipped.length).toBe(MAX_FILE_CHARS + 2); // clipped text + "\n…"
   });
 });

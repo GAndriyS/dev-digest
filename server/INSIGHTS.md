@@ -21,6 +21,18 @@ promotion rules → root `INSIGHTS.md`.
 
 ## Codebase Patterns
 
+- **2026-08-05** — Seeded PR #482 has `pr_files` rows but **no `patch` text**, so
+  it is not reviewable offline: `diffFromPrFiles` skips patch-less rows, the
+  review runs against an EMPTY diff, and the grounding gate then drops every
+  finding for citing a file not in the diff. The result reads as "the agent
+  found nothing" rather than as a broken fixture. Any offline review experiment
+  needs a PR seeded WITH real unified-diff text (see PR #483 and
+  `BREAKING_PR_FILES` in `db/seed.ts`), and its `@@` headers must be exact —
+  `parseUnifiedDiff` numbers each hunk from the new-side START, so an off-by-one
+  there silently drops findings the same way. Pin any such fixture with a test
+  that asserts the EXACT line set; `toContain` on a contiguous band passes for
+  any start within the band's width and catches nothing.
+
 - **2026-07-31** — Course features cut from the starter were removed
   *surgically*: the computation usually survives and only persistence + display
   were stripped. Before building one, read the removal commit

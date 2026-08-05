@@ -172,7 +172,47 @@ d('conventions module', () => {
     const after = rescan.json();
     expect(after.candidates).toHaveLength(1);
     expect(after.candidates[0]).toMatchObject({ id: first.id, status: 'accepted' });
-    expect(after.dropped_no_evidence).toBe(1);
+    // Dropped as a DUPLICATE, not for missing evidence. The wire field means
+    // "the model invented this", and the UI says so — a re-scan that correctly
+    // re-proposes a known rule must not be reported as a fabrication.
+    expect(after.dropped_no_evidence).toBe(0);
+  });
+
+  it('replaces pending candidates rather than accumulating them', async () => {
+    // The other re-scan tests all move their row out of `pending` first, so
+    // `deletePending` never has anything to delete in them. A no-op delete
+    // would pass those and duplicate a row on every scan — this is the case
+    // that actually exercises it.
+    const other = { ...grounded, rule: 'Config is read through the exported config object' };
+    const repoId = await freshRepo();
+    const app = await makeApp([grounded]);
+
+    await app.inject({ method: 'POST', url: `/repos/${repoId}/conventions/extract`, payload: {} });
+    const firstList = (
+      await app.inject({ method: 'GET', url: `/repos/${repoId}/conventions` })
+    ).json();
+    expect(firstList).toHaveLength(1);
+    expect(firstList[0].status).toBe('pending');
+
+    // A different grounded rule: the stale pending row must be gone, not
+    // sitting beside the new one.
+    const app2 = await makeApp([other]);
+    const rescan = await app2.inject({
+      method: 'POST',
+      url: `/repos/${repoId}/conventions/extract`,
+      payload: {},
+    });
+    const after = rescan.json().candidates;
+    expect(after).toHaveLength(1);
+    expect(after[0]).toMatchObject({ rule: other.rule, status: 'pending' });
+
+    // And scanning the same rule again still leaves exactly one row.
+    const again = await app2.inject({
+      method: 'POST',
+      url: `/repos/${repoId}/conventions/extract`,
+      payload: {},
+    });
+    expect(again.json().candidates).toHaveLength(1);
   });
 
   it('rewords a rule without changing its status', async () => {
@@ -217,7 +257,8 @@ d('conventions module', () => {
     const rules = rescan.json().candidates;
     expect(rules).toHaveLength(1);
     expect(rules[0]).toMatchObject({ id: first.id, status: 'rejected' });
-    expect(rescan.json().dropped_no_evidence).toBe(1);
+    // Duplicate of a rejected rule — again not an evidence failure.
+    expect(rescan.json().dropped_no_evidence).toBe(0);
   });
 
   it('answers 409 when the repo has never been cloned', async () => {
@@ -231,6 +272,34 @@ d('conventions module', () => {
     });
     expect(res.statusCode).toBe(409);
     expect(res.json().error.code).toBe('repo_not_cloned');
+  });
+
+  it('422s a patch that changes nothing or misspells a key', async () => {
+    const app = await makeApp([grounded]);
+    const repoId = await freshRepo();
+    await app.inject({ method: 'POST', url: `/repos/${repoId}/conventions/extract`, payload: {} });
+    const first = (
+      await app.inject({ method: 'GET', url: `/repos/${repoId}/conventions` })
+    ).json()[0];
+
+    const empty = await app.inject({
+      method: 'PUT',
+      url: `/conventions/${first.id}`,
+      payload: {},
+    });
+    expect(empty.statusCode).toBe(422);
+
+    // The important one: without .strict() this validates, hits the no-op
+    // branch and answers 200 — a typo that looks like it worked.
+    const typo = await app.inject({
+      method: 'PUT',
+      url: `/conventions/${first.id}`,
+      payload: { staus: 'accepted' },
+    });
+    expect(typo.statusCode).toBe(422);
+
+    const unchanged = await app.inject({ method: 'GET', url: `/repos/${repoId}/conventions` });
+    expect(unchanged.json()[0].status).toBe('pending');
   });
 
   it('404s an unknown repo and rejects a non-uuid id at the edge', async () => {

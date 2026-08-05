@@ -156,7 +156,18 @@ export function ImportSkillDrawer({ onClose }: { onClose: () => void }) {
             type="file"
             accept={FILE_ACCEPT}
             aria-label={t("import.fileLabel")}
-            onChange={(e) => void onPick(e.target.files?.[0])}
+            // Out of the tab order: the Button beside it is the keyboard
+            // affordance, and a clipped input would otherwise be an invisible
+            // stop with no focus ring.
+            tabIndex={-1}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              // Clear the value so picking the SAME file fires change again.
+              // Without this, the natural retry after a read or preview error
+              // is a silent no-op.
+              e.target.value = "";
+              void onPick(file);
+            }}
             style={s.fileInput}
           />
           <Button kind="secondary" icon="Upload" onClick={() => fileRef.current?.click()}>
