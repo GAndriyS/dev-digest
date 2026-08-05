@@ -245,15 +245,51 @@ export const SkillImportPreview = z.object({
 export type SkillImportPreview = z.infer<typeof SkillImportPreview>;
 
 // ---- Conventions ----
+/**
+ * Tri-state rather than an `accepted` boolean: a re-scan must tell a rejected
+ * rule apart from an unreviewed one, or every rejection reappears next scan.
+ */
+export const ConventionStatus = z.enum(['pending', 'accepted', 'rejected']);
+export type ConventionStatus = z.infer<typeof ConventionStatus>;
+
+/**
+ * One extracted house-rule with its proof. `evidence_line` is derived by the
+ * server from where the snippet actually occurs in the file — never the model's
+ * own count — which is what lets the UI deep-link to real code on GitHub.
+ * A candidate whose snippet could not be located is dropped, never stored.
+ */
 export const ConventionCandidate = z.object({
   id: z.string(),
+  category: z.string(),
   rule: z.string(),
   evidence_path: z.string(),
   evidence_snippet: z.string(),
+  evidence_line: z.number().int().nullable(),
   confidence: z.number().min(0).max(1),
-  accepted: z.boolean(),
+  status: ConventionStatus,
 });
 export type ConventionCandidate = z.infer<typeof ConventionCandidate>;
+
+/** Accept/reject, or correct the rule's wording before it becomes a skill. */
+export const ConventionPatch = z
+  .object({
+    rule: z.string().min(1),
+    status: ConventionStatus,
+  })
+  .partial();
+export type ConventionPatch = z.infer<typeof ConventionPatch>;
+
+/**
+ * Extraction outcome. `dropped_no_evidence` is reported rather than silently
+ * swallowed: it is the honest measure of how much the model made up, and the
+ * UI shows it so a bad scan looks like a bad scan.
+ */
+export const ConventionExtractResult = z.object({
+  candidates: z.array(ConventionCandidate),
+  sampled_files: z.array(z.string()),
+  dropped_no_evidence: z.number().int(),
+});
+export type ConventionExtractResult = z.infer<typeof ConventionExtractResult>;
 
 // ---- Agents ----
 // 'openrouter' routes through the OpenAI-compatible API (OpenAIProvider with a

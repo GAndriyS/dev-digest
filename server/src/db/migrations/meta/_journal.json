@@ -85,6 +85,20 @@
       "when": 1785859029622,
       "tag": "0011_hesitant_kat_farrell",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1785950535216,
+      "tag": "0012_conventions_candidate_fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1785950554783,
+      "tag": "0013_conventions_drop_accepted",
+      "breakpoints": true
     }
   ]
 }
