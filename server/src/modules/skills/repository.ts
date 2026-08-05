@@ -12,6 +12,13 @@ import { nextSkillVersion } from './helpers.js';
  * skill query is workspace-scoped.
  */
 
+/**
+ * `db` or an open transaction. The version-bump writes have to join the caller's
+ * transaction rather than open their own connection, or the row lock they rely
+ * on is held by someone else and they deadlock against it.
+ */
+type Executor = Db | Parameters<Parameters<Db['transaction']>[0]>[0];
+
 export type SkillRow = typeof t.skills.$inferSelect;
 export type SkillVersionRow = typeof t.skillVersions.$inferSelect;
 export type EvalCaseRow = typeof t.evalCases.$inferSelect;
@@ -149,41 +156,50 @@ export class SkillsRepository {
    * (`nextSkillVersion` owns that rule).
    *
    * On a bump we write TWO rows: the outgoing body under its own version (the
-   * lazy backfill — `onConflictDoNothing` makes it a no-op from the second edit
-   * on) and the incoming body under the new version. That invariant — "once a
-   * skill has been edited, every version 1..N has a row" — is what lets the
-   * history read path stay a plain select.
+   * lazy backfill — idempotent, so a no-op from the second edit on) and the
+   * incoming body under the new version. That invariant — "once a skill has been
+   * edited, every version 1..N has a row" — is what lets the history read path
+   * stay a plain select.
+   *
+   * All three writes share ONE transaction, and the skill row is locked for the
+   * duration. Both halves matter: without the lock two concurrent edits of v3
+   * both compute v4, and without the transaction a crash between the snapshot
+   * and the row update leaves them disagreeing. Either way the live body and
+   * `skill_versions[4]` end up different, permanently, and every
+   * `run_skills.skill_version = 4` then points at a body that never ran.
    */
   async update(
     workspaceId: string,
     id: string,
     patch: UpdateSkill,
   ): Promise<SkillRow | undefined> {
-    const existing = await this.getById(workspaceId, id);
-    if (!existing) return undefined;
+    return this.db.transaction(async (tx) => {
+      const existing = await this.lockById(tx, workspaceId, id);
+      if (!existing) return undefined;
 
-    const { version, bumped } = nextSkillVersion(existing, patch);
+      const { version, bumped } = nextSkillVersion(existing, patch);
 
-    if (bumped) {
-      await this.snapshot(existing.id, existing.version, existing.body);
-      await this.snapshot(existing.id, version, patch.body!);
-    }
+      if (bumped) {
+        await this.backfillSnapshot(tx, existing.id, existing.version, existing.body);
+        await this.appendSnapshot(tx, existing.id, version, patch.body!);
+      }
 
-    const [row] = await this.db
-      .update(t.skills)
-      .set({
-        ...(patch.name !== undefined ? { name: patch.name } : {}),
-        ...(patch.description !== undefined ? { description: patch.description } : {}),
-        ...(patch.type !== undefined ? { type: patch.type } : {}),
-        ...(patch.source !== undefined ? { source: patch.source } : {}),
-        ...(patch.body !== undefined ? { body: patch.body } : {}),
-        ...(patch.enabled !== undefined ? { enabled: patch.enabled } : {}),
-        ...(patch.evidenceFiles !== undefined ? { evidenceFiles: patch.evidenceFiles } : {}),
-        ...(bumped ? { version } : {}),
-      })
-      .where(and(eq(t.skills.workspaceId, workspaceId), eq(t.skills.id, id)))
-      .returning();
-    return row;
+      const [row] = await tx
+        .update(t.skills)
+        .set({
+          ...(patch.name !== undefined ? { name: patch.name } : {}),
+          ...(patch.description !== undefined ? { description: patch.description } : {}),
+          ...(patch.type !== undefined ? { type: patch.type } : {}),
+          ...(patch.source !== undefined ? { source: patch.source } : {}),
+          ...(patch.body !== undefined ? { body: patch.body } : {}),
+          ...(patch.enabled !== undefined ? { enabled: patch.enabled } : {}),
+          ...(patch.evidenceFiles !== undefined ? { evidenceFiles: patch.evidenceFiles } : {}),
+          ...(bumped ? { version } : {}),
+        })
+        .where(and(eq(t.skills.workspaceId, workspaceId), eq(t.skills.id, id)))
+        .returning();
+      return row;
+    });
   }
 
   /**
@@ -197,17 +213,19 @@ export class SkillsRepository {
     id: string,
     body: string,
   ): Promise<SkillRow | undefined> {
-    const existing = await this.getById(workspaceId, id);
-    if (!existing) return undefined;
-    const version = existing.version + 1;
-    await this.snapshot(existing.id, existing.version, existing.body);
-    await this.snapshot(existing.id, version, body);
-    const [row] = await this.db
-      .update(t.skills)
-      .set({ body, version })
-      .where(and(eq(t.skills.workspaceId, workspaceId), eq(t.skills.id, id)))
-      .returning();
-    return row;
+    return this.db.transaction(async (tx) => {
+      const existing = await this.lockById(tx, workspaceId, id);
+      if (!existing) return undefined;
+      const version = existing.version + 1;
+      await this.backfillSnapshot(tx, existing.id, existing.version, existing.body);
+      await this.appendSnapshot(tx, existing.id, version, body);
+      const [row] = await tx
+        .update(t.skills)
+        .set({ body, version })
+        .where(and(eq(t.skills.workspaceId, workspaceId), eq(t.skills.id, id)))
+        .returning();
+      return row;
+    });
   }
 
   async deleteById(workspaceId: string, id: string): Promise<boolean> {
@@ -218,11 +236,50 @@ export class SkillsRepository {
     return rows.length > 0;
   }
 
-  private async snapshot(skillId: string, version: number, body: string): Promise<void> {
-    await this.db
-      .insert(t.skillVersions)
-      .values({ skillId, version, body })
-      .onConflictDoNothing();
+  /**
+   * Read the skill and hold a row lock until the transaction ends, so a second
+   * writer computing the next version waits and then sees the version this one
+   * committed rather than racing it to the same number.
+   */
+  private async lockById(
+    tx: Executor,
+    workspaceId: string,
+    id: string,
+  ): Promise<SkillRow | undefined> {
+    const [row] = await tx
+      .select()
+      .from(t.skills)
+      .where(and(eq(t.skills.workspaceId, workspaceId), eq(t.skills.id, id)))
+      .for('update');
+    return row;
+  }
+
+  /** Lazy v1 backfill — expected to be a no-op from the second edit on. */
+  private async backfillSnapshot(
+    tx: Executor,
+    skillId: string,
+    version: number,
+    body: string,
+  ): Promise<void> {
+    await tx.insert(t.skillVersions).values({ skillId, version, body }).onConflictDoNothing();
+  }
+
+  /**
+   * Write the INCOMING body under a version that must not already exist.
+   *
+   * Deliberately not `onConflictDoNothing`: under the row lock a collision can
+   * no longer come from a race, so one means the history is already broken —
+   * and swallowing it is what turned that into a silent, permanent divergence
+   * between `skills.body` and the snapshot past runs are recorded against. The
+   * conflict now aborts the transaction and the caller sees a 500.
+   */
+  private async appendSnapshot(
+    tx: Executor,
+    skillId: string,
+    version: number,
+    body: string,
+  ): Promise<void> {
+    await tx.insert(t.skillVersions).values({ skillId, version, body });
   }
 
   // ---- skill_versions (immutable body history) ----------------------------
