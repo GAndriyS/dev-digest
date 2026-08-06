@@ -42,6 +42,19 @@ append-only. Entry format and promotion rules → root `INSIGHTS.md`.
 
 ## Tool & Library Notes
 
+- **2026-08-06** — React Query discards a superseded mutation's per-`mutate`
+  callbacks only when a NEW `mutate` starts on the same observer. So the usual
+  "the library handles the race" assumption holds for pick-A-then-pick-B, and
+  breaks for any handler that RETURNS EARLY before calling `mutate` — an
+  unsupported extension, a failed `FileReader`, a validation guard. The earlier
+  request stays in flight with its `onSuccess` armed and lands its data on top of
+  the new error state: `ImportSkillDrawer` showed "Unsupported file" and then
+  filled the form with the previous zip's skill, badged with the new filename.
+  Guard those flows with a monotonic pick token captured at entry and re-checked
+  inside `onSuccess` (`if (pick !== pickRef.current) return`). Same shape applies
+  to any modal that snapshots props at mount: the overlay blocks CLICKS, not a
+  mutation already in flight, so state read at save time can disagree with state
+  captured at open time — take one snapshot and read only that.
 - **2026-08-04** — The Browser-pane blocker is still live: `preview_start` opens
   the tab, but `document.visibilityState` stays `"hidden"` and `computer
   screenshot` fails outright with "the Browser pane is not displayed, so the page

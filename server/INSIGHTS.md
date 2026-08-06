@@ -21,6 +21,29 @@ promotion rules → root `INSIGHTS.md`.
 
 ## Codebase Patterns
 
+- **2026-08-06** — Anything read out of `server/clones/**` is ATTACKER-CONTROLLED
+  content: importing an arbitrary public repo is the product's normal flow, so a
+  repo can commit `tsconfig.json -> ~/.devdigest/secrets.json` and any code that
+  `join(clonePath, path)`s its way to a file will follow the link straight out of
+  the clone. `..` is not the vector to worry about — git tree entries cannot
+  contain it — the symlink is, and it defeats every check that reasons about how
+  a path is SPELLED. `realpath` both sides and compare, and keep the separator in
+  the prefix (`real.startsWith(root + sep)`), or `/clones/repo-evil` passes as
+  inside `/clones/repo`. The conventions sampler does this in
+  `readInsideClone`/`isInsideRoot`; any future clone reader must too. Note this
+  degrades to harmless on a Windows clone without Developer Mode, where git
+  materialises symlinks as text files — so the hole is invisible in local
+  testing here and live in CI and on any Linux host.
+- **2026-08-06** — When a matcher normalises BOTH a needle and a haystack, drop
+  the same things from both sides or the strictness lands somewhere nobody
+  intended. `locateSnippet` filtered blank lines out of the model's snippet but
+  kept them in the file, so a snippet copied character-for-character across a
+  blank line — exactly what the extraction prompt demands — could never match,
+  and the honest rule was counted in `dropped_no_evidence`, the field the UI
+  presents as "how much the model made up". The fix is to condense both sides and
+  carry the ORIGINAL indices alongside, since the located line number is
+  published as a GitHub deep-link. A test that only covers the inverse direction
+  (a spurious blank in the needle) reports this as working.
 - **2026-08-05** — Seeded PR #482 has `pr_files` rows but **no `patch` text**, so
   it is not reviewable offline: `diffFromPrFiles` skips patch-less rows, the
   review runs against an EMPTY diff, and the grounding gate then drops every
