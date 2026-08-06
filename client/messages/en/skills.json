@@ -199,7 +199,8 @@
       "categoryLabel": "Expected category",
       "cancel": "Cancel",
       "save": "Save case",
-      "saving": "Saving…"
+      "saving": "Saving…",
+      "saveFailed": "Could not save this case"
     }
   },
   "stats": {

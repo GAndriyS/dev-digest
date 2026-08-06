@@ -7,6 +7,7 @@ import React from "react";
 import { useTranslations } from "next-intl";
 import { Button, FormField, Modal, SelectInput, TextInput, Textarea } from "@devdigest/ui";
 import type { EvalCase, FindingCategory, Severity } from "@devdigest/shared";
+import { ApiError } from "@/lib/api";
 import { useCreateEvalCase, useUpdateEvalCase } from "@/lib/hooks/skills";
 import { CATEGORY_VALUES, SEVERITY_VALUES } from "../../constants";
 import { readExpected, toExpectedOutput } from "../../helpers";
@@ -53,6 +54,13 @@ export function EvalCaseModal({
   const canSubmit =
     name.trim().length > 0 && diff.trim().length > 0 && !needsSeverity && !initial.mixed && !pending;
 
+  const failed = create.isError || update.isError;
+  const failure = create.error ?? update.error;
+
+  // A failed save must keep the modal open with the authored diff intact: it is
+  // the only copy, and closing on failure loses it. `catch` rather than a bare
+  // `await` because an unhandled rejection is not an error state — the alert
+  // below is, and `onClose` must not run past it.
   const submit = async () => {
     const input = {
       name: name.trim(),
@@ -64,8 +72,12 @@ export function EvalCaseModal({
         mixed: false,
       }),
     };
-    if (evalCase) await update.mutateAsync({ skillId, id: evalCase.id, patch: input });
-    else await create.mutateAsync({ skillId, input });
+    try {
+      if (evalCase) await update.mutateAsync({ skillId, id: evalCase.id, patch: input });
+      else await create.mutateAsync({ skillId, input });
+    } catch {
+      return;
+    }
     onClose();
   };
 
@@ -87,6 +99,12 @@ export function EvalCaseModal({
       }
     >
       <div style={s.body}>
+        {failed && (
+          <div role="alert" style={s.error}>
+            {t("evals.modal.saveFailed")}
+            {failure instanceof ApiError ? ` — ${failure.message}` : null}
+          </div>
+        )}
         <FormField label={t("evals.modal.nameLabel")} required>
           <TextInput value={name} onChange={setName} placeholder={t("evals.modal.namePlaceholder")} />
         </FormField>

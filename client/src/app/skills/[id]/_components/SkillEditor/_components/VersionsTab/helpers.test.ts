@@ -109,4 +109,22 @@ describe("diffLines — identical head/tail are peeled before the LCS", () => {
     expect(countChanges(rows)).toEqual({ added: 2000, removed: 2000 });
     expect(rows.some((r) => r.kind === "context")).toBe(false);
   });
+
+  it("keeps wholesale line numbers true to the whole body after a peeled head", () => {
+    // The case above has NO common head, which is why it could not catch this:
+    // the degenerate path numbered its rows from 1 and restarted the gutter
+    // under the context lines it had just emitted.
+    const head = ["# title", "", "intro line"];
+    const before = [...head, ...Array.from({ length: 2000 }, (_, k) => `a${k}`)].join("\n");
+    const after = [...head, ...Array.from({ length: 2000 }, (_, k) => `b${k}`)].join("\n");
+    const rows = diffLines(before, after);
+
+    const context = rows.filter((r) => r.kind === "context");
+    expect(context.map((r) => r.leftNo)).toEqual([1, 2, 3]);
+
+    const firstDel = rows.find((r) => r.kind === "del");
+    const firstAdd = rows.find((r) => r.kind === "add");
+    expect([firstDel?.text, firstDel?.leftNo]).toEqual(["a0", 4]);
+    expect([firstAdd?.text, firstAdd?.rightNo]).toEqual(["b0", 4]);
+  });
 });

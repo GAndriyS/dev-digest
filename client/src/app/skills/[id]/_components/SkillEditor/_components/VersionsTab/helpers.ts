@@ -99,8 +99,8 @@ export function diffLines(before: string, after: string): DiffRow[] {
  */
 function wholesale(a: string[], b: string[], offset = 0): DiffRow[] {
   return [
-    ...a.map((text, k) => ({ kind: "del" as const, text, leftNo: k + 1, rightNo: null })),
-    ...b.map((text, k) => ({ kind: "add" as const, text, leftNo: null, rightNo: k + 1 })),
+    ...a.map((text, k) => ({ kind: "del" as const, text, leftNo: offset + k + 1, rightNo: null })),
+    ...b.map((text, k) => ({ kind: "add" as const, text, leftNo: null, rightNo: offset + k + 1 })),
   ];
 }
 
