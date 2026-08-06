@@ -168,6 +168,19 @@ live in `<package>/INSIGHTS.md`. Maintained by the `engineering-insights` skill.
   `Get-NetTCPConnection -LocalPort 3001 -State Listen | Select LocalAddress,OwningProcess`
   — two rows means this. Curl `127.0.0.1`, never `localhost`, to test our API.
 
+- **2026-08-06** — `gh` resolves a bare PR number against the FORK PARENT, not
+  `origin`. This clone has two remotes' worth of history: `origin` is
+  `GAndriyS/dev-digest`, and GitHub knows it as a fork of
+  `ai-agentic-engineering-neo/dev-digest`. `gh pr view 6` returns the parent's
+  PR #6 (`fix(ci): correct PR-review posting`, MERGED, a different branch
+  entirely) while `gh pr view https://github.com/GAndriyS/dev-digest/pull/6`
+  returns ours. The failure is silent and reads as "the PR body changed under
+  me" rather than as the wrong repository; `gh pr edit 6 --body-file …` would
+  have rewritten a stranger's merged PR. The tell is
+  `gh pr list --head <our-branch>` coming back EMPTY while the branch plainly
+  has an open PR. Always pass `--repo GAndriyS/dev-digest` (or the full URL) to
+  every `gh pr`/`gh api` call in this repo.
+
 ## Recurring Errors & Fixes
 
 - **2026-08-01** — API goes silent: port still listening, TCP still accepted,
