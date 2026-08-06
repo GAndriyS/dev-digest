@@ -12,14 +12,14 @@ Reusable AI skills that provide specialized knowledge and workflows. Canonical l
 | [postgresql-table-design](postgresql-table-design/SKILL.md) | Backend | Postgres schema design, data types, indexing, constraints |
 | [next-best-practices](next-best-practices/SKILL.md) | Frontend | Next.js App Router, RSC boundaries, data fetching, optimization |
 | [react-best-practices](react-best-practices/SKILL.md) | Frontend | React anti-patterns, state management, hooks rules |
-| [frontend-ui-architecture](frontend-ui-architecture/SKILL.md) `v1.0.0` | Frontend | Where code lives: component layout, constants, helpers, logic placement, duplication |
+| [frontend-ui-architecture](frontend-ui-architecture/SKILL.md) `v1.1.0` | Frontend | Where code lives: component layout, constants, helpers, logic placement, duplication |
 | [react-testing-library](react-testing-library/SKILL.md) | Frontend | General-purpose React Testing Library guide with Vitest |
 | [zod](zod/SKILL.md) | Full-stack | Zod schema validation, parsing, error handling, type inference |
 | [typescript-expert](typescript-expert/SKILL.md) | Full-stack | Type-level programming, performance, tooling, migrations |
 | [security](security/SKILL.md) | Full-stack | OWASP Top 10:2025, auth, injection, uploads, secrets |
 | [mermaid-diagram](mermaid-diagram/SKILL.md) | Shared | Mermaid diagrams in markdown (flowcharts, sequence, ERD, …) |
 | [engineering-insights](engineering-insights/SKILL.md) | Meta | Captures session findings into per-module INSIGHTS.md (append-only learnings loop) |
-| [pr-self-review](pr-self-review/SKILL.md) `v2.0.0` | Meta | Reviews the local diff with the routed skills before a PR is opened; run manually, CI enforces the mechanical half |
+| [pr-self-review](pr-self-review/SKILL.md) `v3.0.0` | Meta | Reviews the local diff with the routed skills before a PR is opened; run manually, CI enforces the mechanical half |
 
 ## What Are Skills?
 

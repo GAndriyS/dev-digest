@@ -112,7 +112,8 @@ Two tools, because the rules split cleanly in two:
 | No import cycles | `client/.dependency-cruiser.cjs` → `no-circular` |
 | Route trees stay private to each other | `no-cross-route-internals` |
 | `components/` + `lib/` never import `app/` | `shared-does-not-know-features` |
-| Component folders talk through their barrel | `no-sibling-component-internals` |
+| Component folders talk through their barrel — between components | `no-sibling-component-internals` |
+| …and from a route into a component | `no-component-internals-from-app` |
 | `vendor/shared`, `vendor/ui` are leaves | `contracts-are-a-leaf`, `ui-kit-is-a-leaf` |
 | No dead modules | `no-orphans` (warn) |
 | No `export *` in a barrel | `client/scripts/check-ui-conventions.mjs` |

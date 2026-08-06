@@ -73,6 +73,21 @@ module.exports = {
         pathNot: ['^src/components/$1/', '^src/components/[^/]+/index\\.ts$'],
       },
     },
+    {
+      name: 'no-component-internals-from-app',
+      severity: 'error',
+      comment:
+        'The same barrel rule, seen from the other side. `no-sibling-component-internals` ' +
+        'only fires between two shared components, so a route file could reach straight ' +
+        'into src/components/<name>/helpers.ts and the barrel-as-public-API rule eroded ' +
+        'from the app side while the skill claimed CI enforced it. Import the folder, not ' +
+        'a file inside it.',
+      from: { path: '^src/app/' },
+      to: {
+        path: '^src/components/[^/]+/',
+        pathNot: ['^src/components/[^/]+/index\\.ts$'],
+      },
+    },
 
     // ---- Layer leaves --------------------------------------------------------
     {

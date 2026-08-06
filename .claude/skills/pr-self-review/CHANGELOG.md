@@ -12,6 +12,22 @@ Semver for this skill:
 - **minor** — new checks, new routing entries, new stages that do not newly block.
 - **patch** — wording, caps, link fixes, syncing a command with CI.
 
+## 3.0.0 — 2026-08-06
+
+**A client-only contract edit is now CRITICAL, not a WARNING.** The two mirror
+directions were graded the same, which put the skill in direct conflict with the
+gate it claims to mirror: `pr-gate-ci.mjs` fails the build when
+`client/src/vendor/shared/**` changes without the server copy, so the old
+grading handed out `verdict: PASS` on a branch CI was about to reject — the exact
+disagreement [routing.md](routing.md) forbids ("deterministic failures … already
+fail CI, so the local gate must not disagree with it").
+
+The other direction is unchanged and stays a WARNING: a type consumed only by
+`reviewer-core` legitimately lives in the server copy alone, and CI reports that
+one as a note rather than a failure.
+
+Major by this skill's own policy — it blocks something it used to allow.
+
 ## 2.0.0 — 2026-08-04
 
 **Auto-invocation removed.** `.claude/settings.json` no longer registers the

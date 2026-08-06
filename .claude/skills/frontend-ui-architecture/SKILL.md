@@ -2,7 +2,7 @@
 name: frontend-ui-architecture
 description: "Frontend UI architecture and code organization for React and Next.js — decides WHERE code lives, not how fast it runs. Use whenever placement is the question: which folder a new component belongs in, how to split a component that got too big, where constants / helpers / utils / types / hooks go, where business logic belongs versus the component body, when to promote route-local code to shared, whether to add a barrel file, which side of the server/client boundary a piece belongs on, and how to remove duplication without inventing the wrong abstraction. Trigger on phrasings like \"where should this live\", \"how do I structure this\", \"is this the right folder\", \"this component is huge\", \"we have this code in two places\", \"extract this\", \"refactor the folder structure\", or any review comment about file layout, module boundaries, or things being in the wrong place — even when the user never says the word architecture. Not for render performance, memoization, bundle splitting, hydration errors or whether a hook is used correctly (react-best-practices, next-best-practices), and not for server-side layering such as routes/service/repository, DI containers or ports and adapters (onion-architecture)."
 metadata:
-  version: 1.0.0
+  version: 1.1.0
   tags: architecture, frontend, react, nextjs, code-organization, colocation, boundaries, refactoring
 ---
 
@@ -304,8 +304,9 @@ cd client && pnpm arch
 
 `client/.dependency-cruiser.cjs` owns the graph rules — no import cycles, no
 reaching sideways between `src/app/<route>/` trees, no import of `src/app/` from
-`src/components/` or `src/lib/`, no reaching past another component folder's
-`index.ts`, and `vendor/shared` + `vendor/ui` stay leaves.
+`src/components/` or `src/lib/`, no reaching past a component folder's
+`index.ts` (from a sibling component *or* from a route), and `vendor/shared` +
+`vendor/ui` stay leaves.
 `client/scripts/check-ui-conventions.mjs` owns the two syntax rules a graph tool
 cannot see: no `export *` in a barrel, and no `fetch()` outside `src/lib/api.ts`.
 

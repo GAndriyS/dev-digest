@@ -2,7 +2,7 @@
 name: pr-self-review
 description: "Reviews all open local changes with the repo's own skills before a pull request is opened, and blocks the PR on a critical finding. Runs the deterministic gates (typecheck, dependency-cruiser, check-ui-conventions, tests), routes UI skills onto client/ files and backend architecture skills onto server/ and reviewer-core/ files, delegates bug-hunting to /code-review and security to /security-review, then writes a verdict stamp and a drafted PR body. Invoked manually — nothing auto-fires it. Use when the user says they are about to open a PR, asks to self-review or pre-review the branch, wants to know whether the changes are ready to push or merge, or invokes /pr-self-review. Also use after finishing a feature and before creating the pull request, even when not asked, since no hook will do it for you. Not for reviewing someone else's already-open PR (use /review) and not a substitute for /code-review on its own."
 metadata:
-  version: 2.0.0
+  version: 3.0.0
   tags: pr, review, gate, ci, pre-merge, skills-routing, quality, hooks
 ---
 
@@ -79,10 +79,17 @@ Any non-zero exit is a **CRITICAL** finding — these already fail CI, so a loca
 gate that shrugged at them would be lying.
 
 Two more mechanical checks:
-- **Contract mirror** — `server/src/vendor/shared/**` changed without the client
-  copy (or the reverse) → WARNING. The client copy is a trimmed copy that does
-  not sync itself. WARNING and not CRITICAL because a type consumed only by
-  `reviewer-core` legitimately lives in the server copy alone.
+- **Contract mirror** — the two directions are not the same finding, because CI
+  does not treat them the same:
+  - `client/src/vendor/shared/**` changed without the server copy → **CRITICAL**.
+    The server copy is canonical, and `pr-gate-ci.mjs` fails the build on this
+    exact shape. Anything CI rejects is CRITICAL here by construction; a local
+    gate that called it a WARNING would hand out a PASS and then go red.
+  - `server/src/vendor/shared/**` changed without the client copy → WARNING, and
+    a note in CI rather than a failure. A type consumed only by `reviewer-core`
+    legitimately lives in the server copy alone, and neither CI nor this gate can
+    tell that from a wire-crossing change without reading the diff — which is
+    what this stage is for.
 - **Do-not-touch** — as in stage 1 → CRITICAL.
 
 ## Stage 3 — review

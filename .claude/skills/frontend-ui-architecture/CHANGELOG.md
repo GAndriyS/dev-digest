@@ -20,6 +20,25 @@ change.
   `In this repo` section with a convention change that the skill already
   described in principle.
 
+## [1.1.0] — 2026-08-06
+
+### Added
+
+- **`no-component-internals-from-app`** in `client/.dependency-cruiser.cjs` — a
+  route file may no longer reach past a shared component's `index.ts` into its
+  internals.
+
+### Fixed
+
+- The skill's `What CI rejects` section claimed "no reaching past another
+  component folder's `index.ts`" as machine-checked, but
+  `no-sibling-component-internals` fires only *between* shared components: an
+  import from `src/app/` straight into `src/components/<name>/helpers.ts` passed
+  `pnpm arch` clean. An agent trusting the list would skip reviewing exactly that
+  import. The rule was widened to match the prose rather than the prose narrowed,
+  since no such import exists in the tree today — verified green on the real
+  tree and red on a planted one.
+
 ## [1.0.0] — 2026-08-04
 
 Initial release.
