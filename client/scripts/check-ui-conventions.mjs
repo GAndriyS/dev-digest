@@ -12,9 +12,10 @@
  *      module happens to have, so internals become public by accident and
  *      renaming one is a breaking change. It also defeats tree-shaking and is the
  *      usual seed of an import cycle. A barrel should name what it supports.
- *   2. `fetch(` outside `src/lib/api.ts`. Tests mock fetch globally, so a
- *      component calling it directly silently bypasses the mock and the test
- *      passes while asserting nothing. Every request goes through lib/api.ts.
+ *   2. `fetch(` outside `src/lib/api.ts`, including the `window.` / `globalThis.`
+ *      spellings. Tests mock fetch globally, so a component calling it directly
+ *      silently bypasses the mock and the test passes while asserting nothing.
+ *      Every request goes through lib/api.ts.
  *
  * Run:  node scripts/check-ui-conventions.mjs
  * Exit: 0 clean, 1 on any violation.
@@ -90,7 +91,13 @@ for await (const file of walk(SRC)) {
   }
 
   // `.fetch(`/`fetchSomething(` are other things; require a call on its own.
-  if (file !== API_CLIENT && /(^|[^.\w])fetch\s*\(/m.test(code)) {
+  // The second pattern exists because the first CANNOT match `window.fetch(`:
+  // it excludes a leading dot on purpose, so that `refetch(` and `.prefetch(`
+  // stay quiet. Spelling the global out reaches the same function and bypasses
+  // the same test mock, so the gate has to see it too.
+  const callsFetch =
+    /(^|[^.\w])fetch\s*\(/m.test(code) || /\b(?:window|globalThis|self)\s*\.\s*fetch\s*\(/m.test(code);
+  if (file !== API_CLIENT && callsFetch) {
     violations.push({
       rule: 'fetch-only-in-api-client',
       file,

@@ -175,32 +175,81 @@ if (serverShared.length && !clientShared.length) {
 }
 
 // --- baseline is shrink-only -------------------------------------------------
+// Compared ENTRY BY ENTRY, not by length. Counting only the length let a PR drop
+// one stale entry and add one silencing a finding it introduced: same total,
+// nothing printed, and the file's own comment ("a new entry re-permits a
+// finding") quietly false.
 const BASELINE = 'scripts/pr-gate-baseline.json';
-if (changed.includes(BASELINE)) {
-  const countOf = (raw) => {
-    try {
-      const parsed = JSON.parse(raw);
-      return Array.isArray(parsed.findings) ? parsed.findings.length : 0;
-    } catch {
-      return NaN;
-    }
-  };
-  const after = countOf(readFileSync(BASELINE, 'utf8'));
-  let before = 0;
-  try {
-    before = countOf(git(['show', `${BASE}:${BASELINE}`], { quiet: true }));
-  } catch {
-    before = 0; // file is new in this PR
+
+/** Stable string for an entry, so key equality does not depend on key order. */
+function canonical(value) {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value)
+      .sort()
+      .map((k) => `${JSON.stringify(k)}:${canonical(value[k])}`)
+      .join(',')}}`;
   }
-  if (Number.isNaN(after)) {
-    violations.push(`baseline: ${BASELINE} is not valid JSON`);
-  } else if (after > before) {
+  return JSON.stringify(value) ?? 'null';
+}
+
+/**
+ * Identity of a baseline entry. `rule`/`file`/`line` when the entry carries
+ * them, because those are what makes a finding the same finding; the whole
+ * canonical body otherwise, since an entry shape we do not know is safer
+ * compared strictly than loosely.
+ */
+function entryKey(entry) {
+  if (entry && typeof entry === 'object' && !Array.isArray(entry)) {
+    const id = [entry.rule, entry.file, entry.line].filter((v) => v !== undefined);
+    if (id.length > 0) return id.join(' | ');
+  }
+  return canonical(entry);
+}
+
+function findingsOf(raw) {
+  const parsed = JSON.parse(raw);
+  return Array.isArray(parsed.findings) ? parsed.findings : [];
+}
+
+if (changed.includes(BASELINE)) {
+  let after;
+  try {
+    after = findingsOf(readFileSync(BASELINE, 'utf8'));
+  } catch (e) {
+    // Covers both "deleted in this PR" (changed lists deletions too) and
+    // malformed JSON. Deleting the ratchet is the loudest way to grow it.
+    after = null;
     violations.push(
-      `baseline: ${BASELINE} grew ${before} → ${after}. It is a shrink-only ratchet — ` +
-        `a new entry re-permits a finding instead of fixing it.`
+      `baseline: ${BASELINE} could not be read as JSON — deleting or breaking the ` +
+        `ratchet removes the only thing stopping a finding from being re-permitted ` +
+        `(${e.code === 'ENOENT' ? 'file is gone' : 'parse failed'}).`
     );
-  } else if (after < before) {
-    notes.push(`baseline: shrank ${before} → ${after}. Good.`);
+  }
+
+  if (after !== null) {
+    let before = [];
+    try {
+      before = findingsOf(git(['show', `${BASE}:${BASELINE}`], { quiet: true }));
+    } catch {
+      before = []; // file is new in this PR
+    }
+
+    const beforeKeys = new Set(before.map(entryKey));
+    const afterKeys = after.map(entryKey);
+    const added = afterKeys.filter((k) => !beforeKeys.has(k));
+    const removed = [...beforeKeys].filter((k) => !afterKeys.includes(k));
+
+    if (added.length > 0) {
+      violations.push(
+        `baseline: ${BASELINE} gained ${added.length} entr${added.length === 1 ? 'y' : 'ies'} — ` +
+          `${added.join('; ')}. It is a shrink-only ratchet: a new entry re-permits a ` +
+          `finding instead of fixing it. Swapping one entry for another counts as growth.`
+      );
+    }
+    if (removed.length > 0) {
+      notes.push(`baseline: dropped ${removed.length} entr${removed.length === 1 ? 'y' : 'ies'}. Good.`);
+    }
   }
 }
 
