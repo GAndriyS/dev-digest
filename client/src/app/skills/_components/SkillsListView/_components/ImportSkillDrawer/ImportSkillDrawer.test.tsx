@@ -122,6 +122,27 @@ describe("ImportSkillDrawer", () => {
     expect(previewMutate).not.toHaveBeenCalled();
   });
 
+  it("ignores a preview that lands after a later pick failed before starting", async () => {
+    // The asymmetric path: picking a valid file after a valid one is safe,
+    // because React Query drops the superseded mutation's callbacks. A pick that
+    // fails on the extension never calls `mutate`, so it never supersedes
+    // anything and the earlier request's onSuccess is still armed.
+    renderDrawer();
+    await pick("bundle.zip");
+    fireEvent.change(filePicker(), {
+      target: { files: [new File(["#!/bin/sh"], "payload.sh", { type: "text/plain" })] },
+    });
+    await screen.findByText("Unsupported file — pick a .md, .markdown or .zip file.");
+
+    resolvePreview(); // the zip's response arrives now
+
+    // Without the pick token this fills the form with the zip's skill while the
+    // drawer shows the .sh error, and Save writes that body under this label.
+    expect(screen.queryByText("Extracted skill")).not.toBeInTheDocument();
+    expect(screen.queryByDisplayValue("secret-leak-rule")).not.toBeInTheDocument();
+    expect(saveButton()).toBeDisabled();
+  });
+
   it("shows the extracted skill rendered, and still saves nothing", async () => {
     renderDrawer();
     await pick("bundle.zip");

@@ -38,6 +38,13 @@ export function ImportSkillDrawer({ onClose }: { onClose: () => void }) {
 
   // The visible trigger is a Button; the native input is hidden behind this ref.
   const fileRef = React.useRef<HTMLInputElement>(null);
+  // Which pick is current. React Query drops a superseded mutation's callbacks
+  // only once a NEW one starts, so a pick that fails BEFORE `preview.mutate` —
+  // an unsupported extension, an unreadable file — leaves the previous file's
+  // request in flight with its `onSuccess` still armed. Without this token that
+  // stale preview lands under the new file's error message, badged with the new
+  // filename, and Save writes the wrong body under the wrong name.
+  const pickRef = React.useRef(0);
   const [filename, setFilename] = React.useState("");
   const [reading, setReading] = React.useState(false);
   const [readError, setReadError] = React.useState<string | null>(null);
@@ -52,6 +59,7 @@ export function ImportSkillDrawer({ onClose }: { onClose: () => void }) {
   const typeOptions = SKILL_TYPE_VALUES.map((v) => ({ value: v, label: t(`listItem.type.${v}`) }));
 
   const onPick = async (file: File | undefined) => {
+    const pick = ++pickRef.current;
     setExtracted(null);
     setReadError(null);
     if (!file) return;
@@ -76,6 +84,7 @@ export function ImportSkillDrawer({ onClose }: { onClose: () => void }) {
       { filename: file.name, content_base64 },
       {
         onSuccess: (data) => {
+          if (pick !== pickRef.current) return;
           setExtracted(data);
           setName(data.name);
           setDescription(data.description);

@@ -42,13 +42,22 @@ export function CreateSkillModal({
   const toast = useToast();
   const create = useCreateSkill();
 
+  // ONE snapshot of the accepted set, taken when the dialog opens, and the only
+  // thing read below. `body` and `description` are captured at mount anyway, so
+  // reading the live prop for `evidence_files` or the counts would ship a skill
+  // whose provenance disagrees with its own text. The overlay blocks new clicks
+  // but not an accept PUT already in flight, and that is enough: it resolves,
+  // the cache updates, `accepted` grows, and Save cites a file the body never
+  // mentions.
+  const [merged] = React.useState(accepted);
+
   const [name, setName] = React.useState(() => defaultSkillName(repoFullName));
   const [description, setDescription] = React.useState(() =>
-    t("modal.descriptionDefault", { count: accepted.length, repo: repoFullName }),
+    t("modal.descriptionDefault", { count: merged.length, repo: repoFullName }),
   );
   const [type, setType] = React.useState<SkillTypeT>("convention");
   const [enabled, setEnabled] = React.useState(true);
-  const [body, setBody] = React.useState(() => buildConventionsSkill(repoFullName, accepted));
+  const [body, setBody] = React.useState(() => buildConventionsSkill(repoFullName, merged));
 
   // Derived from the contract rather than the Skills route's own constants:
   // `src/app/skills/**` is another route tree and may not be imported here.
@@ -66,11 +75,11 @@ export function CreateSkillModal({
         source: "extracted",
         body,
         enabled,
-        evidence_files: accepted.map((c) => c.evidence_path).filter((p) => p.length > 0),
+        evidence_files: merged.map((c) => c.evidence_path).filter((p) => p.length > 0),
       },
       {
         onSuccess: (skill) => {
-          toast.success(t("modal.success", { name: skill.name, count: accepted.length }));
+          toast.success(t("modal.success", { name: skill.name, count: merged.length }));
           onClose();
           router.push(`/skills/${skill.id}?tab=config`);
         },
@@ -112,7 +121,7 @@ export function CreateSkillModal({
 
       <div style={s.banner}>
         <Icon.Sparkles size={14} style={s.bannerIcon} />
-        <span>{t("modal.mergedFrom", { count: accepted.length, repo: repoFullName })}</span>
+        <span>{t("modal.mergedFrom", { count: merged.length, repo: repoFullName })}</span>
       </div>
 
       <FormField label={t("modal.nameLabel")} required>
