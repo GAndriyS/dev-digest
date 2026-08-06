@@ -54,6 +54,17 @@ export const MAX_FILE_BYTES = 2_000_000;
 export const MAX_CANDIDATES = 8;
 
 /**
+ * `ConventionCandidate.category` is published as `.min(1).max(32)` precisely
+ * because the model fills it, but nothing enforced that: the extraction schema
+ * takes a bare string, the column is `text`, and the value lands in a Badge.
+ * These two constants are what make the published bound true.
+ */
+export const MAX_CATEGORY_CHARS = 32;
+
+/** Matches the column default, so a rejected category reads as "ungrouped". */
+export const DEFAULT_CATEGORY = 'general';
+
+/**
  * Shortest snippet that counts as evidence, after whitespace normalization.
  *
  * Without a floor the gate is far weaker than it looks: matching is per-line

@@ -5,11 +5,12 @@ import {
   clipFile,
   isInsideRoot,
   locateSnippet,
+  normalizeCategory,
   normalizeRule,
   verifyCandidates,
   type SampleFile,
 } from './helpers.js';
-import { MAX_FILE_CHARS, MIN_SNIPPET_CHARS } from './constants.js';
+import { MAX_CATEGORY_CHARS, MAX_FILE_CHARS, MIN_SNIPPET_CHARS } from './constants.js';
 
 const FILE = `import { Redis } from "ioredis";
 import { config } from "./config";
@@ -130,6 +131,36 @@ describe('isInsideRoot', () => {
     expect(isInsideRoot('C:\\clones\\repo', 'C:\\Users\\PC\\.devdigest\\secrets.json', '\\')).toBe(
       false,
     );
+  });
+});
+
+describe('normalizeCategory', () => {
+  it('keeps the vocabulary the prompt asks for', () => {
+    expect(normalizeCategory('structure')).toBe('structure');
+    expect(normalizeCategory('  Errors  ')).toBe('errors');
+    // Not in the prompt's list, but still one short word: the contract bounds
+    // the shape, not the vocabulary, so an invented grouping survives.
+    expect(normalizeCategory('logging')).toBe('logging');
+    expect(normalizeCategory('error-handling')).toBe('error-handling');
+  });
+
+  it('reduces a sentence to its first word rather than storing the sentence', () => {
+    // What breaks the UI badge, and the published `.max(32)`, if left alone.
+    expect(normalizeCategory('naming, especially of exported helpers')).toBe('naming');
+    expect(normalizeCategory('This repository consistently uses strict mode')).toBe('this');
+  });
+
+  it('falls back to the column default for anything unusable', () => {
+    expect(normalizeCategory('')).toBe('general');
+    expect(normalizeCategory('   ')).toBe('general');
+    expect(normalizeCategory('!!!')).toBe('general');
+    // One token, but no longer a badge — truncating it would invent a word.
+    expect(normalizeCategory('a'.repeat(MAX_CATEGORY_CHARS + 1))).toBe('general');
+  });
+
+  it('accepts a token exactly at the bound', () => {
+    const word = 'a'.repeat(MAX_CATEGORY_CHARS);
+    expect(normalizeCategory(word)).toBe(word);
   });
 });
 

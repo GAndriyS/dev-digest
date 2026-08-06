@@ -141,6 +141,21 @@ export const CommunitySkill = z.object({
 export type CommunitySkill = z.infer<typeof CommunitySkill>;
 
 /**
+ * Longest body a skill may carry.
+ *
+ * A skill is a rubric that gets pasted into every review prompt of every agent
+ * that links it, and nothing downstream bounds it: `assemblePrompt` joins the
+ * linked bodies whole. Without a cap here the import path decides the size —
+ * an archive entry may be 1 MiB — and a single oversized import makes every
+ * subsequent run of that agent fail at the provider on context length, recorded
+ * as a failed run with no hint that a skill is the cause.
+ *
+ * Ten times the largest seeded rubric (~3.3k chars), so it bounds documents
+ * without arguing with real skills.
+ */
+export const MAX_SKILL_BODY_CHARS = 32_000;
+
+/**
  * Create payload. `source` is a provenance label, not a behaviour switch — the
  * only flow that writes anything but 'manual' today is the conventions
  * extractor ('extracted', with evidence_files).
@@ -150,7 +165,7 @@ export const SkillInput = z.object({
   description: z.string().default(''),
   type: SkillType.default('custom'),
   source: SkillSource.default('manual'),
-  body: z.string().min(1),
+  body: z.string().min(1).max(MAX_SKILL_BODY_CHARS),
   enabled: z.boolean().default(true),
   evidence_files: z.array(z.string()).nullish(),
 });

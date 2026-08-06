@@ -2,7 +2,13 @@ import { sep as pathSep } from 'node:path';
 import { z } from 'zod';
 import type { ChatMessage, ConventionCandidate } from '@devdigest/shared';
 import type { ConventionRow } from './repository.js';
-import { MAX_CANDIDATES, MAX_FILE_CHARS, MIN_SNIPPET_CHARS } from './constants.js';
+import {
+  DEFAULT_CATEGORY,
+  MAX_CANDIDATES,
+  MAX_CATEGORY_CHARS,
+  MAX_FILE_CHARS,
+  MIN_SNIPPET_CHARS,
+} from './constants.js';
 
 /**
  * L03 — pure helpers for the conventions extractor. No I/O, no container: the
@@ -129,6 +135,24 @@ export function locateSnippet(content: string, snippet: string): number | null {
     if (hit) return fileLines[i]!.lineNo;
   }
   return null;
+}
+
+/**
+ * Snap the model's `category` to the one short word the contract publishes.
+ *
+ * The prompt asks for a single lowercase grouping word, but a prompt is a
+ * request: a model that answers with a sentence would put that sentence in the
+ * UI's badge and break a bound the contract states as fact. The FIRST token is
+ * kept rather than the whole string truncated — half a sentence is not a
+ * category either — and anything that survives as empty or over-long falls back
+ * to `general` instead of being stored as something no reader can group by.
+ */
+export function normalizeCategory(raw: string): string {
+  const [word = ''] = raw
+    .toLowerCase()
+    .split(/[^a-z0-9-]+/)
+    .filter((t) => t.length > 0);
+  return word.length > 0 && word.length <= MAX_CATEGORY_CHARS ? word : DEFAULT_CATEGORY;
 }
 
 /** Rules that differ only in casing, spacing or trailing punctuation are one rule. */

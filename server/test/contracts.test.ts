@@ -15,7 +15,11 @@ import {
   Settings,
   Repo,
   PrDetail,
+  SkillInput,
+  SkillPatch,
+  MAX_SKILL_BODY_CHARS,
 } from '@devdigest/shared';
+import { API_CONTRACT_GATE_SKILL } from '../src/db/seed-prompts.js';
 
 /**
  * Contract tests — parse/round-trip the fixtures from data.jsx/data2.jsx
@@ -213,5 +217,40 @@ describe('platform DTOs', () => {
         commits: [],
       }),
     ).not.toThrow();
+  });
+});
+
+describe('SkillInput bounds the body', () => {
+  // The body is pasted verbatim into every review prompt of every agent that
+  // links the skill, and nothing downstream bounds it — `assemblePrompt` joins
+  // the linked bodies whole. The import path can hand over a 1 MiB markdown
+  // entry, so without this the size of a review prompt is decided by whatever
+  // file someone dragged in, and the failure surfaces at the provider as a
+  // context-length error on every later run of that agent.
+  const base = { name: 'rubric', body: 'x' };
+
+  it('accepts a body exactly at the cap', () => {
+    const body = 'x'.repeat(MAX_SKILL_BODY_CHARS);
+    expect(() => SkillInput.parse({ ...base, body })).not.toThrow();
+  });
+
+  it('rejects one character past it', () => {
+    const body = 'x'.repeat(MAX_SKILL_BODY_CHARS + 1);
+    expect(() => SkillInput.parse({ ...base, body })).toThrow();
+  });
+
+  it('still rejects an empty body', () => {
+    expect(() => SkillInput.parse({ ...base, body: '' })).toThrow();
+  });
+
+  it('applies the same bound to a patch', () => {
+    const body = 'x'.repeat(MAX_SKILL_BODY_CHARS + 1);
+    expect(() => SkillPatch.parse({ body })).toThrow();
+  });
+
+  it('leaves room for the largest rubric the product ships', () => {
+    // Guards the constant itself: a cap tightened below the seeded skills would
+    // make the app's own content unsaveable.
+    expect(MAX_SKILL_BODY_CHARS).toBeGreaterThan(API_CONTRACT_GATE_SKILL.length * 2);
   });
 });

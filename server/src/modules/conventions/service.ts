@@ -24,6 +24,7 @@ import {
   ConventionExtraction,
   buildExtractionMessages,
   isInsideRoot,
+  normalizeCategory,
   toConventionDto,
   verifyCandidates,
   type SampleFile,
@@ -144,7 +145,7 @@ export class ConventionsService {
     const inserts: InsertConvention[] = kept.map((c) => ({
       workspaceId,
       repoId,
-      category: c.category,
+      category: normalizeCategory(c.category),
       rule: c.rule,
       evidencePath: c.evidence_path,
       evidenceSnippet: c.evidence_snippet,
