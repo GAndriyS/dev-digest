@@ -19,7 +19,50 @@ append-only. Entry format and promotion rules → root `INSIGHTS.md`.
 
 ## Codebase Patterns
 
+- **2026-08-05** — The `Markdown` primitive emits a `.dd-md` wrapper and maps
+  only `p`/`strong`/`code`/`a` through react-markdown's `components`. Everything
+  else falls through to Tailwind Preflight, which flattens `h1`…`h6` to
+  `font-size: inherit; font-weight: inherit` and sets `list-style: none` — so a
+  skill body rendered as one flat wall of text is NOT a markdown-parsing bug,
+  the HTML is correct and unstyled. Measured before the fix: `h1` and `h2`
+  computed to 13px/400, identical to a `<p>`. `.dd-md` carried no rules at all
+  and is the seam to style from `app/globals.css`; the primitive itself is
+  vendored. Two traps when doing so: the primitive sets the inline-code chip via
+  an INLINE style that react-markdown also applies to fenced blocks, so undoing
+  it on `pre code` needs `!important`; and do not claim `color` on `.dd-md` —
+  six call sites render Markdown inside containers that set their own.
+
+- **2026-08-04** — The PR list defaults to the **Needs review** filter, so on a
+  dev database where the seeded PR has already been reviewed the table reads
+  "No pull requests" while the header above it says "1 open". That is the filter,
+  not a data or hydration failure — click **All** and the row appears. Worth
+  knowing before debugging an "empty" list: compare the open count in the header
+  against the table before suspecting the API. The hermetic e2e stack seeds fresh,
+  so flow 02 never sees this.
+
 ## Tool & Library Notes
+
+- **2026-08-06** — React Query discards a superseded mutation's per-`mutate`
+  callbacks only when a NEW `mutate` starts on the same observer. So the usual
+  "the library handles the race" assumption holds for pick-A-then-pick-B, and
+  breaks for any handler that RETURNS EARLY before calling `mutate` — an
+  unsupported extension, a failed `FileReader`, a validation guard. The earlier
+  request stays in flight with its `onSuccess` armed and lands its data on top of
+  the new error state: `ImportSkillDrawer` showed "Unsupported file" and then
+  filled the form with the previous zip's skill, badged with the new filename.
+  Guard those flows with a monotonic pick token captured at entry and re-checked
+  inside `onSuccess` (`if (pick !== pickRef.current) return`). Same shape applies
+  to any modal that snapshots props at mount: the overlay blocks CLICKS, not a
+  mutation already in flight, so state read at save time can disagree with state
+  captured at open time — take one snapshot and read only that.
+- **2026-08-04** — The Browser-pane blocker is still live: `preview_start` opens
+  the tab, but `document.visibilityState` stays `"hidden"` and `computer
+  screenshot` fails outright with "the Browser pane is not displayed, so the page
+  is not compositing frames". Do not spend another session working around it —
+  drive the app with the e2e suite's `agent-browser` binary instead (it is
+  installed for `e2e/`, renders normally, and has `console`, `errors`,
+  `network requests` and `screenshot` subcommands, which is everything a page
+  sweep needs). Full walk of all ten routes this way took one command.
 
 - **2026-07-31** — In the agent Browser pane, a tab whose pane is not displayed
   reports `document.visibilityState === "hidden"`, and Next.js never finishes

@@ -1,0 +1,66 @@
+# PR gate — the CI half of the pr-self-review skill.
+#
+# The thorough review is local (`/pr-self-review`): it runs the repo's skills
+# against the diff and refuses to open a PR on a critical finding. That gate
+# cannot hold GitHub's Merge button, and CI has no LLM key here by design, so
+# this workflow enforces the subset a machine can decide alone.
+#
+# Deliberately NOT duplicated here: typecheck, dependency-cruiser,
+# check-ui-conventions and the test suites. Those already run in client.yml,
+# server-unit.yml, server-integration.yml, reviewer-core.yml and e2e-web.yml —
+# make those required checks too (see .claude/skills/pr-self-review/README.md).
+#
+# No `paths:` filter on purpose: the Insights-section rule applies to every PR,
+# including docs-only ones, so this must run unconditionally to stay a usable
+# required check. A path filter would leave it "pending" forever on skipped PRs.
+name: pr gate
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+  # Read-only, and only so the body can be fetched fresh — see "Capture PR body".
+  pull-requests: read
+
+concurrency:
+  group: pr-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    name: conventions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The gate diffs against the merge base, which needs real history.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Fetched from the API, NOT read from `github.event.pull_request.body`.
+      # That field is a snapshot taken when the event fired, so the ordinary way
+      # of working — push, then write the body — always produced a red check: the
+      # `synchronize` run judged a body that did not exist yet. Re-running does
+      # not help either, because a re-run replays the original event payload.
+      # Fetching at run time means the check always judges the body as it stands.
+      #
+      # Written straight to a file, never interpolated into the shell: a PR body
+      # is attacker-controlled text, and `echo "${{ ... }}"` would let a backtick
+      # or $( ) in it execute on the runner.
+      - name: Capture PR body
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}" \
+            --jq '.body // ""' > "$RUNNER_TEMP/pr-body.md"
+
+      - name: Check PR conventions
+        run: |
+          node scripts/pr-gate-ci.mjs \
+            --base "${{ github.event.pull_request.base.sha }}" \
+            --body-file "$RUNNER_TEMP/pr-body.md"

@@ -6,10 +6,12 @@ import {
   jsonb,
   timestamp,
   doublePrecision,
+  primaryKey,
 } from 'drizzle-orm/pg-core';
 import { workspaces } from './core';
 import { agents } from './agents';
 import { pullRequests } from './pulls';
+import { skills } from './skills';
 
 // ============================================================ Observability
 
@@ -51,6 +53,36 @@ export const runTraces = pgTable('run_traces', {
     .references(() => agentRuns.id, { onDelete: 'cascade' }),
   trace: jsonb('trace').notNull(),
 });
+
+/**
+ * Which skills went into a given review run, in prompt order.
+ *
+ * Without this row the link is unrecoverable after the fact: `agent_skills`
+ * holds the CURRENT set, so a stats query over it would credit today's skills
+ * for last month's findings, and re-ordering or unlinking would silently
+ * rewrite history. `skillVersion` is captured for the same reason — the body
+ * that actually ran is the one that matters, and bodies are versioned.
+ *
+ * Attribution stays run-level on purpose: the engine renders every linked skill
+ * into one prompt section, so no honest per-finding mapping exists.
+ *
+ * Declared here rather than in `./skills.ts` because it references both
+ * `agent_runs` and `skills`, and skills → runs would close an import cycle.
+ */
+export const runSkills = pgTable(
+  'run_skills',
+  {
+    runId: uuid('run_id')
+      .notNull()
+      .references(() => agentRuns.id, { onDelete: 'cascade' }),
+    skillId: uuid('skill_id')
+      .notNull()
+      .references(() => skills.id, { onDelete: 'cascade' }),
+    skillVersion: integer('skill_version').notNull(),
+    order: integer('order').notNull().default(0),
+  },
+  (t) => ({ pk: primaryKey({ columns: [t.runId, t.skillId] }) }),
+);
 
 export const multiAgentRuns = pgTable('multi_agent_runs', {
   id: uuid('id').primaryKey().defaultRandom(),

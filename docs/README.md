@@ -15,3 +15,4 @@ changes with the code on every commit.
 | Doc | What |
 |-----|------|
 | [`agent-prompts/`](agent-prompts/README.md) | System prompts for the built-in reviewer agents, plus model-selection guidance |
+| [`skills/`](skills/api-contract/breaking-change.md) | Importable skill bodies for the Skills Lab experiments — `api-contract/` holds the four the API Contract Reviewer is run with and without |

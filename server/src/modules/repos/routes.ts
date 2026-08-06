@@ -1,9 +1,14 @@
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
-import { RepoInput } from '@devdigest/shared';
+import { z } from 'zod';
+import { Repo, RepoInput } from '@devdigest/shared';
 import { getContext } from '../_shared/context.js';
 import { IdParams } from '../_shared/schemas.js';
 import { RepoService } from './service.js';
+
+/** Enqueued, not awaited — the clone runs as a background job. */
+const RefreshResponse = z.object({ status: z.literal('refreshing') });
+const DeletedResponse = z.object({ deleted: z.string() });
 
 /**
  * F1 — repos module. Transport layer only: parses requests, maps status

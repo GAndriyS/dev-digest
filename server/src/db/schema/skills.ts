@@ -32,3 +32,11 @@ export const skillVersions = pgTable(
   },
   (t) => ({ pk: primaryKey({ columns: [t.skillId, t.version] }) }),
 );
+
+/**
+ * `run_skills` — which skills went into a given review run — lives in
+ * `./runs.ts`, not here. It references BOTH `agent_runs` and `skills`, and
+ * `runs.ts` is the downstream-most schema file (it already imports `agents`,
+ * which imports this one). Declaring it here would close a runtime import cycle
+ * skills → runs → agents → skills, which dependency-cruiser rejects.
+ */

@@ -23,9 +23,15 @@ Read `client/INSIGHTS.md` before starting work; search `client/docs/` and
   alias.
 - UI strings go in `messages/<locale>/*.json` (next-intl). No hardcoded copy.
 - `src/vendor/ui` is vendored — fix upstream, not in place.
+- Placement rules are machine-enforced: `pnpm arch` (import cycles, sideways
+  imports between `src/app/<route>/` trees, `src/components`|`src/lib` importing
+  `src/app`, reaching past a component's `index.ts`, `export *` in a barrel,
+  `fetch()` outside `lib/api.ts`). CI runs it; run it before pushing.
 
 ## Use when
 
+- Where a file belongs, splitting a component, extracting helpers, removing
+  duplication → run `/frontend-ui-architecture`
 - Page/route map, commands → read `client/README.md`
 - UI kit internals → read `client/src/vendor/ui/README.md`
 - Deep dives → read `client/docs/` · UI/flow specs → read `client/specs/` ·

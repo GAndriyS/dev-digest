@@ -46,4 +46,15 @@ jobs:
 
       - run: pnpm typecheck
 
+      # UI-architecture boundaries (see .claude/skills/frontend-ui-architecture).
+      # Two tools on purpose: dependency-cruiser enforces the module graph (who may
+      # import whom), and check-ui-conventions.mjs the two syntax-level rules a
+      # graph tool cannot see — `export *` in a barrel, and `fetch()` outside
+      # lib/api.ts. Inlined rather than `pnpm arch` to match the other workflows,
+      # which do not rely on committed package scripts.
+      - name: Architecture boundaries
+        run: |
+          pnpm exec depcruise src --config .dependency-cruiser.cjs
+          node scripts/check-ui-conventions.mjs
+
       - run: pnpm test

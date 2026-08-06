@@ -6,17 +6,20 @@ Reusable AI skills that provide specialized knowledge and workflows. Canonical l
 
 | Skill | Scope | Description |
 |-------|-------|-------------|
+| [onion-architecture](onion-architecture/SKILL.md) `v1.0.0` | Backend | Layer boundaries for `server/` + `reviewer-core/`; enforced by `server/.dependency-cruiser.cjs` in CI |
 | [fastify-best-practices](fastify-best-practices/SKILL.md) | Backend | Fastify routes, plugins, JSON-schema validation, error handling |
 | [drizzle-orm-patterns](drizzle-orm-patterns/SKILL.md) | Backend | Drizzle schema, queries, relations, transactions, migrations |
 | [postgresql-table-design](postgresql-table-design/SKILL.md) | Backend | Postgres schema design, data types, indexing, constraints |
 | [next-best-practices](next-best-practices/SKILL.md) | Frontend | Next.js App Router, RSC boundaries, data fetching, optimization |
 | [react-best-practices](react-best-practices/SKILL.md) | Frontend | React anti-patterns, state management, hooks rules |
+| [frontend-ui-architecture](frontend-ui-architecture/SKILL.md) `v1.1.0` | Frontend | Where code lives: component layout, constants, helpers, logic placement, duplication |
 | [react-testing-library](react-testing-library/SKILL.md) | Frontend | General-purpose React Testing Library guide with Vitest |
 | [zod](zod/SKILL.md) | Full-stack | Zod schema validation, parsing, error handling, type inference |
 | [typescript-expert](typescript-expert/SKILL.md) | Full-stack | Type-level programming, performance, tooling, migrations |
 | [security](security/SKILL.md) | Full-stack | OWASP Top 10:2025, auth, injection, uploads, secrets |
 | [mermaid-diagram](mermaid-diagram/SKILL.md) | Shared | Mermaid diagrams in markdown (flowcharts, sequence, ERD, …) |
 | [engineering-insights](engineering-insights/SKILL.md) | Meta | Captures session findings into per-module INSIGHTS.md (append-only learnings loop) |
+| [pr-self-review](pr-self-review/SKILL.md) `v3.0.0` | Meta | Reviews the local diff with the routed skills before a PR is opened; run manually, CI enforces the mechanical half |
 
 ## What Are Skills?
 
@@ -38,3 +41,11 @@ Each skill has:
 - `SKILL.md` — Main skill file with rules and conventions (required)
 - `examples.md` — Code examples showing good/bad patterns (recommended)
 - `references.md` — Sources and rationale (optional)
+- `README.md` — Maintainer notes for humans: how to change the skill (optional)
+- `CHANGELOG.md` — Version history (required once the skill declares a
+  `metadata.version`, and for any skill backed by a check that can fail CI —
+  a rule change is an architecture decision and needs a paper trail)
+
+A skill that is enforced by tooling (e.g. [onion-architecture](onion-architecture/SKILL.md)
+and its dependency-cruiser config) must keep the prose, the check, and the
+version in sync in one PR. Prose alone decays; checks alone are unreadable.

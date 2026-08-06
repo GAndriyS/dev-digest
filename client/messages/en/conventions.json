@@ -7,7 +7,6 @@
     "subtitle": "Scan the cloned repo to surface house-rules — each backed by evidence you can turn into a Skill.",
     "scanning": "Scanning…",
     "rescan": "Re-scan",
-    "runExtraction": "Run extraction",
     "extractionFailed": "Extraction failed",
     "loadError": "Could not load conventions.",
     "empty": {
@@ -15,12 +14,37 @@
       "body": "Scan the repo to surface house-rules — naming, error handling, structure — each backed by evidence you can turn into a Skill.",
       "cta": "Run extraction"
     },
-    "candidateCount": "{count, plural, one {# candidate} other {# candidates}} · grounded against sampled files"
+    "acceptedCount": "{accepted} of {total} accepted",
+    "createSkill": "Create skill",
+    "scanned": "Scanned {files, plural, one {# file} other {# files}}",
+    "droppedNoEvidence": "{count, plural, one {# candidate} other {# candidates}} discarded — evidence not found in the repo"
   },
   "card": {
     "confidence": "Confidence",
     "accepted": "Accepted",
-    "accepting": "Accepting…",
-    "acceptAsSkill": "Accept as Skill"
+    "accept": "Accept",
+    "reject": "Reject",
+    "rejected": "Rejected",
+    "edit": "Edit rule",
+    "save": "Save",
+    "cancel": "Cancel",
+    "openOnGitHub": "Open {path} on GitHub",
+    "evidenceMissing": "No evidence recorded"
+  },
+  "modal": {
+    "title": "Create skill from conventions",
+    "mergedFrom": "Merged from {count, plural, one {# accepted convention} other {# accepted conventions}} in {repo}. Everything below is editable before you save.",
+    "nameLabel": "Name",
+    "descriptionLabel": "Description",
+    "descriptionDefault": "{count, plural, one {# house convention} other {# house conventions}} extracted from {repo}",
+    "typeLabel": "Type",
+    "enabledLabel": "Enabled",
+    "enabledHint": "Whether this block is added to agents' prompts.",
+    "bodyLabel": "Skill body",
+    "save": "Create skill",
+    "saving": "Creating…",
+    "cancel": "Cancel",
+    "failed": "Could not create the skill",
+    "success": "Created \"{name}\" from {count, plural, one {# convention} other {# conventions}}."
   }
 }

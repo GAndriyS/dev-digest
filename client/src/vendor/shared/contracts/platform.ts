@@ -71,10 +71,14 @@ export const FEATURE_MODELS: FeatureModelDef[] = [
   },
   {
     id: 'conventions',
+    // A cheap model on purpose: the extractor's job is to NOTICE repeated shapes
+    // in sampled files, and every claim it makes is then checked against the
+    // real file before it is stored — so a flagship buys accuracy the evidence
+    // gate already enforces. Override in Settings when a repo needs more.
     label: 'Conventions',
     description: 'Extracts coding conventions from the repo.',
-    defaultProvider: 'openai',
-    defaultModel: 'gpt-5.4',
+    defaultProvider: 'openrouter',
+    defaultModel: 'deepseek/deepseek-v4-flash',
   },
 ];
 

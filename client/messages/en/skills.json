@@ -1,4 +1,5 @@
 {
+  "descriptionCaption": "The description is this skill's interface — it is the only thing an agent reads when deciding whether to apply the skill. Write it directively, starting with the trigger: \"Use when reviewing database migrations…\".",
   "page": {
     "crumbLab": "Skills Lab",
     "crumbSkills": "Skills",
@@ -7,6 +8,7 @@
     "searchPlaceholder": "Search skills…",
     "loadError": "Could not load skills.",
     "menu": {
+      "create": "Create from scratch",
       "fromFile": "Import from file",
       "fromUrl": "Import from URL",
       "community": "Search community skills…"
@@ -15,6 +17,10 @@
       "title": "No skills yet",
       "body": "Import a skill from a file, a URL, or the community catalog.",
       "cta": "Import from file"
+    },
+    "noMatch": {
+      "title": "No matching skills",
+      "body": "Try a different search term."
     },
     "selectPrompt": {
       "title": "Select a skill",
@@ -28,7 +34,10 @@
     "notFound": {
       "title": "Skill not found",
       "body": "It may have been deleted."
-    }
+    },
+    "delete": "Delete skill",
+    "deleteConfirm": "Delete the skill \"{name}\"? Its versions and eval cases go with it.",
+    "deleted": "Deleted \"{name}\"."
   },
   "drawer": {
     "title": "Add a skill",
@@ -44,12 +53,40 @@
     "nameLabel": "Skill name",
     "nameHint": "Optional — derived from the first heading if blank.",
     "namePlaceholder": "pr-quality-rubric",
+    "descriptionLabel": "Description",
+    "descriptionPlaceholder": "What this skill teaches the reviewer",
+    "typeLabel": "Type",
     "bodyLabel": "Skill body (Markdown)",
     "bodyHint": "Pasted content is wrapped as untrusted data — never executed as instructions.",
     "bodyPlaceholder": "# Rule\nDescribe the rule…",
+    "cancel": "Cancel",
     "importing": "Importing…",
     "import": "Import skill",
     "success": "Imported \"{name}\" (stored as untrusted data)."
+  },
+  "import": {
+    "title": "Import a skill",
+    "subtitle": "From a Markdown file or an archive — nothing is stored until you confirm",
+    "fileLabel": "Skill file",
+    "fileHint": "A Markdown file (.md, .markdown) or a .zip archive. Only Markdown entries are read; nothing in an archive is executed.",
+    "choose": "Choose a file",
+    "noFile": "No file selected",
+    "unsupported": "Unsupported file — pick a .md, .markdown or .zip file.",
+    "readFailed": "Could not read that file.",
+    "reading": "Reading {filename}…",
+    "extracting": "Extracting the skill…",
+    "previewFailed": "Could not extract a skill from that file.",
+    "previewTitle": "Extracted skill",
+    "previewHint": "Nothing has been saved yet. Check what was extracted, then confirm.",
+    "bodyTitle": "Extracted body",
+    "sourceFiles": "Markdown read ({count})",
+    "skippedTitle": "Skipped, never read ({count})",
+    "skippedNote": "These entries are not Markdown, so the product neither read nor executed them — nothing in them can reach the skill body.",
+    "emptyBody": "The file produced an empty body.",
+    "cancel": "Cancel",
+    "save": "Save skill",
+    "saving": "Saving…",
+    "success": "Imported \"{name}\" — disabled until you vet and enable it."
   },
   "url": {
     "label": "Skill URL",
@@ -74,6 +111,9 @@
   "listItem": {
     "needsVetting": "needs vetting",
     "vettingTitle": "Untrusted source — vet before enabling",
+    "noDescription": "No description",
+    "toggleLabel": "Enable skill",
+    "stats": "{agents} agents · {pull}% pull · {accept}% accept",
     "type": {
       "rubric": "rubric",
       "convention": "convention",
@@ -96,6 +136,108 @@
     "untrustedNotice": "This skill came from an untrusted source. Its body is stored as data (delimiter-wrapped) and must be vetted before it is enabled for an agent.",
     "bodyLabel": "Skill body (Markdown)",
     "bodyHint": "Saving a changed body creates a new immutable version.",
-    "version": "v{version}"
+    "version": "v{version}",
+    "renderedTitle": "Rendered body",
+    "renderedHint": "Rendered as the reviewing agent receives it — the text below is injected into the review prompt as data.",
+    "emptyBody": "This skill has an empty body.",
+    "openInEditor": "Open in the editor"
+  },
+  "tabs": {
+    "config": "Config",
+    "preview": "Preview",
+    "evals": "Evals",
+    "stats": "Stats",
+    "versions": "Versions"
+  },
+  "config": {
+    "title": "Configuration",
+    "nameLabel": "Name",
+    "descriptionLabel": "Description",
+    "descriptionPlaceholder": "What this skill teaches the reviewer",
+    "typeLabel": "Type",
+    "unsaved": "Unsaved changes",
+    "saving": "Saving…",
+    "savedToast": "Saved — this skill is now v{version}."
+  },
+  "evals": {
+    "title": "Eval cases",
+    "subtitle": "Replay a diff through this skill and check the findings it produces.",
+    "add": "Add case",
+    "run": "Run",
+    "runAll": "Run all",
+    "running": "Running…",
+    "passing": "{passed} / {total} passing",
+    "loadError": "Could not load eval cases.",
+    "empty": {
+      "title": "No eval cases yet",
+      "body": "Add a case with a diff and the findings you expect, then run it to check the skill still holds.",
+      "cta": "Add the first case"
+    },
+    "noProviderKey": "No LLM provider key is configured, so eval runs are disabled. Add a key in Settings → API Keys and try again.",
+    "state": {
+      "pass": "pass",
+      "fail": "fail",
+      "never": "never run"
+    },
+    "expectedGot": "expected {expected} findings, got {actual}",
+    "expected": "expected {expected} findings",
+    "edit": "Edit case",
+    "delete": "Delete case",
+    "deleteConfirm": "Delete the eval case \"{name}\"? This cannot be undone.",
+    "modal": {
+      "createTitle": "New eval case",
+      "editTitle": "Edit eval case",
+      "subtitle": "A diff in, the findings you expect out.",
+      "nameLabel": "Case name",
+      "namePlaceholder": "hardcoded secret in config",
+      "diffLabel": "Input diff",
+      "diffPlaceholder": "diff --git a/config.ts b/config.ts\n@@\n+const API_KEY = \"sk-live-…\";",
+      "diffHint": "Unified diff, exactly as the reviewer would receive it.",
+      "expectedLabel": "Expected findings",
+      "expectedHint": "How many findings this diff should produce.",
+      "severityLabel": "Expected severity",
+      "categoryLabel": "Expected category",
+      "cancel": "Cancel",
+      "save": "Save case",
+      "saving": "Saving…",
+      "saveFailed": "Could not save this case"
+    }
+  },
+  "stats": {
+    "loadError": "Could not load skill stats.",
+    "usedBy": "USED BY",
+    "pullCount": "PULLS (30D)",
+    "acceptRate": "ACCEPT RATE",
+    "findings": "FINDINGS (30D)",
+    "noValue": "—",
+    "agentsTitle": "Agents using this skill",
+    "agentsEmpty": "No agent has this skill linked yet.",
+    "agentOrder": "position {order}",
+    "agentDisabled": "disabled",
+    "categoryTitle": "Findings by category (30d)",
+    "categoryEmpty": "No findings recorded in the last 30 days.",
+    "attributionNote": "Attribution is run-level: these are findings from runs that included this skill, not findings traced to it."
+  },
+  "versions": {
+    "title": "Version history",
+    "subtitle": "Every body edit mints an immutable version. Compare two, or restore one.",
+    "loadError": "Could not load version history.",
+    "empty": {
+      "title": "No version history",
+      "body": "Editing the body on the Config tab creates the first version."
+    },
+    "current": "current",
+    "chars": "{chars} chars",
+    "compareTitle": "Compare",
+    "from": "From",
+    "to": "To",
+    "pickTwo": "Pick two different versions to see what changed.",
+    "identical": "These two versions have identical bodies.",
+    "loadingDiff": "Loading diff…",
+    "diffSummary": "+{added} / −{removed} lines",
+    "restore": "Restore",
+    "restoring": "Restoring…",
+    "restoreConfirm": "Restore v{version}? Its body becomes the current body as a new version.",
+    "restoreToast": "Restored v{version} — this skill is now v{current}."
   }
 }

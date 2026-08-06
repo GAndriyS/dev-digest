@@ -140,16 +140,195 @@ export const CommunitySkill = z.object({
 });
 export type CommunitySkill = z.infer<typeof CommunitySkill>;
 
+/**
+ * Longest body a skill may carry.
+ *
+ * A skill is a rubric that gets pasted into every review prompt of every agent
+ * that links it, and nothing downstream bounds it: `assemblePrompt` joins the
+ * linked bodies whole. Without a cap here the import path decides the size —
+ * an archive entry may be 1 MiB — and a single oversized import makes every
+ * subsequent run of that agent fail at the provider on context length, recorded
+ * as a failed run with no hint that a skill is the cause.
+ *
+ * Ten times the largest seeded rubric (~3.3k chars), so it bounds documents
+ * without arguing with real skills.
+ */
+export const MAX_SKILL_BODY_CHARS = 32_000;
+
+/**
+ * Create payload. `source` is a provenance label, not a behaviour switch — the
+ * only flow that writes anything but 'manual' today is the conventions
+ * extractor ('extracted', with evidence_files).
+ */
+export const SkillInput = z.object({
+  name: z.string().min(1),
+  description: z.string().default(''),
+  type: SkillType.default('custom'),
+  source: SkillSource.default('manual'),
+  body: z.string().min(1).max(MAX_SKILL_BODY_CHARS),
+  enabled: z.boolean().default(true),
+  evidence_files: z.array(z.string()).nullish(),
+});
+export type SkillInput = z.infer<typeof SkillInput>;
+
+/**
+ * Update payload. Changing `body` mints a new immutable version (the UI copy
+ * promises exactly that); metadata-only edits leave the version alone, so
+ * renaming a skill does not invalidate an eval run that scored its text.
+ *
+ * `.strict()` plus the refinement close the same silent-success hole
+ * `ConventionPatch` documents: zod strips unknown keys, so `{"enabeld":false}`
+ * would validate, match no field, and answer 200 having changed nothing. The
+ * refinement additionally keeps an EMPTY patch off the repository, where
+ * `.set({})` is not valid SQL — a 500 today, and a 422 is the honest answer to
+ * "update this, with nothing".
+ */
+export const SkillPatch = SkillInput.partial()
+  .strict()
+  .refine((v) => Object.keys(v).length > 0, {
+    message: 'Provide at least one field to update',
+  });
+export type SkillPatch = z.infer<typeof SkillPatch>;
+
+/** One entry in a skill's immutable body history. `body` is omitted in lists. */
+export const SkillVersion = z.object({
+  skill_id: z.string(),
+  version: z.number().int(),
+  body: z.string().nullish(),
+  body_chars: z.number().int(),
+  created_at: z.string(),
+});
+export type SkillVersion = z.infer<typeof SkillVersion>;
+
+/** An agent that has this skill linked, with its position in the prompt. */
+export const SkillUsage = z.object({
+  agent_id: z.string(),
+  agent_name: z.string(),
+  order: z.number().int(),
+  agent_enabled: z.boolean(),
+});
+export type SkillUsage = z.infer<typeof SkillUsage>;
+
+/**
+ * Skill dashboard numbers. Attribution is RUN-level, not finding-level: the
+ * engine renders every linked skill into one `## Skills / rules` block, so a
+ * finding cannot honestly be traced to one skill. `findings_30d` therefore
+ * counts findings from runs that INCLUDED this skill — a correlation, and the
+ * UI says so. Per-finding attribution would require the model to cite the
+ * skill, which it is not asked to do.
+ */
+export const SkillStats = z.object({
+  used_by: z.array(SkillUsage),
+  pull_count_30d: z.number().int(),
+  runs_total: z.number().int(),
+  findings_30d: z.number().int(),
+  /** accepted / (accepted + dismissed), 0..1, or null when nothing was triaged. */
+  accept_rate: z.number().min(0).max(1).nullish(),
+  findings_by_category: z.array(
+    z.object({ category: z.string(), count: z.number().int() }),
+  ),
+});
+export type SkillStats = z.infer<typeof SkillStats>;
+
+// ---- Skill import ----
+
+/**
+ * Import request. The file arrives base64-encoded inside a normal JSON body so
+ * one contract carries both a text `.md` and a binary `.zip` without dragging a
+ * multipart parser into the edge. `filename` is what the extension is read from
+ * — the bytes are never sniffed — so it must be the real name the user picked.
+ *
+ * The route caps the encoded length; a data-URL prefix (`data:...;base64,`), as
+ * produced by `FileReader.readAsDataURL`, is tolerated and stripped.
+ */
+export const SkillImportRequest = z.object({
+  filename: z.string().min(1),
+  content_base64: z.string().min(1),
+});
+export type SkillImportRequest = z.infer<typeof SkillImportRequest>;
+
+/**
+ * Import PREVIEW — the extracted skill core, persisted nowhere.
+ *
+ * `POST /skills/import/preview` only reads: no row is written, no file is
+ * unpacked to disk, and nothing in the archive is executed. Confirmation is the
+ * ordinary `POST /skills` — the client posts these fields back (adding
+ * `source: 'imported_url'`), so an unconfirmed import leaves no trace.
+ *
+ * `source_files` are the markdown entries the preview drew from, the one that
+ * produced `body` first. `skipped_files` are entries that were deliberately not
+ * read — executables, images, anything that is not markdown. Showing them is the
+ * point: the user sees exactly what was ignored.
+ */
+export const SkillImportPreview = z.object({
+  name: z.string(),
+  description: z.string(),
+  type: SkillType,
+  body: z.string(),
+  source_files: z.array(z.string()),
+  skipped_files: z.array(z.string()),
+});
+export type SkillImportPreview = z.infer<typeof SkillImportPreview>;
+
 // ---- Conventions ----
+/**
+ * Tri-state rather than an `accepted` boolean: a re-scan must tell a rejected
+ * rule apart from an unreviewed one, or every rejection reappears next scan.
+ */
+export const ConventionStatus = z.enum(['pending', 'accepted', 'rejected']);
+export type ConventionStatus = z.infer<typeof ConventionStatus>;
+
+/**
+ * One extracted house-rule with its proof. `evidence_line` is derived by the
+ * server from where the snippet actually occurs in the file — never the model's
+ * own count — which is what lets the UI deep-link to real code on GitHub.
+ * A candidate whose snippet could not be located is dropped, never stored.
+ */
 export const ConventionCandidate = z.object({
   id: z.string(),
+  // Bounded because the model fills it and the UI renders it verbatim as a
+  // badge: an unconstrained string lets a returned sentence become a label.
+  category: z.string().min(1).max(32),
   rule: z.string(),
   evidence_path: z.string(),
   evidence_snippet: z.string(),
+  evidence_line: z.number().int().nullable(),
   confidence: z.number().min(0).max(1),
-  accepted: z.boolean(),
+  status: ConventionStatus,
 });
 export type ConventionCandidate = z.infer<typeof ConventionCandidate>;
+
+/**
+ * Accept/reject, or correct the rule's wording before it becomes a skill.
+ *
+ * `.strict()` and the refinement together close a silent-success hole: zod
+ * strips unknown keys by default, so `{"staus":"accepted"}` would otherwise
+ * validate, hit the no-op branch, and answer 200 having changed nothing. A
+ * typo at the wire boundary should 422, not look like it worked.
+ */
+export const ConventionPatch = z
+  .object({
+    rule: z.string().min(1),
+    status: ConventionStatus,
+  })
+  .partial()
+  .strict()
+  .refine((v) => v.rule !== undefined || v.status !== undefined, {
+    message: 'Provide at least one of: rule, status',
+  });
+export type ConventionPatch = z.infer<typeof ConventionPatch>;
+
+/**
+ * Extraction outcome. `dropped_no_evidence` is reported rather than silently
+ * swallowed: it is the honest measure of how much the model made up, and the
+ * UI shows it so a bad scan looks like a bad scan.
+ */
+export const ConventionExtractResult = z.object({
+  candidates: z.array(ConventionCandidate),
+  sampled_files: z.array(z.string()),
+  dropped_no_evidence: z.number().int(),
+});
+export type ConventionExtractResult = z.infer<typeof ConventionExtractResult>;
 
 // ---- Agents ----
 // 'openrouter' routes through the OpenAI-compatible API (OpenAIProvider with a

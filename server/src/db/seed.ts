@@ -7,7 +7,29 @@ import {
   GENERAL_REVIEWER_PROMPT,
   SECURITY_REVIEWER_PROMPT,
   PERFORMANCE_REVIEWER_PROMPT,
+  TEST_QUALITY_REVIEWER_PROMPT,
+  API_CONTRACT_REVIEWER_PROMPT,
+  PR_QUALITY_RUBRIC_SKILL,
+  SECRET_LEAKAGE_GATE_SKILL,
+  NO_THEN_CHAINS_SKILL,
+  TEST_QUALITY_RUBRIC_SKILL,
+  API_CONTRACT_GATE_SKILL,
 } from './seed-prompts.js';
+
+/**
+ * Fake credential for the seeded eval case, assembled at runtime rather than
+ * written as one literal.
+ *
+ * The eval only means something if the fixture looks like the real thing — a
+ * string spelling out FAKE would be skipped by the very rule under test, since
+ * the skill tells the reviewer to ignore obvious placeholders. But a literal in
+ * that shape is what GitHub push protection blocks, and rightly: a scanner
+ * cannot tell a fixture from a leak. Joining the parts keeps the runtime value
+ * realistic while leaving no matchable literal in the file.
+ *
+ * It has never been a live key. Do not "fix" this by inlining it.
+ */
+const FIXTURE_STRIPE_KEY = ['sk', 'live', '51H8xQ2eZvKYlo2CkqPmNbVwX'].join('_');
 
 /** Default provider/model for the built-in reviewer agents. */
 const DEFAULT_PROVIDER = 'openrouter' as const;
@@ -19,12 +41,85 @@ const DEFAULT_MODEL = 'deepseek/deepseek-v4-flash';
  *
  * Seeds: default workspace + system user + membership, default settings,
  * demo repo (acme/payments-api), PR #482 with files/commits, a sample review
- * with a few findings, and the three built-in agents (General + Security +
- * Performance), all on the default openrouter/deepseek-v4-flash provider+model.
+ * with a few findings, and the built-in agents (General + Security +
+ * Performance, plus L02's Test Quality + API Contract reviewers), all on the
+ * default openrouter/deepseek-v4-flash provider+model — with their skills and
+ * `agent_skills` links.
  *
- * Course lessons populate the other tables (skills, conventions, memory, eval,
- * …) once their features are built — they start empty here.
+ * Course lessons populate the other tables (conventions, memory, …) once their
+ * features are built — they start empty here.
+ *
+ * Idempotency is per-row and by NAME: every block selects first and inserts only
+ * when nothing matches, so re-running adds the new lesson's rows to an existing
+ * database without touching or duplicating what is already there. It follows
+ * that editing a prompt or skill body here does NOT update a workspace that has
+ * already been seeded — the DB row is the source of truth at run time.
  */
+
+/**
+ * The changed files of PR #483, the Skills Lab control-experiment fixture.
+ *
+ * Exported so `test/seed-diff.test.ts` can parse them: the `@@` counts have to
+ * be exact, because the grounding gate maps every finding's line onto the
+ * new-side numbers derived from these headers. Get them wrong and the agent's
+ * findings are all dropped — which reads as "the agent found nothing" rather
+ * than as a broken fixture, so it is pinned by a test rather than by care.
+ */
+export const BREAKING_PR_FILES = [
+  {
+    path: 'src/api/public/webhooks.ts',
+    additions: 4,
+    deletions: 3,
+    patch: [
+      '@@ -14,12 +14,13 @@ export async function registerWebhookRoutes(app: FastifyInstance) {',
+      "   app.post('/webhooks', {",
+      '     schema: {',
+      '       body: z.object({',
+      '         url: z.string().url(),',
+      '-        secret: z.string().optional(),',
+      '+        secret: z.string(),',
+      '+        events: z.array(z.string()).min(1),',
+      '       }),',
+      '     },',
+      '   }, async (req, reply) => {',
+      '     const hook = await createWebhook(req.body);',
+      '-    reply.status(200);',
+      '-    return { id: hook.id, callbackUrl: hook.url, isActive: hook.active };',
+      '+    reply.status(204);',
+      '+    return { id: hook.id, callback_url: hook.url, enabled: hook.active };',
+      '   });',
+    ].join('\n'),
+  },
+  {
+    path: 'src/api/public/types.ts',
+    additions: 2,
+    deletions: 3,
+    patch: [
+      '@@ -3,5 +3,4 @@ export interface WebhookResponse {',
+      '   id: string;',
+      '-  /** @deprecated use callback_url */',
+      '-  callbackUrl: string;',
+      '-  isActive: boolean;',
+      '+  callback_url: string;',
+      '+  enabled: boolean;',
+      ' }',
+    ].join('\n'),
+  },
+  {
+    path: 'package.json',
+    additions: 1,
+    deletions: 1,
+    patch: [
+      '@@ -1,5 +1,5 @@',
+      ' {',
+      '   "name": "@acme/payments-api",',
+      '-  "version": "2.4.1",',
+      '+  "version": "2.5.0",',
+      '   "private": false,',
+      '   "main": "dist/index.js",',
+    ].join('\n'),
+  },
+] as const;
 
 export const DEFAULT_WORKSPACE_NAME = 'default';
 export const SYSTEM_USER_EMAIL = 'you@local';
@@ -176,6 +271,57 @@ export async function seed(db: Db): Promise<{ workspaceId: string; userId: strin
     ]);
   }
 
+  // ---- PR #483 (breaking API contract change) ----
+  // The control-experiment fixture: a diff that breaks a published contract
+  // three ways at once — a response field renamed, an optional request field
+  // made required, and a 200 turned into a 204 — plus a minor version bump and
+  // a @deprecated field deleted outright.
+  //
+  // Unlike #482 this PR carries REAL `patch` text, which is what makes it
+  // reviewable with no GitHub and no clone: `diffFromPrFiles` reassembles a
+  // unified diff from these hunks. The `@@` line counts are exact on purpose —
+  // the grounding gate maps a finding's line onto the new-side numbers derived
+  // from them, so an approximate header would silently drop every finding and
+  // look like the agent found nothing.
+  let [breakingPr] = await db
+    .select()
+    .from(t.pullRequests)
+    .where(and(eq(t.pullRequests.repoId, repoId), eq(t.pullRequests.number, 483)));
+  if (!breakingPr) {
+    [breakingPr] = await db
+      .insert(t.pullRequests)
+      .values({
+        workspaceId,
+        repoId,
+        number: 483,
+        title: 'Tidy up the webhook payload',
+        author: 'dan.oliveira',
+        branch: 'chore/webhook-payload-cleanup',
+        base: 'main',
+        headSha: 'f7e6d5c4b3a2',
+        additions: 7,
+        deletions: 7,
+        filesCount: 3,
+        status: 'needs_review',
+        // Deliberately innocuous: the PR describes the change as a cleanup and
+        // never uses the word "breaking". An agent without the contract skills
+        // has every reason to read it as tidying.
+        body: 'Small cleanup of the webhook payload so the field names match the rest of the API (snake_case) and the response stops echoing a body nobody reads.',
+      })
+      .returning();
+
+    await db
+      .insert(t.prFiles)
+      .values(BREAKING_PR_FILES.map((f) => ({ ...f, prId: breakingPr!.id })));
+
+    await db.insert(t.prCommits).values({
+      prId: breakingPr!.id,
+      sha: 'f7e6d5c4b3a2',
+      message: 'Rename webhook payload fields to snake_case',
+      author: 'dan.oliveira',
+    });
+  }
+
   // ---- built-in agents (the three starter presets) ----
   // Prompt bodies live in ./seed-prompts.ts (mirrored in docs/agent-prompts/*.md).
   const seedAgents: Array<typeof t.agents.$inferInsert> = [
@@ -212,6 +358,33 @@ export async function seed(db: Db): Promise<{ workspaceId: string; userId: strin
       version: 1,
       createdBy: userId,
     },
+    // L02 — the two agents the Skills Lab control experiment runs on. Each is
+    // paired with exactly ONE skill below, so linking or unlinking that skill is
+    // the single variable between two runs of the same diff.
+    {
+      workspaceId,
+      name: 'Test Quality Reviewer',
+      description:
+        'Checks test quality: uncovered branches, missed corner cases, over-mocking, and flaky patterns.',
+      provider: DEFAULT_PROVIDER,
+      model: DEFAULT_MODEL,
+      systemPrompt: TEST_QUALITY_REVIEWER_PROMPT,
+      enabled: true,
+      version: 1,
+      createdBy: userId,
+    },
+    {
+      workspaceId,
+      name: 'API Contract Reviewer',
+      description:
+        'Flags breaking changes to route signatures, request/response shapes and status codes.',
+      provider: DEFAULT_PROVIDER,
+      model: DEFAULT_MODEL,
+      systemPrompt: API_CONTRACT_REVIEWER_PROMPT,
+      enabled: true,
+      version: 1,
+      createdBy: userId,
+    },
   ];
   for (const a of seedAgents) {
     const [existing] = await db
@@ -219,6 +392,142 @@ export async function seed(db: Db): Promise<{ workspaceId: string; userId: strin
       .from(t.agents)
       .where(and(eq(t.agents.workspaceId, workspaceId), eq(t.agents.name, a.name)));
     if (!existing) await db.insert(t.agents).values(a);
+  }
+
+  // ---- built-in skills ----
+  // One per `source` provenance so the Skills Lab has an honest sample of each
+  // badge on a fresh install, and so the e2e flows have deterministic,
+  // read-only data to assert on (no model call involved).
+  const seedSkills: Array<typeof t.skills.$inferInsert> = [
+    {
+      workspaceId,
+      name: 'pr-quality-rubric',
+      description: 'Rubric for evaluating overall PR quality across correctness, tests, and clarity.',
+      type: 'rubric',
+      source: 'manual',
+      body: PR_QUALITY_RUBRIC_SKILL,
+      enabled: true,
+      version: 1,
+    },
+    {
+      workspaceId,
+      name: 'secret-leakage-gate',
+      description: 'Detects sk_live, service_role, and NEXT_PUBLIC secret leaks in a diff.',
+      type: 'security',
+      source: 'community',
+      body: SECRET_LEAKAGE_GATE_SKILL,
+      enabled: true,
+      version: 1,
+    },
+    {
+      workspaceId,
+      name: 'no-then-chains',
+      description: 'House rule: always use async/await instead of .then() chains.',
+      type: 'convention',
+      source: 'extracted',
+      body: NO_THEN_CHAINS_SKILL,
+      enabled: true,
+      version: 1,
+      // An extracted skill carries the files the rule was mined from — that
+      // evidence is what makes an accepted convention auditable later.
+      evidenceFiles: ['src/api/users.ts', 'src/config.ts'],
+    },
+    // L02 — one skill per new agent, written to be MEASURED: each rule names a
+    // code shape and a severity, so "with the skill" vs "without it" on the same
+    // diff is a difference you can point at.
+    {
+      workspaceId,
+      name: 'test-quality-rubric',
+      description:
+        'Flags untested branches, missing empty/null/boundary cases, mock-only assertions, and flaky time/order/network patterns.',
+      type: 'rubric',
+      source: 'manual',
+      body: TEST_QUALITY_RUBRIC_SKILL,
+      enabled: true,
+      version: 1,
+    },
+    {
+      workspaceId,
+      name: 'api-contract-gate',
+      description:
+        'Treats a changed route signature, a removed or renamed response field, and a changed status code as BREAKING.',
+      type: 'convention',
+      // The one seeded skill that arrived through the L02 import flow, so a
+      // fresh install shows the `imported_url` badge on something real.
+      source: 'imported_url',
+      body: API_CONTRACT_GATE_SKILL,
+      enabled: true,
+      version: 1,
+    },
+  ];
+  const skillIdByName = new Map<string, string>();
+  for (const sk of seedSkills) {
+    let [row] = await db
+      .select()
+      .from(t.skills)
+      .where(and(eq(t.skills.workspaceId, workspaceId), eq(t.skills.name, sk.name)));
+    if (!row) [row] = await db.insert(t.skills).values(sk).returning();
+    if (row) skillIdByName.set(row.name, row.id);
+  }
+
+  // ---- agent ↔ skill links ----
+  // `order` is the position in the assembled prompt, so the rubric leads and the
+  // narrower gate follows it for the Security Reviewer.
+  //
+  // The two L02 agents get exactly ONE skill each, and nothing else: the whole
+  // point is that the skill is the only variable, so adding the general rubric
+  // alongside would confound the comparison.
+  const links: Array<{ agent: string; skills: string[] }> = [
+    { agent: 'General Reviewer', skills: ['pr-quality-rubric'] },
+    { agent: 'Security Reviewer', skills: ['pr-quality-rubric', 'secret-leakage-gate'] },
+    { agent: 'Test Quality Reviewer', skills: ['test-quality-rubric'] },
+    { agent: 'API Contract Reviewer', skills: ['api-contract-gate'] },
+  ];
+  for (const link of links) {
+    const [agentRow] = await db
+      .select()
+      .from(t.agents)
+      .where(and(eq(t.agents.workspaceId, workspaceId), eq(t.agents.name, link.agent)));
+    if (!agentRow) continue;
+    for (const [i, skillName] of link.skills.entries()) {
+      const skillId = skillIdByName.get(skillName);
+      if (!skillId) continue;
+      await db
+        .insert(t.agentSkills)
+        .values({ agentId: agentRow.id, skillId, order: i })
+        .onConflictDoNothing();
+    }
+  }
+
+  // ---- one skill-owned eval case ----
+  // Asserts the rubric catches the same hardcoded key the seeded review found,
+  // so the Evals tab has a runnable case out of the box.
+  const rubricId = skillIdByName.get('pr-quality-rubric');
+  if (rubricId) {
+    const [existingCase] = await db
+      .select()
+      .from(t.evalCases)
+      .where(and(eq(t.evalCases.ownerId, rubricId), eq(t.evalCases.name, 'stripe-key-leak')));
+    if (!existingCase) {
+      await db.insert(t.evalCases).values({
+        workspaceId,
+        ownerKind: 'skill',
+        ownerId: rubricId,
+        name: 'stripe-key-leak',
+        inputDiff: [
+          'diff --git a/src/config.ts b/src/config.ts',
+          '--- a/src/config.ts',
+          '+++ b/src/config.ts',
+          '@@ -10,3 +10,4 @@',
+          ' export const config = {',
+          '   port: Number(process.env.PORT ?? 3000),',
+          `+  stripeKey: '${FIXTURE_STRIPE_KEY}',`,
+          ' };',
+        ].join('\n'),
+        expectedOutput: { findings: [{ severity: 'CRITICAL', category: 'security' }] },
+        notes: 'A live Stripe key added in the diff must be flagged CRITICAL.',
+      });
+    }
   }
 
   return { workspaceId, userId };
