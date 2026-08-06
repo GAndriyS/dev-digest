@@ -65,7 +65,13 @@ const EvalCaseBody = z.object({
   expected_output: ExpectedEvalOutput.optional(),
   notes: z.string().nullish(),
 });
-const EvalCasePatchBody = EvalCaseBody.partial();
+// Strict for the same reason as `SkillPatch`: a typo'd key would otherwise be
+// stripped, match nothing, and answer 200 as if the edit had landed.
+const EvalCasePatchBody = EvalCaseBody.partial()
+  .strict()
+  .refine((v) => Object.keys(v).length > 0, {
+    message: 'Provide at least one field to update',
+  });
 
 export default async function skillsRoutes(appBase: FastifyInstance) {
   const app = appBase.withTypeProvider<ZodTypeProvider>();

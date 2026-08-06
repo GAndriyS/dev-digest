@@ -175,8 +175,19 @@ export type SkillInput = z.infer<typeof SkillInput>;
  * Update payload. Changing `body` mints a new immutable version (the UI copy
  * promises exactly that); metadata-only edits leave the version alone, so
  * renaming a skill does not invalidate an eval run that scored its text.
+ *
+ * `.strict()` plus the refinement close the same silent-success hole
+ * `ConventionPatch` documents: zod strips unknown keys, so `{"enabeld":false}`
+ * would validate, match no field, and answer 200 having changed nothing. The
+ * refinement additionally keeps an EMPTY patch off the repository, where
+ * `.set({})` is not valid SQL — a 500 today, and a 422 is the honest answer to
+ * "update this, with nothing".
  */
-export const SkillPatch = SkillInput.partial();
+export const SkillPatch = SkillInput.partial()
+  .strict()
+  .refine((v) => Object.keys(v).length > 0, {
+    message: 'Provide at least one field to update',
+  });
 export type SkillPatch = z.infer<typeof SkillPatch>;
 
 /** One entry in a skill's immutable body history. `body` is omitted in lists. */

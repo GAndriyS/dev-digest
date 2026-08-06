@@ -195,7 +195,14 @@ export class AgentsRepository {
       .from(t.agentSkills)
       .innerJoin(t.skills, eq(t.agentSkills.skillId, t.skills.id))
       .where(eq(t.agentSkills.agentId, agentId))
-      .orderBy(asc(t.agentSkills.order));
+      // `order` alone is not a total order: nothing stops two links sharing a
+      // value (an explicit order, or `existing.length` against a sparse set),
+      // and Postgres is then free to return ties in any order it likes. This
+      // list becomes the `## Skills / rules` block verbatim, so a tie would make
+      // two runs of the SAME agent send different prompts — noise landing
+      // exactly on the A/B experiment this feature exists for. `id` is the
+      // tiebreaker because it is stable and already unique.
+      .orderBy(asc(t.agentSkills.order), asc(t.agentSkills.skillId));
     return rows.map((r) => ({ skill: r.skill, order: r.order }));
   }
 

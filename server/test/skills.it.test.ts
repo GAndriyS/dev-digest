@@ -6,6 +6,7 @@ import { loadConfig } from '../src/platform/config.js';
 import { seed } from '../src/db/seed.js';
 import * as t from '../src/db/schema.js';
 import { MockGitClient, MockGitHubClient } from '../src/adapters/mocks.js';
+import { MAX_SKILL_BODY_CHARS } from '@devdigest/shared';
 
 const hasDocker = await dockerAvailable();
 const d = hasDocker ? describe : describe.skip;
@@ -143,6 +144,41 @@ d('skills module', () => {
     expect(
       (await app.inject({ method: 'GET', url: `/skills/${id}/versions/99` })).statusCode,
     ).toBe(404);
+    await app.close();
+  });
+
+  it('refuses a patch that would change nothing, instead of answering 200', async () => {
+    const app = await makeApp();
+    const id = (
+      await app.inject({ method: 'POST', url: '/skills', payload: { ...createBody, name: 'strict' } })
+    ).json().id as string;
+
+    // A typo'd key: zod strips unknown keys, so without `.strict()` this
+    // validates, matches no field, and reports success having done nothing.
+    const typo = await app.inject({
+      method: 'PUT',
+      url: `/skills/${id}`,
+      payload: { enabeld: false },
+    });
+    expect(typo.statusCode).toBe(422);
+
+    // An empty patch reaches `.set({})`, which is not valid SQL — a 500 dressed
+    // as a client mistake.
+    const empty = await app.inject({ method: 'PUT', url: `/skills/${id}`, payload: {} });
+    expect(empty.statusCode).toBe(422);
+
+    // A body past the cap: the prompt slot is bounded at the edge, not at the
+    // provider, where it would surface as a failed run instead.
+    const huge = await app.inject({
+      method: 'PUT',
+      url: `/skills/${id}`,
+      payload: { body: 'x'.repeat(MAX_SKILL_BODY_CHARS + 1) },
+    });
+    expect(huge.statusCode).toBe(422);
+
+    // Nothing above touched the row.
+    const after = (await app.inject({ method: 'GET', url: `/skills/${id}` })).json();
+    expect(after).toMatchObject({ enabled: true, version: 1, body: createBody.body });
     await app.close();
   });
 
