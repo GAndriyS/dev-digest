@@ -15,35 +15,38 @@
  *   cd server && pnpm exec tsx scripts/seed-l02-experiment.ts
  */
 import 'dotenv/config';
+import { pathToFileURL } from 'node:url';
 import { createDb } from '../src/db/client.js';
 import * as t from '../src/db/schema.js';
 import { and, eq } from 'drizzle-orm';
 
-/** PR 901 — the tested branch is the happy path; the error branch has no test. */
-const TEST_QUALITY_PATCH = `--- a/src/lib/coupon.ts
-+++ b/src/lib/coupon.ts
-@@ -1,6 +1,20 @@
+/**
+ * PR 901 — the tested branch is the happy path; the error branch has no test.
+ *
+ * Exported, like `BREAKING_PR_FILES`, so `test/seed-l02-diff.test.ts` can pin
+ * the `@@` arithmetic. A header that disagrees with its body is not cosmetic
+ * here: `parseUnifiedDiff` numbers each hunk from the NEW-SIDE START, and a
+ * finding whose line falls outside the band the parser computed is dropped by
+ * the grounding gate — silently, so a broken fixture reads as "the agent found
+ * nothing" rather than as a broken fixture.
+ */
+export const TEST_QUALITY_PATCH = `@@ -1,5 +1,14 @@
  export interface Coupon { code: string; percentOff: number; expiresAt: string }
 
--export function applyCoupon(total: number, coupon: Coupon): number {
--  return total - total * (coupon.percentOff / 100);
-+export function applyCoupon(total: number, coupon: Coupon): number {
+ export function applyCoupon(total: number, coupon: Coupon): number {
 +  if (new Date(coupon.expiresAt).getTime() < Date.now()) {
 +    throw new CouponExpiredError(coupon.code);
 +  }
 +  if (coupon.percentOff < 0 || coupon.percentOff > 100) {
 +    throw new InvalidCouponError(coupon.code);
 +  }
-+  return total - total * (coupon.percentOff / 100);
-+}
+   return total - total * (coupon.percentOff / 100);
+ }
 +
 +export class CouponExpiredError extends Error {}
-+export class InvalidCouponError extends Error {}
-`;
++export class InvalidCouponError extends Error {}`;
 
-const TEST_QUALITY_TEST_PATCH = `--- /dev/null
-+++ b/src/lib/coupon.test.ts
-@@ -0,0 +1,18 @@
+export const TEST_QUALITY_TEST_PATCH = `@@ -0,0 +1,18 @@
 +import { describe, it, expect, vi } from 'vitest';
 +import { applyCoupon } from './coupon';
 +
@@ -61,13 +64,10 @@ const TEST_QUALITY_TEST_PATCH = `--- /dev/null
 +  it('was called', () => {
 +    expect(applyCoupon).toHaveBeenCalled();
 +  });
-+});
-`;
++});`;
 
 /** PR 902 — a breaking route change dressed up as a tidy-up. */
-const API_CONTRACT_PATCH = `--- a/src/api/routes/invoices.ts
-+++ b/src/api/routes/invoices.ts
-@@ -12,17 +12,17 @@
+export const API_CONTRACT_PATCH = `@@ -12,12 +12,11 @@
  export function registerInvoiceRoutes(app: App) {
 -  app.get('/invoices/:id', async (req, reply) => {
 -    const invoice = await invoices.byId(req.params.id);
@@ -88,8 +88,44 @@ const API_CONTRACT_PATCH = `--- a/src/api/routes/invoices.ts
 +      currency: invoice.currency,
 +    });
 +  });
- }
-`;
+ }`;
+
+/**
+ * The two seeded PRs, with per-file counts that must agree with the patches
+ * above — the PR list renders them, so a lie here is visible in the UI even
+ * when the diff itself parses.
+ */
+export const EXPERIMENT_PRS = [
+  {
+    number: 901,
+    title: 'Validate coupons before applying the discount',
+    branch: 'feat/coupon-validation',
+    body: 'Adds expiry and range validation to applyCoupon, with a unit test.',
+    files: [
+      { path: 'src/lib/coupon.ts', additions: 9, deletions: 0, patch: TEST_QUALITY_PATCH },
+      {
+        path: 'src/lib/coupon.test.ts',
+        additions: 18,
+        deletions: 0,
+        patch: TEST_QUALITY_TEST_PATCH,
+      },
+    ],
+  },
+  {
+    number: 902,
+    title: 'Tidy up the invoice endpoint',
+    branch: 'chore/invoice-cleanup',
+    body: 'Small cleanup of the invoice route: clearer param name, leaner payload.',
+    files: [
+      {
+        path: 'src/api/routes/invoices.ts',
+        additions: 9,
+        deletions: 10,
+        patch: API_CONTRACT_PATCH,
+      },
+    ],
+  },
+] as const;
 
 async function main(): Promise<void> {
   const url = process.env.DATABASE_URL;
@@ -105,39 +141,7 @@ async function main(): Promise<void> {
     .where(and(eq(t.repos.workspaceId, ws.id), eq(t.repos.fullName, 'acme/payments-api')));
   if (!repo) throw new Error('demo repo missing — run pnpm db:seed first');
 
-  const prs = [
-    {
-      number: 901,
-      title: 'Validate coupons before applying the discount',
-      branch: 'feat/coupon-validation',
-      body: 'Adds expiry and range validation to applyCoupon, with a unit test.',
-      files: [
-        { path: 'src/lib/coupon.ts', additions: 14, deletions: 2, patch: TEST_QUALITY_PATCH },
-        {
-          path: 'src/lib/coupon.test.ts',
-          additions: 18,
-          deletions: 0,
-          patch: TEST_QUALITY_TEST_PATCH,
-        },
-      ],
-    },
-    {
-      number: 902,
-      title: 'Tidy up the invoice endpoint',
-      branch: 'chore/invoice-cleanup',
-      body: 'Small cleanup of the invoice route: clearer param name, leaner payload.',
-      files: [
-        {
-          path: 'src/api/routes/invoices.ts',
-          additions: 8,
-          deletions: 9,
-          patch: API_CONTRACT_PATCH,
-        },
-      ],
-    },
-  ];
-
-  for (const spec of prs) {
+  for (const spec of EXPERIMENT_PRS) {
     let [pr] = await db
       .select()
       .from(t.pullRequests)
@@ -171,7 +175,14 @@ async function main(): Promise<void> {
   await handle.close();
 }
 
-main().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+// CLI entrypoint only — the patches above are imported by `seed-l02-diff.test.ts`,
+// and importing this file must not talk to a database. `pathToFileURL` rather
+// than a `file://` template: on Windows `process.argv[1]` is a backslash path,
+// so the template never matches and the script would exit 0 having done nothing
+// (see server/INSIGHTS.md, 2026-07-31).
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((e) => {
+    console.error(e);
+    process.exit(1);
+  });
+}
