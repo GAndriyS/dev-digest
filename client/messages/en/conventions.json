@@ -7,7 +7,6 @@
     "subtitle": "Scan the cloned repo to surface house-rules — each backed by evidence you can turn into a Skill.",
     "scanning": "Scanning…",
     "rescan": "Re-scan",
-    "runExtraction": "Run extraction",
     "extractionFailed": "Extraction failed",
     "loadError": "Could not load conventions.",
     "empty": {
@@ -15,7 +14,6 @@
       "body": "Scan the repo to surface house-rules — naming, error handling, structure — each backed by evidence you can turn into a Skill.",
       "cta": "Run extraction"
     },
-    "candidateCount": "{count, plural, one {# candidate} other {# candidates}} · grounded against sampled files",
     "acceptedCount": "{accepted} of {total} accepted",
     "createSkill": "Create skill",
     "scanned": "Scanned {files, plural, one {# file} other {# files}}",
@@ -24,7 +22,6 @@
   "card": {
     "confidence": "Confidence",
     "accepted": "Accepted",
-    "accepting": "Accepting…",
     "accept": "Accept",
     "reject": "Reject",
     "rejected": "Rejected",

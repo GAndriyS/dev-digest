@@ -56,10 +56,20 @@ its next run.
 
 ## Out of scope
 
-- **URL and community import flows.** `SkillSource` already has
-  `imported_url` and `community` members and the seed exercises them, but the
-  only writer in L02 is manual authoring. Importing means fetching and trusting
-  remote prompt text, which is a security conversation, not a UI one.
+- **URL and community import flows.** `SkillSource` already has `imported_url`
+  and `community` members and the seed exercises them, but neither fetches
+  anything remote in L02: pulling prompt text off a URL or a marketplace is a
+  trust conversation, not a UI one.
+
+  **Amended — file import DID ship.** `POST /skills/import/preview` plus
+  `ImportSkillDrawer` read a `.md`/`.zip` the user picks locally, which keeps
+  the fetch out of it while still being an untrusted body. The trust question
+  was answered rather than dodged: the preview is a dry run that writes nothing,
+  the archive reader bounds entries, sizes and expansion ratios and refuses
+  zip-slip, and a confirmed skill is stored `source: 'imported_url'` and
+  `enabled: false` so an unvetted body cannot reach a prompt until someone
+  clicks the toggle. What remains out of scope is fetching by URL and browsing
+  the community catalogue — the staged i18n keys for both are unused.
 - **A `vetted` column.** Marking a skill as reviewed-and-approved implies a
   review workflow (who vets, against what, what happens to agents using an
   unvetted skill) that does not exist yet. `source` carries the honest amount of
