@@ -181,6 +181,18 @@ live in `<package>/INSIGHTS.md`. Maintained by the `engineering-insights` skill.
   has an open PR. Always pass `--repo GAndriyS/dev-digest` (or the full URL) to
   every `gh pr`/`gh api` call in this repo.
 
+- **2026-08-10** — A newly created `.claude/agents/<name>.md` cannot be invoked
+  in the same turn that wrote it — the `Agent` tool's registry is refreshed
+  between turns, not mid-turn, so four freshly written agents all failed with
+  `Agent type 'plan-verifier' not found. Available agents: … implementer,
+  planner, researcher` (the three that existed at session start), then became
+  available on the very next turn with no restart. Read that error as "wait a
+  turn", not as "the frontmatter is broken" — and do not architect around it by
+  splitting the work across sessions. Structural checks (frontmatter parses,
+  `name` matches the filename, every skill in `skills:` exists under
+  `.claude/skills/`) are what belong in the same turn as the write; behavioural
+  probes go in the next one.
+
 ## Recurring Errors & Fixes
 
 - **2026-08-01** — API goes silent: port still listening, TCP still accepted,
@@ -234,6 +246,15 @@ live in `<package>/INSIGHTS.md`. Maintained by the `engineering-insights` skill.
   grandfathered exception lists (four layerless modules, two adapters reaching
   into `repo-intel` constants) and one `no-orphans` warning on the dead
   `platform/model-router.ts`.
+
+- **2026-08-10** — Lab 3: added four subagents — `test-writer` (sonnet),
+  `architecture-reviewer` (opus, read-only), `plan-verifier` (opus, read-only,
+  and the only agent with no `Skill` tool), `doc-writer` (sonnet, the first to
+  get `mermaid-diagram`) — taking the chain to seven. Reconciled
+  `.claude/agents/README.md`, whose "Writing a new agent" template had drifted to
+  prescribe a `metadata.skills` block no shipped agent uses. Structural checks
+  pass; the behavioural probes are deferred to a fresh session for the
+  registry reason recorded above.
 
 ## Open Questions
 
