@@ -3,7 +3,16 @@
 Development Plans written by the [`planner`](../agents/planner.md) agent and
 executed by [`implementer`](../agents/implementer.md).
 
-One file per piece of work: `<branch-slug>-<topic-slug>.md`.
+One file per piece of work: `<branch-slug>-<topic-slug>.md` — or just
+`<topic-slug>.md` when the plan was written before its branch existed, which is
+the normal case. A plan filed under `main-…` is one nobody finds from the branch
+that implements it.
+
+**Name the plan when you delegate.** `implementer` and `plan-verifier` both
+refuse to guess: given no name and more than one plan here, they list the
+directory and stop. Picking "the newest by mtime" was the old rule and it is a
+coin flip after any checkout or rebase — the plan decides everything those two
+agents do, so getting it wrong produces confident work on the wrong branch.
 
 ## These are committed on purpose
 

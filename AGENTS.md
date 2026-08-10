@@ -67,8 +67,8 @@ a package — read its own `AGENTS.md` (`server/`, `client/`, `reviewer-core/`,
   catalog → read `.claude/agents/README.md`
 - Planning a change before writing it → delegate to the `planner` subagent; it
   writes the plan to `.claude/plans/` (committed) and `implementer` executes it.
-  Neither can call the next step — `Agent` is stripped from every subagent, so
-  the main session orchestrates.
+  Neither can call the next step — no agent here lists `Agent` in its `tools`
+  allowlist, so the main session orchestrates.
 - Tests for a landed change → delegate to `test-writer`; boundary review →
   `architecture-reviewer`; "was the plan actually followed" → `plan-verifier`;
   documenting a shipped feature → `doc-writer`. The chain and when to invoke
