@@ -1,6 +1,8 @@
-/* IntentCard — L03: the PR's derived intent, scope, risk areas and confidence,
-   with a manual re-classify button (no auto re-derive on PR head move — this
-   IS that button). Renders three states beyond the happy path: not classified
+/* IntentCard — L03: the PR's derived intent, scope and risk areas, with a
+   manual re-classify button (no auto re-derive on PR head move — this IS that
+   button). Confidence and the `sources[]` provenance are stored on the record
+   but deliberately not rendered: the card shows what the PR is about, not how
+   sure the model was. Renders three states beyond the happy path: not classified
    yet, deriving, and a failed derive — the overview tab's own fetch must never
    read as a page error (e2e flow 02 opens this tab and waits on the title). */
 "use client";
@@ -12,7 +14,6 @@ import remarkGfm from "remark-gfm";
 import {
   Badge,
   Button,
-  ConfidenceNum,
   EmptyState,
   ErrorState,
   Icon,
@@ -20,23 +21,10 @@ import {
   Skeleton,
   type IconName,
 } from "@devdigest/ui";
-import type { IntentSource } from "@devdigest/shared";
 import { usePrIntent, useDeriveIntent } from "@/lib/hooks/reviews";
 import { ApiError } from "@/lib/api";
 import { CARD_SKELETON_HEIGHT, RISK_FALLBACK, RISK_TONES } from "./constants";
 import { s } from "./styles";
-
-/** One `sources[]` entry → its display label. Unavailable entries say so —
-    they're the reason a low confidence is explainable, not just a number. */
-function sourceLabel(source: IntentSource, t: ReturnType<typeof useTranslations>): string {
-  const kind =
-    source.type === "description"
-      ? t("card.sourceDescription")
-      : source.type === "linked_issue"
-        ? t("card.sourceLinkedIssue", { ref: source.ref ?? "" })
-        : t("card.sourceRepoFile", { ref: source.ref ?? "" });
-  return source.status === "unavailable" ? `${kind} — ${t("card.sourceUnavailable")}` : kind;
-}
 
 /** The model writes intent text in Markdown — in practice almost entirely
     inline code spans around paths and identifiers, which read as literal
@@ -246,18 +234,6 @@ export function IntentCard({ prId, headSha }: { prId: string | null; headSha: st
             </>
           )}
 
-          <div style={s.footer}>
-            <ConfidenceNum value={intent.confidence} />
-            {intent.sources.length > 0 && (
-              <div style={s.sources}>
-                {intent.sources.map((source, i) => (
-                  <span key={i} style={source.status === "unavailable" ? s.sourceUnavailable : undefined}>
-                    {sourceLabel(source, t)}
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
         </div>
       )}
     </section>

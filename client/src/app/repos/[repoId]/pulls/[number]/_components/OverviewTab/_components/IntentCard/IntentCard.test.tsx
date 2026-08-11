@@ -86,7 +86,7 @@ describe("IntentCard", () => {
     expect(deriveMutate).toHaveBeenCalledOnce();
   });
 
-  it("renders a derived intent with scope, risk areas, confidence, sources — and flags it stale", () => {
+  it("renders a derived intent with scope and risk areas — and flags it stale", () => {
     state.data = intent({ head_sha: "old-sha" });
     renderCard({ headSha: "new-sha" });
 
@@ -94,14 +94,22 @@ describe("IntentCard", () => {
     expect(screen.getByText("src/middleware/ratelimit.ts")).toBeInTheDocument();
     expect(screen.getByText("docs/formatting")).toBeInTheDocument();
     expect(screen.getByText("auth")).toBeInTheDocument();
-    expect(screen.getByText("70% conf")).toBeInTheDocument();
-    expect(screen.getByText("PR description")).toBeInTheDocument();
-    expect(screen.getByText(/Linked issue #471 — unavailable/)).toBeInTheDocument();
     expect(screen.getByText("PR has new commits since this was derived")).toBeInTheDocument();
 
     // The re-classify button also works once something is already loaded.
     fireEvent.click(screen.getByText("Re-classify"));
     expect(deriveMutate).toHaveBeenCalledOnce();
+  });
+
+  // Confidence and provenance stay on the record and out of the card — the
+  // fixture deliberately carries both, so a re-added footer fails here.
+  it("renders neither the confidence number nor the sources provenance", () => {
+    state.data = intent();
+    renderCard();
+
+    expect(screen.queryByText("70% conf")).not.toBeInTheDocument();
+    expect(screen.queryByText("PR description")).not.toBeInTheDocument();
+    expect(screen.queryByText(/unavailable/)).not.toBeInTheDocument();
   });
 
   it("renders the Markdown the model writes into scope items and risk areas", () => {

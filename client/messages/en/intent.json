@@ -12,10 +12,6 @@
     "outOfScope": "Out of scope",
     "riskAreas": "Risk areas",
     "none": "None noted",
-    "stale": "PR has new commits since this was derived",
-    "sourceDescription": "PR description",
-    "sourceLinkedIssue": "Linked issue {ref}",
-    "sourceRepoFile": "{ref}",
-    "sourceUnavailable": "unavailable"
+    "stale": "PR has new commits since this was derived"
   }
 }

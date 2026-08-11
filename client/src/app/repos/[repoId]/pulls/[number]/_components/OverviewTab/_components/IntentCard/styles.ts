@@ -136,27 +136,6 @@ export const s = {
   } satisfies CSSProperties,
   riskCrit: tone("crit"),
   riskWarn: tone("warn"),
-  footer: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    flexWrap: "wrap",
-    gap: 10,
-    paddingTop: 14,
-    borderTop: "1px solid var(--border)",
-  } satisfies CSSProperties,
-  sources: {
-    display: "flex",
-    flexWrap: "wrap",
-    gap: 10,
-    fontSize: 12,
-    color: "var(--text-muted)",
-  } satisfies CSSProperties,
-  sourceUnavailable: {
-    color: "var(--text-muted)",
-    textDecoration: "line-through",
-    textDecorationColor: "var(--border-strong)",
-  } satisfies CSSProperties,
   error: {
     border: "1px solid var(--crit)",
     background: "var(--crit-bg)",
