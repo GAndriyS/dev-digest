@@ -6,10 +6,27 @@
  * literal buried in `helpers.ts`.
  *
  * Pattern syntax consumed by `matchesPattern` in `helpers.ts`:
- *   - ends with `/`        → directory-segment match: true when this exact
+ *   - starts AND ends with `/` (e.g. `/vendor/`) → ROOT-ANCHORED
+ *                             directory-segment match: true only when this
+ *                             exact segment is the path's FIRST directory.
+ *                             Reserve this for directory names that are
+ *                             ambiguous with hand-written source layout —
+ *                             `vendor/`, `build/`, `out/`, `generated/` are
+ *                             all legitimate names for a nested, hand-edited
+ *                             folder (`server/src/vendor/shared`, a
+ *                             `scripts/build/` release script, a
+ *                             `packages/out/` package) and must not be
+ *                             boilerplate just because the segment appears
+ *                             somewhere downstream of `src/`.
+ *   - ends with `/` (only) → directory-segment match: true when this exact
  *                             segment appears anywhere among the path's
- *                             directories (never the filename itself).
- *   - starts with `/`       → basename glob, but ONLY at repo root (the path
+ *                             directories (never the filename itself). Safe
+ *                             for names that are unambiguous regardless of
+ *                             depth — `dist/`, `coverage/`, `.next/`,
+ *                             `node_modules/`, `__snapshots__/` — a package
+ *                             never hand-authors a nested folder with one of
+ *                             these exact names for source code.
+ *   - starts with `/` (only) → basename glob, but ONLY at repo root (the path
  *                             contains no `/` at all) — e.g. `/*.yml`.
  *   - contains `/` (else)   → full-path glob, anchored start-to-end.
  *   - no `/` at all (else)  → basename glob, matched at ANY directory depth.
@@ -39,11 +56,16 @@ export const LOCK_FILES = [
   'Pipfile.lock',
 ] as const;
 
-/** Checked after `LOCK_FILES`; a match classifies the file as `boilerplate`. */
+/**
+ * Checked after `LOCK_FILES`; a match classifies the file as `boilerplate`.
+ * `/vendor/`, `/build/`, `/out/`, `/generated/` are root-anchored (see the
+ * pattern-syntax comment above) — these four names are also plausible
+ * hand-authored directories nested under `src/` or a package root, and
+ * boilerplate is the one role forced collapsed, so a false positive here
+ * hides real source rather than merely mis-sorting it.
+ */
 export const BOILERPLATE_PATTERNS = [
   'dist/',
-  'build/',
-  'out/',
   'coverage/',
   '.next/',
   'node_modules/',
@@ -51,10 +73,12 @@ export const BOILERPLATE_PATTERNS = [
   '*.snap',
   '*.min.js',
   '*.map',
-  'vendor/',
-  'generated/',
   '*.generated.*',
   '*.pb.go',
+  '/vendor/',
+  '/build/',
+  '/out/',
+  '/generated/',
 ] as const;
 
 /**
@@ -74,8 +98,9 @@ export const WIRING_PATTERNS = [
   '.github/workflows/**',
   'Dockerfile*',
   'docker-compose*',
-  '*.env*',
-  '**/index.ts',
+  '.env*',
+  '*.env',
+  'index.ts', // basename form — matches at any depth, INCLUDING repo root
   '/*.yml', // root only — a nested *.yml (e.g. under a fixtures dir) is core
   '/*.yaml',
 ] as const;

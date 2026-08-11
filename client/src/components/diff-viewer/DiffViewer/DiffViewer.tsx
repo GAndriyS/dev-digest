@@ -33,11 +33,11 @@ export function DiffViewer({
   }
   return (
     <div style={s.list}>
-      {files.map((f, i) => {
+      {files.map((f) => {
         const meta = fileMeta?.[f.path];
         return (
           <FileCard
-            key={i}
+            key={f.path}
             file={f}
             commenting={commenting}
             defaultOpen={meta?.defaultOpen}

@@ -30,6 +30,20 @@ function threadsForLine(ln: Line, matched: Map<string, CommentThread[]>): Commen
   return out;
 }
 
+/** Nearest rendered new-side line at or after `target`. A finding's
+    `start_line` can fall on a deleted line or outside every hunk in the
+    stored patch — `CodeLine` only renders `data-line` for lines that have a
+    `newNo` (see its component), so an exact match may not exist. Falls back
+    to the last rendered line when nothing at or after `target` exists, so a
+    click always lands somewhere; `undefined` only when the file renders no
+    lines at all (`renderedNewNos` sorted ascending). */
+function nearestRenderedLine(target: number, renderedNewNos: number[]): number | undefined {
+  for (const n of renderedNewNos) {
+    if (n >= target) return n;
+  }
+  return renderedNewNos[renderedNewNos.length - 1];
+}
+
 export function FileCard({
   file,
   commenting,
@@ -51,6 +65,10 @@ export function FileCard({
   );
   const lines = React.useMemo(() => parsePatch(file.patch), [file.patch]);
   const findingLineSet = React.useMemo(() => new Set(findingLines ?? []), [findingLines]);
+  const renderedNewNos = React.useMemo(
+    () => [...new Set(lines.map((l) => l.newNo).filter((n): n is number => n != null))].sort((a, b) => a - b),
+    [lines]
+  );
 
   // Clicking the finding badge opens the card and scrolls to a finding line,
   // cycling through them on repeat clicks (ref-held index, no re-render needed
@@ -68,8 +86,10 @@ export function FileCard({
   const jumpToFinding = () => {
     if (!findingLines || findingLines.length === 0) return;
     const idx = findingCycleRef.current % findingLines.length;
-    const line = findingLines[idx]!;
+    const target = findingLines[idx]!;
     findingCycleRef.current = idx + 1;
+    const line = nearestRenderedLine(target, renderedNewNos);
+    if (line == null) return; // no rendered line to land on at all (e.g. empty diff)
     scrollNonceRef.current += 1;
     setOpen(true);
     setScrollTarget({ line, nonce: scrollNonceRef.current });

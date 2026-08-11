@@ -61,6 +61,56 @@ describe('classifyPath — default', () => {
   });
 });
 
+describe('classifyPath — index.ts wiring pattern (root-level barrel)', () => {
+  it('classifies a root-level index.ts as wiring — the basename form matches at any depth, including the root', () => {
+    // Regression: the full-path form '**/index.ts' compiles to
+    // ^.*\/index\.ts$, which requires at least one '/' and never matches a
+    // bare root-level 'index.ts'.
+    expect(classifyPath('index.ts')).toBe('wiring');
+  });
+
+  it('still classifies a nested index.ts as wiring', () => {
+    expect(classifyPath('src/index.ts')).toBe('wiring');
+  });
+});
+
+describe('classifyPath — root-anchored boilerplate directories', () => {
+  it('does not classify a hand-edited file nested under src/vendor/ as boilerplate', () => {
+    // The canonical @devdigest/shared contract file — the most
+    // review-critical file in this repo, per the finding.
+    expect(classifyPath('server/src/vendor/shared/contracts/brief.ts')).not.toBe('boilerplate');
+  });
+
+  it('does not classify a hand-written file nested under scripts/build/ as boilerplate', () => {
+    expect(classifyPath('scripts/build/release.ts')).not.toBe('boilerplate');
+  });
+
+  it('does not classify a file nested under packages/out/ as boilerplate', () => {
+    expect(classifyPath('packages/out/index.ts')).not.toBe('boilerplate');
+  });
+
+  it('still classifies a root-level vendor/, build/, out/, or generated/ directory as boilerplate', () => {
+    expect(classifyPath('vendor/some-lib.js')).toBe('boilerplate');
+    expect(classifyPath('build/bundle.js')).toBe('boilerplate');
+    expect(classifyPath('out/bundle.js')).toBe('boilerplate');
+    expect(classifyPath('generated/client.ts')).toBe('boilerplate');
+  });
+});
+
+describe('classifyPath — *.env* over-matching', () => {
+  it('does not classify a file whose name merely contains "environment" as wiring', () => {
+    expect(classifyPath('src/config.environment.ts')).not.toBe('wiring');
+    expect(classifyPath('src/parse.environment.ts')).not.toBe('wiring');
+    expect(classifyPath('test/setup.environment.ts')).not.toBe('wiring');
+  });
+
+  it('still classifies real dotenv files as wiring', () => {
+    expect(classifyPath('.env')).toBe('wiring');
+    expect(classifyPath('.env.local')).toBe('wiring');
+    expect(classifyPath('config/production.env')).toBe('wiring');
+  });
+});
+
 describe('buildSmartDiff — group order', () => {
   it('emits groups in core, wiring, boilerplate order, with empty groups still present', () => {
     const files: SmartDiffInputFile[] = [
@@ -141,5 +191,62 @@ describe('buildSmartDiff — split threshold boundary', () => {
 
     expect(result.split_suggestion.too_big).toBe(true);
     expect(result.split_suggestion.total_lines).toBe(SPLIT_TOO_BIG_LINES + 1);
+  });
+});
+
+describe('buildSmartDiff — split proposal groups by directory, not full path', () => {
+  it('groups depth-2 files (a single directory segment) under that directory — the finding\'s worked example', () => {
+    // Regression: grouping by the file's own first-two-path-segments made a
+    // depth-2 file's key equal to its whole path, so every file became a
+    // singleton group and got folded away by SPLIT_MIN_FILES_PER_GROUP.
+    const perFile = Math.ceil((SPLIT_TOO_BIG_LINES + 1) / 5);
+    const files: SmartDiffInputFile[] = [
+      { path: 'server/app.ts', additions: perFile, deletions: 0 },
+      { path: 'server/routes.ts', additions: perFile, deletions: 0 },
+      { path: 'server/db.ts', additions: perFile, deletions: 0 },
+      { path: 'client/page.tsx', additions: perFile, deletions: 0 },
+      { path: 'client/nav.tsx', additions: perFile, deletions: 0 },
+    ];
+
+    const result = buildSmartDiff(files, new Map());
+
+    expect(result.split_suggestion.too_big).toBe(true);
+    expect(result.split_suggestion.proposed_splits.map((s) => s.name).sort()).toEqual([
+      'client',
+      'server',
+    ]);
+    const serverSplit = result.split_suggestion.proposed_splits.find((s) => s.name === 'server')!;
+    expect(serverSplit.files).toEqual(['server/app.ts', 'server/db.ts', 'server/routes.ts']);
+  });
+
+  it('groups a file three or more segments deep by its first two segments, not its full directory path', () => {
+    const perFile = Math.ceil((SPLIT_TOO_BIG_LINES + 1) / 2);
+    const files: SmartDiffInputFile[] = [
+      { path: 'server/src/modules/a.ts', additions: perFile, deletions: 0 },
+      { path: 'server/src/platform/b.ts', additions: perFile, deletions: 0 },
+    ];
+
+    const result = buildSmartDiff(files, new Map());
+
+    expect(result.split_suggestion.proposed_splits.map((s) => s.name)).toEqual(['server/src']);
+  });
+});
+
+describe('buildSmartDiff — split names never collide', () => {
+  it('renames the boilerplate "chore" split when a directory literally named chore/ already produced a split by that name', () => {
+    const perFile = Math.ceil((SPLIT_TOO_BIG_LINES + 1) / 4);
+    const files: SmartDiffInputFile[] = [
+      { path: 'chore/one.ts', additions: perFile, deletions: 0 },
+      { path: 'chore/two.ts', additions: perFile, deletions: 0 },
+      { path: LOCK_FILES[0], additions: perFile, deletions: 0 },
+      { path: LOCK_FILES[1], additions: perFile, deletions: 0 },
+    ];
+
+    const result = buildSmartDiff(files, new Map());
+    const names = result.split_suggestion.proposed_splits.map((s) => s.name);
+
+    expect(new Set(names).size).toBe(names.length);
+    expect(names).toContain('chore');
+    expect(names.filter((n) => n !== 'chore')).toEqual(['chore (boilerplate)']);
   });
 });

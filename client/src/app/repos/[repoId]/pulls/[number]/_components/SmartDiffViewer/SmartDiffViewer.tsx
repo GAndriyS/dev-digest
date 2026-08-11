@@ -114,8 +114,12 @@ export function SmartDiffViewer({
           <div style={s.bannerBody}>{t("smartDiff.largeBody")}</div>
           {data.split_suggestion.proposed_splits.length > 0 && (
             <ul style={s.splitList}>
-              {data.split_suggestion.proposed_splits.map((split) => (
-                <li key={split.name} style={s.splitItem}>
+              {data.split_suggestion.proposed_splits.map((split, i) => (
+                // Index, not `split.name` — the server tries to keep names
+                // unique but a directory literally named "chore" can still
+                // collide with the boilerplate split's name; a duplicate key
+                // must never be possible here.
+                <li key={i} style={s.splitItem}>
                   <span style={s.splitName}>{split.name}</span>
                   <span style={s.splitFiles}>{split.files.join(", ")}</span>
                 </li>

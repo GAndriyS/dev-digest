@@ -48,6 +48,15 @@ function globToRegExp(glob: string): RegExp {
 
 /** See the pattern-syntax doc comment at the top of `constants.ts`. */
 function matchesPattern(path: string, pattern: string): boolean {
+  if (pattern.length > 2 && pattern.startsWith('/') && pattern.endsWith('/')) {
+    // Root-anchored directory-segment match: only the path's FIRST directory
+    // may equal this segment — checked before the plain endsWith('/') and
+    // startsWith('/') branches below, since this pattern shape matches both.
+    const dir = pattern.slice(1, -1);
+    const dirs = path.split('/');
+    dirs.pop(); // drop the filename — only directory segments count
+    return dirs[0] === dir;
+  }
   if (pattern.endsWith('/')) {
     const dir = pattern.slice(0, -1);
     const dirs = path.split('/');
@@ -132,17 +141,32 @@ function sortGroup(files: SmartDiffFile[]): SmartDiffFile[] {
 
 // ============================================================ Split proposal
 
-function firstTwoSegments(path: string): string {
-  return path.split('/').slice(0, 2).join('/');
+/**
+ * Split-proposal grouping key: the file's DIRECTORY prefix, at most its first
+ * two segments — never the file's own basename. A depth-2 file (one directory
+ * deep, e.g. `server/app.ts`) groups under its sole directory segment
+ * (`server`); a file three or more segments deep groups under its first two
+ * (`server/src/app.ts` → `server/src`). A root-level file with no directory
+ * at all (`app.ts`) has nothing to group by and keys on its own path, which
+ * makes it a singleton group `SPLIT_MIN_FILES_PER_GROUP` folds away — the
+ * same outcome as "ungroupable", reached without a special case.
+ */
+function directoryPrefix(path: string): string {
+  const segments = path.split('/');
+  const dirs = segments.slice(0, -1); // drop the filename — only directories count
+  if (dirs.length === 0) return path;
+  return dirs.slice(0, 2).join('/');
 }
 
 /**
  * `total_lines` = Σ(additions+deletions) over ALL files (every role, not
  * just core). `too_big` is strict `>` (see `SPLIT_TOO_BIG_LINES`'s comment).
- * When too big: group non-boilerplate files by their first two path
- * segments, drop groups under `SPLIT_MIN_FILES_PER_GROUP`, cap at
- * `MAX_PROPOSED_SPLITS`, then append one "chore" split for the boilerplate
- * files (uncapped, present only when boilerplate files exist).
+ * When too big: group non-boilerplate files by `directoryPrefix` (their
+ * directory, at most its first two segments — see that function's comment),
+ * drop groups under `SPLIT_MIN_FILES_PER_GROUP`, cap at `MAX_PROPOSED_SPLITS`,
+ * then append one "chore" split for the boilerplate files (uncapped, present
+ * only when boilerplate files exist; renamed to avoid colliding with an
+ * identically-named directory-prefix split — see below).
  */
 function proposeSplits(files: SmartDiffInputFile[]): SmartDiff['split_suggestion'] {
   const totalLines = files.reduce((sum, f) => sum + f.additions + f.deletions, 0);
@@ -156,7 +180,7 @@ function proposeSplits(files: SmartDiffInputFile[]): SmartDiff['split_suggestion
 
   const byPrefix = new Map<string, string[]>();
   for (const f of nonBoilerplate) {
-    const prefix = firstTwoSegments(f.path);
+    const prefix = directoryPrefix(f.path);
     const list = byPrefix.get(prefix) ?? [];
     list.push(f.path);
     byPrefix.set(prefix, list);
@@ -169,7 +193,13 @@ function proposeSplits(files: SmartDiffInputFile[]): SmartDiff['split_suggestion
     .map(([name, paths]) => ({ name, files: [...paths].sort() }));
 
   if (boilerplate.length > 0) {
-    proposedSplits.push({ name: 'chore', files: boilerplate.map((f) => f.path).sort() });
+    // A top-level `chore/` directory with >= SPLIT_MIN_FILES_PER_GROUP
+    // non-boilerplate files already produced a proposed split literally named
+    // "chore" above — pick a name that does not collide with it rather than
+    // emitting two splits the client can't tell apart by name.
+    const usedNames = new Set(proposedSplits.map((s) => s.name));
+    const choreName = usedNames.has('chore') ? 'chore (boilerplate)' : 'chore';
+    proposedSplits.push({ name: choreName, files: boilerplate.map((f) => f.path).sort() });
   }
 
   return { too_big: true, total_lines: totalLines, proposed_splits: proposedSplits };

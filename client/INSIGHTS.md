@@ -40,18 +40,19 @@ append-only. Entry format and promotion rules → root `INSIGHTS.md`.
   against the table before suspecting the API. The hermetic e2e stack seeds fresh,
   so flow 02 never sees this.
 
-- **2026-08-11** — Widening a shared component's props (per
-  `no-component-internals-from-app`) does not require the barrel to export the
-  new prop's type. A route file that only has `import { DiffViewer } from
-  "@/components/diff-viewer"` can still pass a structurally-matching object
-  literal — TS accepts it by shape, not by import — so a route-local
-  `helpers.ts` can declare its own `interface FileMetaEntry { defaultOpen?:
-  boolean; findingLines?: number[] }` and hand it to `fileMeta` without ever
-  importing `DiffFileMeta` (`components/diff-viewer/DiffViewer/DiffViewer.tsx`).
-  Keeps the barrel's public surface exactly what it was before the prop was
-  added — the alternative (exporting the type through `index.ts` "just for the
-  type") is the barrel-widening the rule exists to prevent, and depcruise
-  cannot tell the difference between a type-only and a value re-export.
+- **2026-08-11** — When you widen a shared component's props, export the new
+  prop's type from its barrel. TS structural typing means a route can pass a
+  matching object literal without importing anything, and
+  `no-component-internals-from-app` tempts you to leave it at that — the rule
+  forbids reaching *past* `index.ts`, which a type-only re-export does not do,
+  so the barrel is not the obstacle it looks like. The trap is that prop types
+  are usually all-optional: `{ defaultOpen?, findingLines? }` on both sides
+  means the duplicate stays assignable through a rename of `findingLines`, the
+  weak-type check is satisfied by the one surviving key, and the feature
+  (Smart Diff's badges) goes quietly missing under a green typecheck. Shipped
+  the duplicate first and had it caught in review — see `diff-viewer/index.ts`
+  exporting `DiffFileMeta` next to `DiffCommentApi`, which is the same call
+  made for the same reason.
 
 ## Tool & Library Notes
 

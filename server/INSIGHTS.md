@@ -56,6 +56,23 @@ promotion rules → root `INSIGHTS.md`.
   that asserts the EXACT line set; `toContain` on a contiguous band passes for
   any start within the band's width and catches nothing.
 
+- **2026-08-11** — `modules/smart-diff/constants.ts`'s mini-glob DSL had one
+  directory-segment form (`name/` → matches at ANY depth) and it was wrong for
+  `vendor/`, `build/`, `out/`, `generated/`: these are common names for a
+  hand-authored nested folder (`server/src/vendor/shared`, `scripts/build/`, a
+  monorepo package's `out/`), and `BOILERPLATE_PATTERNS` runs before every
+  other role check while `boilerplate` is the one role forced collapsed — a
+  false positive here hides real source, it doesn't just mis-sort it. Fixed by
+  adding a second, ROOT-ANCHORED form (`/name/` — matches only when `name` is
+  the path's first directory) and using it for those four entries specifically;
+  `dist/`, `coverage/`, `.next/`, `node_modules/`, `__snapshots__/` stay
+  any-depth because no package hand-authors a nested folder with one of those
+  exact names for source code. Anyone adding a new directory-name pattern to
+  this file must ask the same question before picking `name/` vs `/name/`:
+  could this segment name plausibly be a hand-written subfolder somewhere
+  under `src/`? If yes, root-anchor it (`server/src/modules/smart-diff/helpers.ts`
+  `matchesPattern`).
+
 - **2026-07-31** — Course features cut from the starter were removed
   *surgically*: the computation usually survives and only persistence + display
   were stripped. Before building one, read the removal commit
