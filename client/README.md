@@ -31,7 +31,7 @@ flowchart TD
   SETTINGS["/settings/:section<br/>API keys · models"]
 
   PULLS -->|"GET /repos/:id/pulls · /repos/:id/index-state"| API
-  PR -->|"GET /pulls/:id · /reviews · /pulls/:id/comments<br/>POST /pulls/:id/review · /findings/:id/(accept|dismiss)"| API
+  PR -->|"GET /pulls/:id · /reviews · /pulls/:id/comments · /pulls/:id/smart-diff<br/>POST /pulls/:id/review · /findings/:id/(accept|dismiss)"| API
   AGENTS -->|"/agents · /agents/:id"| API
   SETTINGS -->|"/settings · /providers"| API
 ```
@@ -39,6 +39,10 @@ flowchart TD
 Cross-cutting chrome lives in `src/components/app-shell` (nav, breadcrumbs,
 `g`-then-key shortcuts). Pages are thin; feature logic sits in colocated
 `_components/<Name>/` folders, each with its own `*.test.tsx`.
+
+The Diff tab's default view is `SmartDiffViewer` (`.../pulls/[number]/_components/SmartDiffViewer/`),
+which groups files by risk via `/pulls/:id/smart-diff` and falls back to the
+plain diff-viewer on any fetch error — see [`../docs/smart-diff.md`](../docs/smart-diff.md).
 
 ## Testing
 

@@ -16,3 +16,4 @@ changes with the code on every commit.
 |-----|------|
 | [`agent-prompts/`](agent-prompts/README.md) | System prompts for the built-in reviewer agents, plus model-selection guidance |
 | [`skills/`](skills/api-contract/breaking-change.md) | Importable skill bodies for the Skills Lab experiments — `api-contract/` holds the four the API Contract Reviewer is run with and without |
+| [`smart-diff.md`](smart-diff.md) | How `GET /pulls/:id/smart-diff` ranks a PR's files by risk — request path, findings-join rule, and the client's collapse/fallback behaviour |

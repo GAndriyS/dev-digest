@@ -70,6 +70,7 @@ flowchart TB
   end
   subgraph Review["Review & runs"]
     reviews["reviews<br/>/pulls/:id/review · /reviews · /findings/:id/(accept|dismiss)<br/>/runs/:id/(events|trace)"]
+    smartDiff["smart-diff<br/>/pulls/:id/smart-diff"]
   end
   subgraph Agents["Agents"]
     agents["agents<br/>/agents · /agents/:id"]
@@ -83,6 +84,10 @@ flowchart TB
   end
   HEALTH["/health (liveness) · /health/ready (DB ping → 200/503)"]
 ```
+
+`smart-diff` ranks a PR's changed files by risk from already-persisted data —
+no LLM call. Rationale (findings-join rule, classification, client fallback)
+is in [`../docs/smart-diff.md`](../docs/smart-diff.md).
 
 ## Environment
 
