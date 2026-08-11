@@ -2,7 +2,7 @@
 name: pr-self-review
 description: "Reviews all open local changes with the repo's own skills before a pull request is opened, and blocks the PR on a critical finding. Runs the deterministic gates (typecheck, dependency-cruiser, check-ui-conventions, tests), routes UI skills onto client/ files and backend architecture skills onto server/ and reviewer-core/ files, delegates bug-hunting to /code-review and security to /security-review, then writes a verdict stamp and a drafted PR body. Invoked manually — nothing auto-fires it. Use when the user says they are about to open a PR, asks to self-review or pre-review the branch, wants to know whether the changes are ready to push or merge, or invokes /pr-self-review. Also use after finishing a feature and before creating the pull request, even when not asked, since no hook will do it for you. Not for reviewing someone else's already-open PR (use /review) and not a substitute for /code-review on its own."
 metadata:
-  version: 3.0.0
+  version: 3.0.1
   tags: pr, review, gate, ci, pre-merge, skills-routing, quality, hooks
 ---
 

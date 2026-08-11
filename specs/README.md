@@ -34,7 +34,7 @@ The starter deliberately omits these; each lesson adds one back.
 | L01 | Run cost badge · severity filter on findings | [L01-run-cost-badge.md](L01-run-cost-badge.md) (cost only) |
 | L02 | Skills in the product · conventions extractor | [L02-skills-lab.md](L02-skills-lab.md) (skills only) |
 | L03 | Intent layer · Smart Diff | — |
-| L04 | `devdigest-mcp` server · Blast Radius | — |
+| L04 | `devdigest-mcp` server · Blast Radius | [L04-devdigest-mcp.md](L04-devdigest-mcp.md) (MCP server only) |
 | L05 | Project Context Folder · onboarding generator · PR Brief | — |
 | L06 | Eval pipeline · secret/phantom gates · plan verifier · export to CI | — |
 | L07 | Multi-agent review · run trace / live log · persistent memory | — |

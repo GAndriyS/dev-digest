@@ -9,14 +9,15 @@ agent review on it. Node 22 · TS 5.7 · Zod 3 · Fastify 5 + Drizzle/Postgres
 Read the touched module's `INSIGHTS.md` before starting work (root `INSIGHTS.md`
 for cross-cutting tasks); search `docs/` and `specs/` as needed. Working inside
 a package — read its own `AGENTS.md` (`server/`, `client/`, `reviewer-core/`,
-`e2e/`).
+`e2e/`, `mcp/`).
 
 ## Conventions (not obvious from code)
 
-- This is NOT a monorepo workspace: four independent packages, each with its own
+- This is NOT a monorepo workspace: five independent packages, each with its own
   `package.json` **and lockfile**. `server/`, `client/` → **pnpm**;
-  `reviewer-core/`, `e2e/` → **npm**. Installing at the repo root does nothing.
-  Cross-package code resolves via tsconfig path aliases, not published modules.
+  `reviewer-core/`, `e2e/`, `mcp/` → **npm**. Installing at the repo root does
+  nothing. Cross-package code resolves via tsconfig path aliases, not published
+  modules.
 - Migrations are NOT applied on boot — `cd server && pnpm db:migrate`.
 - `@devdigest/shared` exists **twice**: `server/src/vendor/shared` (canonical,
   also used by reviewer-core) and `client/src/vendor/shared` (trimmed copy, has
@@ -62,6 +63,7 @@ a package — read its own `AGENTS.md` (`server/`, `client/`, `reviewer-core/`,
 - Web UI work → read `client/AGENTS.md`
 - Review-engine work → read `reviewer-core/AGENTS.md`
 - Browser e2e work → read `e2e/AGENTS.md`
+- MCP-server / coding-agent tool work → read `mcp/AGENTS.md`
 - Deep dives → read `docs/` · current work → read `specs/` · findings → read
   `INSIGHTS.md` · skills catalog → read `.claude/skills/README.md` · subagents
   catalog → read `.claude/agents/README.md`
