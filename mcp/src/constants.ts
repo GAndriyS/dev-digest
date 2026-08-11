@@ -17,3 +17,10 @@ export const POLL_BACKOFF_INTERVAL_MS = 5_000;
 export const DEFAULT_FINDINGS_LIMIT = 20;
 export const MAX_FINDINGS_LIMIT = 100;
 export const DEFAULT_CONVENTIONS_LIMIT = 50;
+export const MAX_CONVENTIONS_LIMIT = 100;
+
+/**
+ * Per-field cap for free text that reaches a response. Rules and rationales
+ * are model output and have no length bound of their own.
+ */
+export const MAX_TEXT_CHARS = 500;

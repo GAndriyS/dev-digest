@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { POLL_BACKOFF_AFTER_MS, POLL_BACKOFF_INTERVAL_MS } from '../../src/constants.js';
+import { rateLimitedError } from '../../src/lib/errors.js';
 import { pollRuns } from '../../src/lib/poll.js';
 import { makeFakeApiClient } from '../helpers/fake-api-client.js';
 import { makeRunSummary } from '../helpers/fixtures.js';
@@ -28,6 +29,42 @@ describe('pollRuns', () => {
 
     expect(result.outcome).toBe('completed');
     expect(result.runs[0]!.status).toBe('done');
+  });
+
+  // Security review, WARNING: mid-poll the review is already running and
+  // already paid for, and the API's 120/min limit is shared with the studio UI
+  // — a human clicking around can trip it. Aborting here would hand the caller
+  // an error whose only sensible next step is run_agent_on_pr again, i.e. a
+  // second paid review of the same PR.
+  it('treats a 429 mid-poll as a missed tick and still returns the finished run', async () => {
+    let call = 0;
+    const api = makeFakeApiClient({
+      listRuns: async () => {
+        call += 1;
+        if (call === 1) throw rateLimitedError();
+        return [makeRunSummary({ run_id: 'run-1', status: 'done' })];
+      },
+    });
+
+    const promise = pollRuns(api, 'pr-1', ['run-1'], { pollIntervalMs: 10, runTimeoutMs: 60_000 });
+    await vi.advanceTimersByTimeAsync(POLL_BACKOFF_INTERVAL_MS + 10);
+    const result = await promise;
+
+    expect(result.outcome).toBe('completed');
+    expect(call).toBe(2);
+  });
+
+  it('names get_findings, not another run, when still rate limited at the deadline', async () => {
+    const api = makeFakeApiClient({
+      listRuns: async () => {
+        throw rateLimitedError();
+      },
+    });
+
+    const promise = pollRuns(api, 'pr-1', ['run-1'], { pollIntervalMs: 10, runTimeoutMs: 50 });
+    const assertion = expect(promise).rejects.toThrow(/get_findings/);
+    await vi.advanceTimersByTimeAsync(200);
+    await assertion;
   });
 
   it('resolves partial when a started run is terminal but not done — a bad agent does not hide the others', async () => {

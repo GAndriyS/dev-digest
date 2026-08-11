@@ -55,6 +55,36 @@ describe('get_conventions (round-trip through a real MCP server + client)', () =
     expect(payload.message).toMatch(/pending/);
   });
 
+  // Security review, WARNING: this was the one tool with no ceiling — `limit`
+  // had no max and the page skipped CHARACTER_LIMIT, so one call could hand the
+  // caller the whole conventions table. `rule` is extractor (model) output with
+  // no length bound of its own.
+  it('caps the page and refuses a limit past the maximum', async () => {
+    const many = Array.from({ length: 100 }, (_, i) =>
+      makeConvention({ status: 'accepted', rule: 'x'.repeat(900), category: `c${i}` }),
+    );
+    const api = makeFakeApiClient({ listRepos: async () => [REPO], listConventions: async () => many });
+    const harness = await buildHarness(api);
+    close = harness.close;
+
+    const capped = await harness.client.callTool({
+      name: 'get_conventions',
+      arguments: { repo: 'devdigest/demo', limit: 100 },
+    });
+    const payload = GetConventionsOutput.parse(capped.structuredContent);
+    expect(payload.truncated).toBe(true);
+    expect(payload.count).toBeLessThan(100);
+    expect(JSON.stringify(payload.conventions).length).toBeLessThanOrEqual(25_000);
+    // Each rule is truncated on its own, not just the page.
+    expect(payload.conventions[0]!.rule.length).toBeLessThanOrEqual(501);
+
+    const rejected = await harness.client.callTool({
+      name: 'get_conventions',
+      arguments: { repo: 'devdigest/demo', limit: 100_000 },
+    });
+    expect(rejected.isError).toBe(true);
+  });
+
   it('accepts status:"pending" to see unratified candidates', async () => {
     const api = makeFakeApiClient({
       listRepos: async () => [REPO],

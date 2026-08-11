@@ -10,6 +10,14 @@
  */
 export class McpToolError extends Error {}
 
+/**
+ * A 429 from the API. Its own class because `pollRuns` must tell it apart from
+ * every other failure: mid-poll the review is ALREADY running and paid for, so
+ * a rate limit there is a missed tick to retry, not a reason to abort and send
+ * the caller back to `run_agent_on_pr` (which would start a second review).
+ */
+export class RateLimitedError extends McpToolError {}
+
 export function apiUnreachableError(apiUrl: string): McpToolError {
   return new McpToolError(
     `Could not reach the DevDigest API at ${apiUrl}. Start it with ./scripts/dev.sh, then retry.`,
@@ -40,9 +48,21 @@ export function agentNotFoundError(agent: string, knownAgents: string[]): McpToo
   return new McpToolError(`No agent named "${agent}". Call list_agents to see valid names: ${list}.`);
 }
 
-export function rateLimitedError(): McpToolError {
-  return new McpToolError(
+export function rateLimitedError(): RateLimitedError {
+  return new RateLimitedError(
     'DevDigest API rate limit hit. Wait about a minute, then retry the same call.',
+  );
+}
+
+/**
+ * The 429 variant for a review that is already running: naming
+ * `run_agent_on_pr` here would tell the caller to pay for a second review of
+ * the same PR.
+ */
+export function rateLimitedWhilePollingError(): RateLimitedError {
+  return new RateLimitedError(
+    'DevDigest API rate limit hit while waiting for a review that is already running. ' +
+      'Do not start another run — call get_findings for this PR in a minute to collect it.',
   );
 }
 

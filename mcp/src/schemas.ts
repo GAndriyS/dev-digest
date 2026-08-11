@@ -2,18 +2,27 @@ import { z } from 'zod';
 import {
   DEFAULT_CONVENTIONS_LIMIT,
   DEFAULT_FINDINGS_LIMIT,
+  MAX_CONVENTIONS_LIMIT,
   MAX_FINDINGS_LIMIT,
 } from './constants.js';
 
 /**
  * The five tools' input/output Zod schemas — the edge validation for this
  * package (the analogue of a Fastify route schema, plan decision 8). Every
- * object is `.strict()` so an unknown argument 422s instead of being silently
- * dropped; `registerTool` takes `Schema.shape` (a raw shape, not the
- * ZodObject) per the SDK's `inputSchema`/`outputSchema` signature.
+ * object is `.strict()` so an unknown argument is rejected instead of being
+ * silently dropped.
+ *
+ * `inputSchema` is handed the STRICT ZodObject itself, never `Schema.shape`,
+ * and that is load-bearing: from a raw shape the SDK rebuilds a plain
+ * `z.object(...)`, which is non-strict, and zod objects strip unknown keys —
+ * so `.shape` would leave `additionalProperties:false` in the advertised JSON
+ * Schema while runtime quietly accepted (and dropped) a typo'd argument. SDK
+ * >= 1.30 accepts either form and passes a schema instance through untouched.
+ * `outputSchema` keeps `.shape`; each handler parses with the strict object
+ * before returning anyway. See mcp/INSIGHTS.md.
  *
  * `.describe()` texts here are verbatim from the plan — they ARE the budget
- * (~330 tokens for all five tool descriptions + fields).
+ * (~400 tokens measured across all five tool descriptions + fields).
  */
 
 // ---- Shared building blocks ------------------------------------------------
@@ -162,8 +171,9 @@ export const GetConventionsInput = z
       .number()
       .int()
       .min(1)
+      .max(MAX_CONVENTIONS_LIMIT)
       .default(DEFAULT_CONVENTIONS_LIMIT)
-      .describe('Max conventions returned (default 50).'),
+      .describe('Max conventions returned, 1-100 (default 50).'),
   })
   .strict();
 export type GetConventionsInput = z.infer<typeof GetConventionsInput>;
@@ -182,6 +192,7 @@ export const GetConventionsOutput = z
     repo: z.string(),
     count: z.number().int(),
     conventions: z.array(ConventionSummary),
+    truncated: z.boolean().optional(),
     message: z.string().optional(),
   })
   .strict();

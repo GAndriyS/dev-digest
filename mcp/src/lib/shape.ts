@@ -1,6 +1,13 @@
-import type { Finding, FindingRecord, ReviewRecord, Severity, Verdict } from '@devdigest/shared';
-import { CHARACTER_LIMIT } from '../constants.js';
-import type { FindingSummary, SeverityCounts } from '../schemas.js';
+import type {
+  Finding,
+  FindingRecord,
+  ReviewRecord,
+  RunSummary,
+  Severity,
+  Verdict,
+} from '@devdigest/shared';
+import { CHARACTER_LIMIT, MAX_TEXT_CHARS } from '../constants.js';
+import type { AgentRunOutcome, FindingSummary, SeverityCounts } from '../schemas.js';
 
 /**
  * Pure shaping helpers (plan decision 8's service layer): take resolved
@@ -70,6 +77,37 @@ export function worstVerdict(verdicts: (Verdict | null)[]): Verdict | null {
     if (best === null || VERDICT_RANK[v] < VERDICT_RANK[best]) best = v;
   }
   return best;
+}
+
+/** Lowest score across the agents that produced one — the pessimistic read
+ *  that matches `worstVerdict` (higher score is better in the Review
+ *  contract). `null` when nothing scored. */
+export function worstScore(scores: (number | null | undefined)[]): number | null {
+  const scored = scores.filter((s): s is number => s != null);
+  return scored.length > 0 ? Math.min(...scored) : null;
+}
+
+/**
+ * One outcome row per run THIS call started, joined to its review by `run_id`.
+ * A failed run keeps its row (with `error`) rather than aborting the others —
+ * one broken agent must not hide what the rest found.
+ */
+export function correlateRuns(
+  runs: Pick<RunSummary, 'run_id' | 'agent_name' | 'status' | 'error'>[],
+  reviews: Pick<ReviewRecord, 'run_id' | 'verdict' | 'score' | 'findings'>[],
+): AgentRunOutcome[] {
+  const reviewByRunId = new Map(reviews.map((r) => [r.run_id, r]));
+  return runs.map((run) => {
+    const review = reviewByRunId.get(run.run_id);
+    return {
+      agent: run.agent_name ?? '(unknown agent)',
+      status: run.status ?? 'unknown',
+      verdict: review?.verdict ?? null,
+      score: review?.score ?? null,
+      findings_count: review ? review.findings.filter((f) => !f.dismissed_at).length : 0,
+      ...(run.error ? { error: truncateText(run.error, MAX_TEXT_CHARS) } : {}),
+    };
+  });
 }
 
 export function toFindingSummary(
