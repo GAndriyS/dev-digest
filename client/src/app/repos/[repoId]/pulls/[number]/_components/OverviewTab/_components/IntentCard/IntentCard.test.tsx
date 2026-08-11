@@ -104,6 +104,37 @@ describe("IntentCard", () => {
     expect(deriveMutate).toHaveBeenCalledOnce();
   });
 
+  it("renders the Markdown the model writes into scope items and risk areas", () => {
+    // Real output is almost entirely inline code spans around paths — rendered
+    // raw, every one of them reads as literal backticks.
+    state.data = intent({
+      intent: "Adds a limiter to `/api/public/*`.",
+      in_scope: ["`src/middleware/ratelimit.ts` — the **limiter** itself"],
+      out_of_scope: ["`docs/` formatting"],
+      risk_areas: ["`ioredis` added as a dependency"],
+    });
+    renderCard();
+
+    // One <code> per backticked span, in all three places, and no stray ticks.
+    const code = document.querySelectorAll("code");
+    expect(Array.from(code).map((c) => c.textContent)).toEqual([
+      "/api/public/*",
+      "src/middleware/ratelimit.ts",
+      "docs/",
+      "ioredis",
+    ]);
+    expect(screen.getByText("limiter").tagName).toBe("STRONG");
+    expect(document.body.textContent).not.toContain("`");
+  });
+
+  it("escapes HTML embedded in intent text — the model's output is not trusted markup", () => {
+    state.data = intent({ intent: 'Adds <img src=x onerror="alert(1)"> a limiter.' });
+    renderCard();
+
+    expect(document.querySelector("img")).toBeNull();
+    expect(screen.getByText(/onerror/)).toBeInTheDocument();
+  });
+
   it("surfaces a derive failure without losing the already-loaded intent", () => {
     state.data = intent();
     state.deriveError = true;
