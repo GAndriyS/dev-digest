@@ -2,14 +2,69 @@
 
 import React from "react";
 import { useTranslations } from "next-intl";
-import { Chip, Icon, Button } from "@devdigest/ui";
+import { Icon, Button } from "@devdigest/ui";
 import { DiffViewer, type DiffCommentApi } from "@/components/diff-viewer";
 import { SmartDiffViewer } from "../SmartDiffViewer";
 import { usePrComments, useCreatePrComment } from "@/lib/hooks/reviews";
 import { notify } from "@/lib/toast";
 import type { FindingRecord, PrFile } from "@devdigest/shared";
-import { DEFAULT_DIFF_VIEW, type DiffView } from "./constants";
+import { DEFAULT_DIFF_VIEW, DIFF_VIEWS, SEGMENT_ARROW_KEYS, type DiffView } from "./constants";
 import { s } from "./styles";
+
+/** Both orders in ONE control: a two-segment pill whose highlight slides to the
+    selected side. A radiogroup rather than two buttons — a screen reader then
+    announces "Diff order, Smart order, 1 of 2", one control with two options,
+    which is what the pill draws; two buttons would be two controls that merely
+    look joined. Only the selected segment is tabbable, so the group is a single
+    tab stop and the arrow keys move within it.
+
+    The segments share a width (two equal grid columns), which is what lets the
+    highlight be a plain 50%-wide element translated by its own width: no
+    measuring on mount, and nothing to re-measure when the labels are
+    translated or the font loads. */
+function OrderSwitch({ value, onChange }: { value: DiffView; onChange: (view: DiffView) => void }) {
+  const t = useTranslations("prReview");
+  const label: Record<DiffView, string> = {
+    smart: t("smartDiff.viewSmart"),
+    original: t("smartDiff.viewOriginal"),
+  };
+  const segments = React.useRef(new Map<DiffView, HTMLButtonElement | null>());
+
+  function onKeyDown(e: React.KeyboardEvent) {
+    if (!SEGMENT_ARROW_KEYS.includes(e.key)) return;
+    e.preventDefault(); // arrows scroll the diff otherwise
+    const next = value === DIFF_VIEWS[0] ? DIFF_VIEWS[1] : DIFF_VIEWS[0];
+    onChange(next);
+    segments.current.get(next)?.focus();
+  }
+
+  return (
+    <div style={s.order} role="radiogroup" aria-label={t("smartDiff.viewOrderLabel")} onKeyDown={onKeyDown}>
+      {/* Decoration: the selected state is on the segments' aria-checked, so the
+          highlight is hidden from assistive tech rather than described twice. */}
+      <span
+        aria-hidden="true"
+        style={{ ...s.orderThumb, ...(value === DIFF_VIEWS[0] ? null : s.orderThumbEnd) }}
+      />
+      {DIFF_VIEWS.map((view) => (
+        <button
+          key={view}
+          ref={(el) => {
+            segments.current.set(view, el);
+          }}
+          type="button"
+          role="radio"
+          aria-checked={value === view}
+          tabIndex={value === view ? 0 : -1}
+          onClick={() => onChange(view)}
+          style={{ ...s.orderSegment, ...(value === view ? s.orderSegmentOn : null) }}
+        >
+          {label[view]}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 interface DiffTabProps {
   prId: string | null;
@@ -72,14 +127,7 @@ export function DiffTab({ prId, filesCount, files, canComment, findings, onOpenF
             <span style={s.headerLabelText}>{t("smartDiff.headerLabel")}</span>
           </div>
           <div style={s.headerActions}>
-            <div style={s.toggle}>
-              <Chip active={view === "smart"} onClick={() => setView("smart")}>
-                {t("smartDiff.viewSmart")}
-              </Chip>
-              <Chip active={view === "original"} onClick={() => setView("original")}>
-                {t("smartDiff.viewOriginal")}
-              </Chip>
-            </div>
+            <OrderSwitch value={view} onChange={setView} />
             {commentCount > 0 && (
               <Button
                 kind="ghost"

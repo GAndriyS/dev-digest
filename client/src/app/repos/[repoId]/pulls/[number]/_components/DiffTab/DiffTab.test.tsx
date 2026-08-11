@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup, within } from "@testing-library/react";
 import { NextIntlClientProvider } from "next-intl";
 import type { FindingRecord, PrFile, SmartDiff, SmartDiffFile } from "@devdigest/shared";
 // DiffTab and the SmartDiffViewer it renders read copy from two namespaces:
@@ -135,12 +135,43 @@ describe("DiffTab", () => {
     expect(screen.getByText("Core logic")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /warning finding/i })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Original order" }));
+    // One control for both orders: picking the other segment flips the view.
+    expect(screen.getByRole("radio", { name: "Smart order" })).toBeChecked();
+    fireEvent.click(screen.getByRole("radio", { name: "Original order" }));
+    expect(screen.getByRole("radio", { name: "Original order" })).toBeChecked();
 
     expect(screen.queryByText("Core logic")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /warning finding/i })).not.toBeInTheDocument();
     // Original order removes annotations and groups — not files.
     expect(screen.getByText("src/middleware/ratelimit.ts")).toBeInTheDocument();
+  });
+
+  // Both order names stay readable, but neither is a control of its own: they
+  // are the two segments of one radiogroup, which is what the pill draws.
+  it("offers the two orders as one segmented control rather than two buttons", () => {
+    renderTab();
+
+    const group = screen.getByRole("radiogroup", { name: "Diff order" });
+    const segments = within(group).getAllByRole("radio");
+
+    expect(segments.map((el) => el.textContent)).toEqual(["Smart order", "Original order"]);
+    expect(segments.filter((el) => el.getAttribute("aria-checked") === "true")).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: "Smart order" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Original order" })).not.toBeInTheDocument();
+    // One tab stop for the pair — the unselected segment is reached by arrow.
+    expect(segments.map((el) => el.tabIndex)).toEqual([0, -1]);
+  });
+
+  it("moves between segments with the arrow keys, keeping focus on the selected one", () => {
+    renderTab();
+    const group = screen.getByRole("radiogroup", { name: "Diff order" });
+
+    fireEvent.keyDown(group, { key: "ArrowRight" });
+
+    const original = screen.getByRole("radio", { name: "Original order" });
+    expect(original).toBeChecked();
+    expect(original).toHaveFocus();
+    expect(original.tabIndex).toBe(0);
   });
 
   it("shows the file count and the summed +/- across every file in the header", () => {

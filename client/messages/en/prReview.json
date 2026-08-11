@@ -72,6 +72,7 @@
     "headerStats": "{count} files",
     "viewSmart": "Smart order",
     "viewOriginal": "Original order",
+    "viewOrderLabel": "Diff order",
     "showComments": "Show comments",
     "hideComments": "Hide comments"
   },
