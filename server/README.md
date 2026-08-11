@@ -86,7 +86,10 @@ flowchart TB
 ```
 
 `smart-diff` ranks a PR's changed files by risk from already-persisted data —
-no LLM call. Rationale (findings-join rule, classification, client fallback)
+no LLM call. The contract is frozen; the client joins findings onto files
+itself for its severity chips and click-to-finding navigation, so the
+response's own `finding_lines` field goes unread. Rationale (server
+findings-join rule, classification, client fallback, that client-side join)
 is in [`../docs/smart-diff.md`](../docs/smart-diff.md).
 
 ## Environment

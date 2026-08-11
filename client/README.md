@@ -40,9 +40,12 @@ Cross-cutting chrome lives in `src/components/app-shell` (nav, breadcrumbs,
 `g`-then-key shortcuts). Pages are thin; feature logic sits in colocated
 `_components/<Name>/` folders, each with its own `*.test.tsx`.
 
-The Diff tab's default view is `SmartDiffViewer` (`.../pulls/[number]/_components/SmartDiffViewer/`),
-which groups files by risk via `/pulls/:id/smart-diff` and falls back to the
-plain diff-viewer on any fetch error — see [`../docs/smart-diff.md`](../docs/smart-diff.md).
+The Diff tab (`DiffTab`) defaults to `SmartDiffViewer` (`.../pulls/[number]/_components/SmartDiffViewer/`),
+which groups files by risk via `/pulls/:id/smart-diff`, draws each PR finding
+as a chip on its diff line (clicking one jumps to that finding's card in the
+Agent runs tab), and falls back to the plain diff-viewer on any fetch error.
+A header toggle swaps to `Original order`, the unranked plain diff with no
+annotations — see [`../docs/smart-diff.md`](../docs/smart-diff.md).
 
 ## Testing
 
