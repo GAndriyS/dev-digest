@@ -82,6 +82,18 @@ promotion rules → root `INSIGHTS.md`.
   once at boot (`platform/config.ts`). Verified: `/settings/secrets-status`
   showed the new keys only after killing and restarting `pnpm dev`.
 
+- **2026-08-11** — `pnpm exec depcruise` crashes hard, not gracefully, under
+  Node 18: `SyntaxError: The requested module 'node:util' does not provide an
+  export named 'styleText'` from `dependency-cruiser/.../cli-feedback.mjs`,
+  with no mention of Node versions anywhere in the message. `.nvmrc` pins 22,
+  but nvm's own `default` alias on this machine is 18, so a fresh shell's
+  `node --version` silently disagrees with the repo's pin — `pnpm typecheck`
+  and `vitest` both run fine under 18 (only depcruise's CLI feedback module
+  needs the Node-22-only `styleText` export), so the first signal that node is
+  wrong shows up on the boundary-check step, not the typecheck step run just
+  before it. Fix: `nvm use 22` (or `source ~/.nvm/nvm.sh && nvm use 22`) before
+  running depcruise, every server or client verification pass.
+
 ## Recurring Errors & Fixes
 
 - **2026-08-11** — Any server-side pre-work that resolves its provider via

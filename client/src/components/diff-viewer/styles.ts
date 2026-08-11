@@ -64,6 +64,20 @@ export const s = {
     color: "var(--text-primary)",
     paddingRight: 12,
   } satisfies CSSProperties,
+  /** Clickable finding-count badge in a FileCard header (Smart Diff). */
+  findingBadge: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 4,
+    padding: "2px 8px",
+    borderRadius: 5,
+    fontSize: 12,
+    fontWeight: 600,
+    color: "var(--warn)",
+    background: "var(--warn-bg)",
+    cursor: "pointer",
+    userSelect: "none",
+  } satisfies CSSProperties,
 } as const;
 
 /** Chevron rotates 90deg when the file card is open. */
@@ -75,9 +89,16 @@ export function chevronFor(open: boolean): CSSProperties {
   };
 }
 
-/** Row background per line kind (add/del tinted, others transparent). */
-export function lineRowFor(kind: Line["kind"]): CSSProperties {
-  const background = kind === "add" ? "var(--code-add)" : kind === "del" ? "var(--code-del)" : "transparent";
+/** Row background per line kind (add/del tinted, others transparent); a
+    Smart-Diff finding target overrides the tint so a jump is easy to spot. */
+export function lineRowFor(kind: Line["kind"], highlighted?: boolean): CSSProperties {
+  const background = highlighted
+    ? "var(--warn-bg)"
+    : kind === "add"
+      ? "var(--code-add)"
+      : kind === "del"
+        ? "var(--code-del)"
+        : "transparent";
   return { display: "flex", alignItems: "stretch", fontSize: 13, lineHeight: "20px", background };
 }
 

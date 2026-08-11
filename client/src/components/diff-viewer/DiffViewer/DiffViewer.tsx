@@ -11,12 +11,21 @@ import { type DiffCommentApi } from "../comments";
 import { s } from "../styles";
 import { FileCard } from "../FileCard";
 
+/** Per-path overrides a caller (e.g. Smart Diff) hands in as props — the diff
+    viewer never reaches into `src/app/**` to compute these itself. */
+export interface DiffFileMeta {
+  defaultOpen?: boolean;
+  findingLines?: number[];
+}
+
 export function DiffViewer({
   files,
   commenting,
+  fileMeta,
 }: {
   files: PrFile[];
   commenting?: DiffCommentApi;
+  fileMeta?: Record<string, DiffFileMeta>;
 }) {
   const t = useTranslations("shell");
   if (!files || files.length === 0) {
@@ -24,9 +33,18 @@ export function DiffViewer({
   }
   return (
     <div style={s.list}>
-      {files.map((f, i) => (
-        <FileCard key={i} file={f} commenting={commenting} />
-      ))}
+      {files.map((f, i) => {
+        const meta = fileMeta?.[f.path];
+        return (
+          <FileCard
+            key={i}
+            file={f}
+            commenting={commenting}
+            defaultOpen={meta?.defaultOpen}
+            findingLines={meta?.findingLines}
+          />
+        );
+      })}
     </div>
   );
 }

@@ -14,6 +14,7 @@ import type {
   ReviewRunResponse,
   RunEvent,
   RunSummary,
+  SmartDiff,
 } from "@devdigest/shared";
 
 // ---- Active (in-flight) runs — server-side source of truth ----
@@ -85,6 +86,17 @@ export function useDeriveIntent(prId: string | null | undefined) {
     onSuccess: (data) => {
       qc.setQueryData(["pr-intent", prId], data);
     },
+  });
+}
+
+// ---- Smart Diff (L03): deterministic core/wiring/boilerplate grouping ----
+/** Server-computed file-risk grouping for the Diff tab — no new model call, no
+    runtime Zod on the client (same convention as `usePrIntent` above). */
+export function usePrSmartDiff(prId: string | null | undefined) {
+  return useQuery({
+    queryKey: ["pr-smart-diff", prId],
+    queryFn: () => api.get<SmartDiff>(`/pulls/${prId}/smart-diff`),
+    enabled: !!prId,
   });
 }
 

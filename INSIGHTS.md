@@ -88,6 +88,14 @@ live in `<package>/INSIGHTS.md`. Maintained by the `engineering-insights` skill.
   pnpm-11-built `node_modules` and aborts with
   `ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY` — rerun with
   `pnpm install --config.confirmModulesPurge=false`.
+  **2026-08-11** — the same "ambient shell ignores `.nvmrc`" trap has a second,
+  much less obvious symptom: on a shell whose default `node` predates 22 (seen
+  on 18.17.1), `pnpm exec depcruise` crashes with `SyntaxError: The requested
+  module 'node:util' does not provide an export named 'styleText'` — a
+  dependency-cruiser CLI internal, not anything about the cruised config. It
+  reads exactly like a broken depcruise install. Fix: `source ~/.nvm/nvm.sh &&
+  nvm use 22` before any `client/` or `server/` `pnpm exec` command; don't
+  debug depcruise itself on this error.
 
 - **2026-08-05** — `drizzle-kit generate` stops with an INTERACTIVE prompt when
   one diff both adds and drops a column ("is `category` created, or renamed from

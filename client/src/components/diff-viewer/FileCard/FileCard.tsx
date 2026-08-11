@@ -30,12 +30,57 @@ function threadsForLine(ln: Line, matched: Map<string, CommentThread[]>): Commen
   return out;
 }
 
-export function FileCard({ file, commenting }: { file: PrFile; commenting?: DiffCommentApi }) {
+export function FileCard({
+  file,
+  commenting,
+  defaultOpen,
+  findingLines,
+}: {
+  file: PrFile;
+  commenting?: DiffCommentApi;
+  /** Overrides the size heuristic below (Smart Diff: a lock file always starts
+      collapsed regardless of its line count). `undefined` leaves the heuristic. */
+  defaultOpen?: boolean;
+  /** New-side (`Line.newNo`) line numbers to badge + jump to, from Smart Diff's
+      findings. Absent/empty renders no badge. */
+  findingLines?: number[];
+}) {
   const t = useTranslations("shell");
   const [open, setOpen] = React.useState(
-    (file.additions ?? 0) + (file.deletions ?? 0) <= AUTO_EXPAND_MAX_LINES
+    defaultOpen ?? (file.additions ?? 0) + (file.deletions ?? 0) <= AUTO_EXPAND_MAX_LINES
   );
   const lines = React.useMemo(() => parsePatch(file.patch), [file.patch]);
+  const findingLineSet = React.useMemo(() => new Set(findingLines ?? []), [findingLines]);
+
+  // Clicking the finding badge opens the card and scrolls to a finding line,
+  // cycling through them on repeat clicks (ref-held index, no re-render needed
+  // for the cycle position itself). Scroll is two-phase: `open` flips first (so
+  // the body — and its `data-line` rows — exists), then an effect (which runs
+  // after that DOM commit) does the actual scrollIntoView, keyed by a nonce so
+  // clicking the SAME line twice in a row still re-fires the scroll.
+  const findingCycleRef = React.useRef(0);
+  const scrollNonceRef = React.useRef(0);
+  const [scrollTarget, setScrollTarget] = React.useState<{ line: number; nonce: number } | null>(
+    null
+  );
+  const bodyRef = React.useRef<HTMLDivElement | null>(null);
+
+  const jumpToFinding = () => {
+    if (!findingLines || findingLines.length === 0) return;
+    const idx = findingCycleRef.current % findingLines.length;
+    const line = findingLines[idx]!;
+    findingCycleRef.current = idx + 1;
+    scrollNonceRef.current += 1;
+    setOpen(true);
+    setScrollTarget({ line, nonce: scrollNonceRef.current });
+  };
+
+  React.useEffect(() => {
+    if (!scrollTarget) return;
+    const el = bodyRef.current?.querySelector<HTMLElement>(`[data-line="${scrollTarget.line}"]`);
+    el?.scrollIntoView({ behavior: "smooth", block: "center" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scrollTarget?.nonce]);
 
   // Group this file's comments into threads, then split into ones we can anchor
   // to a rendered line vs. "outdated" (GitHub dropped the line / it's not here).
@@ -72,9 +117,31 @@ export function FileCard({ file, commenting }: { file: PrFile; commenting?: Diff
             {commentCount}
           </span>
         )}
+        {findingLines && findingLines.length > 0 && (
+          <span
+            role="button"
+            tabIndex={0}
+            aria-label={t("diffViewer.findingsJumpAria", { count: findingLines.length })}
+            onClick={(e) => {
+              e.stopPropagation();
+              jumpToFinding();
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                e.stopPropagation();
+                jumpToFinding();
+              }
+            }}
+            style={s.findingBadge}
+          >
+            <Icon.AlertTriangle size={12} />
+            {findingLines.length}
+          </span>
+        )}
       </div>
       {open && (
-        <div style={s.fileBody}>
+        <div ref={bodyRef} style={s.fileBody}>
           {lines.length === 0 ? (
             <div style={s.noDiff}>{t("diffViewer.noDiffText")}</div>
           ) : (
@@ -85,6 +152,7 @@ export function FileCard({ file, commenting }: { file: PrFile; commenting?: Diff
                 path={file.path}
                 threads={threadsForLine(ln, matched)}
                 commenting={commenting}
+                highlighted={ln.newNo != null && findingLineSet.has(ln.newNo)}
               />
             ))
           )}

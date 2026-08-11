@@ -2,7 +2,8 @@
 
 import React from "react";
 import { SectionLabel, Button } from "@devdigest/ui";
-import { DiffViewer, type DiffCommentApi } from "@/components/diff-viewer";
+import { type DiffCommentApi } from "@/components/diff-viewer";
+import { SmartDiffViewer } from "../SmartDiffViewer";
 import { usePrComments, useCreatePrComment } from "@/lib/hooks/reviews";
 import { notify } from "@/lib/toast";
 import type { PrFile } from "@devdigest/shared";
@@ -59,7 +60,7 @@ export function DiffTab({ prId, filesCount, files, canComment }: DiffTabProps) {
       >
         Files changed · {filesCount} files
       </SectionLabel>
-      <DiffViewer files={files} commenting={commenting} />
+      <SmartDiffViewer prId={prId} files={files} commenting={commenting} />
     </section>
   );
 }

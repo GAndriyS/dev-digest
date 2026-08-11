@@ -14,11 +14,15 @@ export function CodeLine({
   path,
   threads,
   commenting,
+  highlighted,
 }: {
   ln: Line;
   path: string;
   threads: CommentThread[];
   commenting?: DiffCommentApi;
+  /** True when this line's new-side number is a Smart-Diff finding target —
+      tints the row and gives it scroll-margin so a jump lands below the header. */
+  highlighted?: boolean;
 }) {
   const [hover, setHover] = React.useState(false);
   const [composing, setComposing] = React.useState(false);
@@ -37,11 +41,12 @@ export function CodeLine({
 
   return (
     <div
-      style={cs.rowWrap}
+      data-line={ln.newNo}
+      style={highlighted ? { ...cs.rowWrap, scrollMarginTop: 16 } : cs.rowWrap}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
     >
-      <div style={lineRowFor(ln.kind)}>
+      <div style={lineRowFor(ln.kind, highlighted)}>
         <span className="mono tnum" style={{ ...s.lineNo, position: "relative" }}>
           {showAdd && target && (
             <button
