@@ -41,6 +41,11 @@
     "viewOnGitHub": "View on GitHub",
     "postedToGitHub": "Posts to GitHub immediately",
     "outdatedTitle": "{count} comment(s) on older revisions",
-    "findingsJumpAria": "{count} finding-line(s) — click to jump to a flagged line"
+    "findingsJumpAria": "{count} finding(s) — click to view the first in Agent runs",
+    "annotationBlocker": "blocker",
+    "annotationWarning": "warning",
+    "annotationSuggestion": "suggestion",
+    "annotationAria": "{label} finding — view in Agent runs",
+    "largeFileChip": "large · {count} lines"
   }
 }

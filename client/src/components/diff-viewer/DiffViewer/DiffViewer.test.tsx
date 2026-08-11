@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup, within } from "@testing-library/react";
 import { NextIntlClientProvider } from "next-intl";
 import type { PrFile } from "@/lib/types";
 import shellMessages from "../../../../messages/en/shell.json";
-import { DiffViewer } from "./DiffViewer";
+import { DiffViewer, type DiffFileMeta } from "./DiffViewer";
 
 // jsdom has no scrollIntoView implementation; FileCard's finding-jump effect
 // calls it once a card opens (irrelevant here, but shared setup with sibling
@@ -81,5 +81,28 @@ describe("DiffViewer", () => {
 
     renderDiff([]);
     expect(screen.getByText("No changed files.")).toBeInTheDocument();
+  });
+
+  it("routes fileMeta annotations to the FileCard whose path matches, and none to the others", () => {
+    const onFindingClick = vi.fn();
+    const files = [prFile({ path: "src/a.ts" }), prFile({ path: "src/b.ts" })];
+    const fileMeta: Record<string, DiffFileMeta> = {
+      "src/b.ts": { annotations: [{ findingId: "finding-b", line: 1, severity: "CRITICAL" }] },
+    };
+
+    render(
+      <NextIntlClientProvider locale="en" messages={{ shell: shellMessages }}>
+        <DiffViewer files={files} fileMeta={fileMeta} onFindingClick={onFindingClick} />
+      </NextIntlClientProvider>,
+    );
+
+    // a.ts has no fileMeta entry — its header shows no finding badge at all.
+    const aHeader = screen.getByText("src/a.ts").closest("div")!;
+    expect(within(aHeader).queryByRole("button", { name: /finding/i })).not.toBeInTheDocument();
+
+    // b.ts's badge carries exactly the annotation routed to its own path.
+    const badge = screen.getByRole("button", { name: /1 finding\(s\)/i });
+    fireEvent.click(badge);
+    expect(onFindingClick).toHaveBeenCalledWith("finding-b");
   });
 });

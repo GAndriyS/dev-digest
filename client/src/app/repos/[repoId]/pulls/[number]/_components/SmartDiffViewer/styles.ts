@@ -73,14 +73,26 @@ export const s = {
     gap: 10,
     padding: "10px 14px",
   } satisfies CSSProperties,
+  groupHeaderText: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 1,
+    minWidth: 0,
+  } satisfies CSSProperties,
   groupLabel: {
     fontSize: 13,
     fontWeight: 600,
     color: "var(--text-primary)",
   } satisfies CSSProperties,
+  groupDesc: {
+    fontSize: 11.5,
+    color: "var(--text-muted)",
+  } satisfies CSSProperties,
   groupMeta: {
     fontSize: 12,
     color: "var(--text-muted)",
+    marginLeft: "auto",
+    flexShrink: 0,
   } satisfies CSSProperties,
   groupBody: {
     borderTop: "1px solid var(--border)",
@@ -97,5 +109,18 @@ export function chevronFor(open: boolean): CSSProperties {
     color: "var(--text-muted)",
     transform: open ? "rotate(90deg)" : "none",
     transition: "transform .12s",
+  };
+}
+
+/** Small coloured square marking a role group's header — colour carries the
+    role (`ROLE_MARKER_COLOR`), not a data value, so it's a style function
+    rather than a static entry in `s`. */
+export function groupMarker(color: string): CSSProperties {
+  return {
+    width: 8,
+    height: 8,
+    borderRadius: 2,
+    background: color,
+    flexShrink: 0,
   };
 }

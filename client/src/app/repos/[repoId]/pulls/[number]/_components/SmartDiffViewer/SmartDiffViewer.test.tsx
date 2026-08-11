@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import { NextIntlClientProvider } from "next-intl";
-import type { PrFile, SmartDiff, SmartDiffFile } from "@devdigest/shared";
+import type { FindingRecord, PrFile, SmartDiff, SmartDiffFile } from "@devdigest/shared";
 // The component reads copy from two namespaces: `prReview` (smartDiff.* keys)
 // and `shell` (diffViewer.* keys used inside the shared FileCard/CodeLine).
 import prReviewMessages from "../../../../../../../../messages/en/prReview.json";
@@ -25,10 +25,7 @@ vi.mock("@/lib/hooks/reviews", () => ({
 
 import { SmartDiffViewer } from "./SmartDiffViewer";
 
-// jsdom has no scrollIntoView implementation; FileCard's finding-jump effect
-// calls it once a card opens, so it must be stubbed or that effect throws.
 beforeEach(() => {
-  Element.prototype.scrollIntoView = vi.fn();
   state.data = null;
   state.isLoading = false;
   state.isError = false;
@@ -51,6 +48,8 @@ function smartDiffFile(over: Partial<SmartDiffFile> = {}): SmartDiffFile {
     pseudocode_summary: null,
     additions: 1,
     deletions: 0,
+    // Dead field since v2 (client join replaced it) — kept only because the
+    // contract still requires it; no test relies on its contents.
     finding_lines: [],
     ...over,
   };
@@ -64,8 +63,29 @@ function smartDiff(over: Partial<SmartDiff> = {}): SmartDiff {
   };
 }
 
-// Real patch text so `finding_lines` (new-side numbers) land on an actual
-// rendered line: ctx line -> newNo 1, then two `+` lines -> newNo 2 and 3.
+function findingRecord(over: Partial<FindingRecord> & { id: string }): FindingRecord {
+  return {
+    review_id: "r1",
+    severity: "CRITICAL",
+    category: "security",
+    title: "finding",
+    file: "src/middleware/ratelimit.ts",
+    start_line: 3,
+    end_line: 3,
+    rationale: "A finding.",
+    suggestion: null,
+    confidence: 0.9,
+    kind: "finding",
+    trifecta_components: null,
+    evidence: null,
+    accepted_at: null,
+    dismissed_at: null,
+    ...over,
+  };
+}
+
+// Real patch text so a finding's `start_line` (new-side numbers) lands on an
+// actual rendered line: ctx line -> newNo 1, then two `+` lines -> newNo 2 and 3.
 const CORE_PATCH = `@@ -1,2 +1,3 @@
  const limiter = createLimiter();
 +app.use(limiter);
@@ -87,34 +107,35 @@ const baseFiles: PrFile[] = [
 
 const baseSmartDiff = smartDiff({
   groups: [
-    {
-      role: "core",
-      files: [
-        smartDiffFile({ path: "src/middleware/ratelimit.ts", additions: 2, deletions: 0, finding_lines: [3] }),
-      ],
-    },
-    {
-      role: "wiring",
-      files: [smartDiffFile({ path: "src/routes/index.ts", additions: 1, deletions: 0 })],
-    },
-    {
-      role: "boilerplate",
-      files: [smartDiffFile({ path: "pnpm-lock.yaml", additions: 1, deletions: 1 })],
-    },
+    { role: "core", files: [smartDiffFile({ path: "src/middleware/ratelimit.ts", additions: 2, deletions: 0 })] },
+    { role: "wiring", files: [smartDiffFile({ path: "src/routes/index.ts", additions: 1, deletions: 0 })] },
+    { role: "boilerplate", files: [smartDiffFile({ path: "pnpm-lock.yaml", additions: 1, deletions: 1 })] },
   ],
 });
 
-function renderViewer(props: { prId?: string | null; files?: PrFile[] } = {}) {
+function renderViewer(
+  props: {
+    prId?: string | null;
+    files?: PrFile[];
+    findings?: FindingRecord[];
+    onOpenFinding?: (findingId: string) => void;
+  } = {},
+) {
   return render(
     <NextIntlClientProvider locale="en" messages={{ prReview: prReviewMessages, shell: shellMessages }}>
-      <SmartDiffViewer prId={props.prId ?? "pr-1"} files={props.files ?? baseFiles} />
+      <SmartDiffViewer
+        prId={props.prId ?? "pr-1"}
+        files={props.files ?? baseFiles}
+        findings={props.findings ?? []}
+        onOpenFinding={props.onOpenFinding ?? (() => {})}
+      />
     </NextIntlClientProvider>,
   );
 }
 
 /** The role-group header is a `role="button"` div, found via its label span
     then walked up — avoids relying on the accessible-name computation, which
-    also folds in the icon and the file/finding-line counts. */
+    also folds in the icon, the description and the file count. */
 function groupHeader(label: string): HTMLElement {
   const el = screen.getByText(label, { selector: "span" }).closest('[role="button"]');
   if (!el) throw new Error(`no role="button" ancestor for group header "${label}"`);
@@ -126,7 +147,7 @@ describe("SmartDiffViewer", () => {
     state.data = baseSmartDiff;
     renderViewer();
 
-    const core = screen.getByText("Core", { selector: "span" });
+    const core = screen.getByText("Core logic", { selector: "span" });
     const wiring = screen.getByText("Wiring", { selector: "span" });
     const boilerplate = screen.getByText("Boilerplate", { selector: "span" });
 
@@ -156,7 +177,7 @@ describe("SmartDiffViewer", () => {
     // Non-boilerplate groups start open.
     expect(screen.getByText("src/app.ts")).toBeInTheDocument();
 
-    const header = groupHeader("Core");
+    const header = groupHeader("Core logic");
     fireEvent.click(header);
     expect(screen.queryByText("src/app.ts")).not.toBeInTheDocument();
 
@@ -167,11 +188,10 @@ describe("SmartDiffViewer", () => {
     expect(screen.queryByText("src/app.ts")).not.toBeInTheDocument();
   });
 
-  it("a file with finding_lines shows a badge with the right count, and activating it opens the file and reveals the flagged line", () => {
+  it("a file's finding badge calls onOpenFinding with the first finding's id, instead of opening the file or revealing a line", () => {
     // additions pushed past AUTO_EXPAND_MAX_LINES (200) so the file starts
-    // closed by FileCard's own size heuristic — otherwise the line would
-    // already be in the DOM and the "activating reveals it" assertion below
-    // would pass vacuously.
+    // closed by FileCard's own size heuristic — proves the badge click no
+    // longer reveals the flagged line the way the pre-v2 scroll cycle did.
     const bigCoreFile = prFile({
       path: "src/middleware/ratelimit.ts",
       additions: 500,
@@ -180,25 +200,59 @@ describe("SmartDiffViewer", () => {
     });
     state.data = smartDiff({
       groups: [
-        {
-          role: "core",
-          files: [
-            smartDiffFile({ path: "src/middleware/ratelimit.ts", additions: 500, deletions: 0, finding_lines: [3] }),
-          ],
-        },
+        { role: "core", files: [smartDiffFile({ path: "src/middleware/ratelimit.ts", additions: 500, deletions: 0 })] },
       ],
     });
-    renderViewer({ files: [bigCoreFile] });
+    const onOpenFinding = vi.fn();
+    const findings = [
+      findingRecord({ id: "f-badge", file: "src/middleware/ratelimit.ts", start_line: 3, severity: "WARNING" }),
+    ];
+    renderViewer({ files: [bigCoreFile], findings, onOpenFinding });
 
     expect(screen.queryByText("export default limiter;")).not.toBeInTheDocument();
 
-    // Regex must exclude the group header, which also renders "1 finding-lines"
-    // (plural, no parens) inside its own role="button" text.
-    const badge = screen.getByRole("button", { name: /1 finding-line\(s\)/i });
+    const badge = screen.getByRole("button", { name: /1 finding\(s\)/i });
     fireEvent.click(badge);
 
-    const line = screen.getByText("export default limiter;");
-    expect(line.closest("[data-line]")).toHaveAttribute("data-line", "3");
+    expect(onOpenFinding).toHaveBeenCalledWith("f-badge");
+    // No row reveal, no open — the badge only navigates now.
+    expect(screen.queryByText("export default limiter;")).not.toBeInTheDocument();
+  });
+
+  it("renders an annotation chip on the flagged line with the right severity label, and clicking it opens the finding", () => {
+    state.data = smartDiff({
+      groups: [{ role: "core", files: [smartDiffFile({ path: "src/middleware/ratelimit.ts", additions: 2, deletions: 0 })] }],
+    });
+    const onOpenFinding = vi.fn();
+    const findings = [
+      findingRecord({ id: "f-line", file: "src/middleware/ratelimit.ts", start_line: 3, severity: "SUGGESTION" }),
+    ];
+    renderViewer({ findings, onOpenFinding });
+
+    const chip = screen.getByRole("button", { name: /suggestion finding/i });
+    expect(chip).toHaveTextContent("suggestion");
+
+    fireEvent.click(chip);
+    expect(onOpenFinding).toHaveBeenCalledWith("f-line");
+  });
+
+  it("a dismissed finding produces no annotation and no badge", () => {
+    state.data = smartDiff({
+      groups: [{ role: "core", files: [smartDiffFile({ path: "src/middleware/ratelimit.ts", additions: 2, deletions: 0 })] }],
+    });
+    const findings = [
+      findingRecord({
+        id: "f-dismissed",
+        file: "src/middleware/ratelimit.ts",
+        start_line: 3,
+        severity: "CRITICAL",
+        dismissed_at: "2026-01-01T00:00:00Z",
+      }),
+    ];
+    renderViewer({ findings });
+
+    expect(screen.queryByRole("button", { name: /blocker finding/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /finding\(s\)/i })).not.toBeInTheDocument();
   });
 
   it("a small file in the boilerplate group stays closed on mount even though it is well under the auto-expand size threshold", () => {
@@ -220,7 +274,7 @@ describe("SmartDiffViewer", () => {
     expect(screen.getByText("src/routes/index.ts")).toBeInTheDocument();
     expect(screen.getByText("pnpm-lock.yaml")).toBeInTheDocument();
     // No role-grouping UI in the fallback.
-    expect(screen.queryByText("Core", { selector: "span" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Core logic", { selector: "span" })).not.toBeInTheDocument();
   });
 
   it("shows the too_big banner only when split_suggestion.too_big is set", () => {

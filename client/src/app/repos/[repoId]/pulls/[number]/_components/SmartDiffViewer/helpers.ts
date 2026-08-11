@@ -1,8 +1,17 @@
 /** Pure helpers for SmartDiffViewer — turn the SmartDiff response (paths only,
     no patch text) into the props DiffViewer/FileCard already understand. */
-import type { PrFile, SmartDiffGroup, SmartDiffRole } from "@devdigest/shared";
-import type { DiffFileMeta } from "@/components/diff-viewer";
+import type { FindingRecord, PrFile, SmartDiffGroup, SmartDiffRole } from "@devdigest/shared";
+import type { Severity } from "@/lib/types";
+import type { DiffFileMeta, DiffLineAnnotation } from "@/components/diff-viewer";
 import { DEFAULT_OPEN_BY_ROLE } from "./constants";
+
+/** CRITICAL → WARNING → SUGGESTION, for both the sort within a line and the
+    sort within a file's annotation list. */
+const SEVERITY_RANK: Record<Severity, number> = {
+  CRITICAL: 0,
+  WARNING: 1,
+  SUGGESTION: 2,
+};
 
 /** The shared viewer's own per-file override type, imported from its barrel
     rather than restated here: both fields are optional, so a structural copy
@@ -40,22 +49,45 @@ export function ungroupedFiles(groups: SmartDiffGroup[], files: PrFile[]): PrFil
 
 /** Builds the `fileMeta` prop DiffViewer forwards to each FileCard: the
     role's `defaultOpen` override (`null` = leave FileCard's own heuristic
-    alone) plus that file's finding-line numbers for the clickable badge. */
-export function buildFileMeta(groups: SmartDiffGroup[]): Record<string, FileMetaEntry> {
+    alone) plus that file's line annotations for the clickable badge/chips. */
+export function buildFileMeta(
+  groups: SmartDiffGroup[],
+  annotationsByPath: Record<string, DiffLineAnnotation[]>,
+): Record<string, FileMetaEntry> {
   const meta: Record<string, FileMetaEntry> = {};
   for (const g of groups) {
     const openOverride = DEFAULT_OPEN_BY_ROLE[g.role];
     for (const f of g.files) {
       meta[f.path] = {
         defaultOpen: openOverride === null ? undefined : openOverride,
-        findingLines: f.finding_lines,
+        annotations: annotationsByPath[f.path],
       };
     }
   }
   return meta;
 }
 
-/** Total finding-line count across a group's files, for the group header. */
-export function groupFindingLineCount(group: SmartDiffGroup): number {
-  return group.files.reduce((n, f) => n + f.finding_lines.length, 0);
+/** Client-side join of the PR's findings onto its files, replacing the
+    server's frozen (and now-dead) `finding_lines`: the contract carries
+    neither `id` nor `severity`, both of which the annotation needs, and
+    `usePrReviews` is already loaded for the Agent-runs tab's own counter —
+    this reuses it rather than adding a request. Dismissed findings are
+    dropped; `kind === 'review'` is deliberately NOT filtered, for parity
+    with that counter. A finding whose `file` doesn't match any of `files`
+    (stale/renamed path) is silently dropped, same as `groupFiles` above. */
+export function buildAnnotations(
+  files: PrFile[],
+  findings: FindingRecord[],
+): Record<string, DiffLineAnnotation[]> {
+  const knownPaths = new Set(files.map((f) => f.path));
+  const byPath: Record<string, DiffLineAnnotation[]> = {};
+  for (const f of findings) {
+    if (f.dismissed_at != null) continue;
+    if (!knownPaths.has(f.file)) continue;
+    (byPath[f.file] ??= []).push({ findingId: f.id, line: f.start_line, severity: f.severity });
+  }
+  for (const path of Object.keys(byPath)) {
+    byPath[path]!.sort((a, b) => a.line - b.line || SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity]);
+  }
+  return byPath;
 }

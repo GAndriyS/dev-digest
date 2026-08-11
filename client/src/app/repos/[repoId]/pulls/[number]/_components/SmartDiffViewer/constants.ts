@@ -17,3 +17,17 @@ export const ROLE_LABEL_KEY: Record<SmartDiffRole, "coreLabel" | "wiringLabel" |
   wiring: "wiringLabel",
   boilerplate: "boilerplateLabel",
 };
+
+/** `smartDiff.*` description key for each role's group header. */
+export const ROLE_DESC_KEY: Record<SmartDiffRole, "coreDesc" | "wiringDesc" | "boilerplateDesc"> = {
+  core: "coreDesc",
+  wiring: "wiringDesc",
+  boilerplate: "boilerplateDesc",
+};
+
+/** Colour of each role group's header marker square. */
+export const ROLE_MARKER_COLOR: Record<SmartDiffRole, string> = {
+  core: "var(--accent)",
+  wiring: "var(--warn)",
+  boilerplate: "var(--text-muted)",
+};

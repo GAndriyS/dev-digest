@@ -5,7 +5,8 @@
 import React from "react";
 import { useTranslations } from "next-intl";
 import { Icon } from "@devdigest/ui";
-import type { PrFile } from "@/lib/types";
+import type { PrFile, Severity } from "@/lib/types";
+import type { DiffLineAnnotation } from "../DiffViewer";
 import { AUTO_EXPAND_MAX_LINES } from "../constants";
 import { parsePatch, type Line } from "../helpers";
 import {
@@ -15,7 +16,7 @@ import {
   type CommentThread,
   type DiffCommentApi,
 } from "../comments";
-import { s, chevronFor } from "../styles";
+import { s, chevronFor, findingBadgeFor } from "../styles";
 import { CodeLine } from "../CodeLine";
 import { OutdatedComments } from "../OutdatedComments";
 
@@ -34,9 +35,9 @@ function threadsForLine(ln: Line, matched: Map<string, CommentThread[]>): Commen
     `start_line` can fall on a deleted line or outside every hunk in the
     stored patch — `CodeLine` only renders `data-line` for lines that have a
     `newNo` (see its component), so an exact match may not exist. Falls back
-    to the last rendered line when nothing at or after `target` exists, so a
-    click always lands somewhere; `undefined` only when the file renders no
-    lines at all (`renderedNewNos` sorted ascending). */
+    to the last rendered line when nothing at or after `target` exists, so an
+    annotation always lands somewhere; `undefined` only when the file renders
+    no lines at all (`renderedNewNos` sorted ascending). */
 function nearestRenderedLine(target: number, renderedNewNos: number[]): number | undefined {
   for (const n of renderedNewNos) {
     if (n >= target) return n;
@@ -44,63 +45,82 @@ function nearestRenderedLine(target: number, renderedNewNos: number[]): number |
   return renderedNewNos[renderedNewNos.length - 1];
 }
 
+/** Fixed display/priority order for annotations sharing a line or a badge:
+    CRITICAL → WARNING → SUGGESTION (decision 13, l03-subagents-smart-diff-v2). */
+const SEVERITY_RANK: Record<Severity, number> = { CRITICAL: 0, WARNING: 1, SUGGESTION: 2 };
+
+function bySeverity(a: DiffLineAnnotation, b: DiffLineAnnotation): number {
+  return SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity];
+}
+
+/** Highest-priority severity across a set of annotations (CRITICAL wins) —
+    drives the header badge's colour. */
+function worstSeverity(list: DiffLineAnnotation[]): Severity {
+  return list.reduce<Severity>(
+    (worst, a) => (SEVERITY_RANK[a.severity] < SEVERITY_RANK[worst] ? a.severity : worst),
+    list[0]!.severity,
+  );
+}
+
 export function FileCard({
   file,
   commenting,
   defaultOpen,
-  findingLines,
+  annotations,
+  onFindingClick,
 }: {
   file: PrFile;
   commenting?: DiffCommentApi;
   /** Overrides the size heuristic below (Smart Diff: a lock file always starts
       collapsed regardless of its line count). `undefined` leaves the heuristic. */
   defaultOpen?: boolean;
-  /** New-side (`Line.newNo`) line numbers to badge + jump to, from Smart Diff's
-      findings. Absent/empty renders no badge. */
-  findingLines?: number[];
+  /** Findings to render on their diff line, from Smart Diff's client-side join.
+      Absent/empty renders no badge and no per-line chips. */
+  annotations?: DiffLineAnnotation[];
+  /** Called with a finding's id when its badge or an on-line annotation chip
+      is clicked. */
+  onFindingClick?: (findingId: string) => void;
 }) {
   const t = useTranslations("shell");
-  const [open, setOpen] = React.useState(
-    defaultOpen ?? (file.additions ?? 0) + (file.deletions ?? 0) <= AUTO_EXPAND_MAX_LINES
-  );
+  const totalLines = (file.additions ?? 0) + (file.deletions ?? 0);
+  const isLarge = totalLines > AUTO_EXPAND_MAX_LINES;
+  const [open, setOpen] = React.useState(defaultOpen ?? totalLines <= AUTO_EXPAND_MAX_LINES);
   const lines = React.useMemo(() => parsePatch(file.patch), [file.patch]);
-  const findingLineSet = React.useMemo(() => new Set(findingLines ?? []), [findingLines]);
   const renderedNewNos = React.useMemo(
     () => [...new Set(lines.map((l) => l.newNo).filter((n): n is number => n != null))].sort((a, b) => a - b),
     [lines]
   );
 
-  // Clicking the finding badge opens the card and scrolls to a finding line,
-  // cycling through them on repeat clicks (ref-held index, no re-render needed
-  // for the cycle position itself). Scroll is two-phase: `open` flips first (so
-  // the body — and its `data-line` rows — exists), then an effect (which runs
-  // after that DOM commit) does the actual scrollIntoView, keyed by a nonce so
-  // clicking the SAME line twice in a row still re-fires the scroll.
-  const findingCycleRef = React.useRef(0);
-  const scrollNonceRef = React.useRef(0);
-  const [scrollTarget, setScrollTarget] = React.useState<{ line: number; nonce: number } | null>(
-    null
-  );
-  const bodyRef = React.useRef<HTMLDivElement | null>(null);
+  // Each annotation snaps onto the nearest rendered line (its exact target
+  // line may fall on a deleted line or a gap the stored patch never
+  // rendered); annotations sharing a rendered line are ordered CRITICAL →
+  // WARNING → SUGGESTION so the row's chips and the header badge agree.
+  const annotationsByLine = React.useMemo(() => {
+    const map = new Map<number, DiffLineAnnotation[]>();
+    if (!annotations || annotations.length === 0 || renderedNewNos.length === 0) return map;
+    for (const a of annotations) {
+      const line = nearestRenderedLine(a.line, renderedNewNos);
+      if (line == null) continue;
+      const list = map.get(line) ?? [];
+      list.push(a);
+      map.set(line, list);
+    }
+    for (const list of map.values()) list.sort(bySeverity);
+    return map;
+  }, [annotations, renderedNewNos]);
 
-  const jumpToFinding = () => {
-    if (!findingLines || findingLines.length === 0) return;
-    const idx = findingCycleRef.current % findingLines.length;
-    const target = findingLines[idx]!;
-    findingCycleRef.current = idx + 1;
-    const line = nearestRenderedLine(target, renderedNewNos);
-    if (line == null) return; // no rendered line to land on at all (e.g. empty diff)
-    scrollNonceRef.current += 1;
-    setOpen(true);
-    setScrollTarget({ line, nonce: scrollNonceRef.current });
+  // The badge navigates to the first finding: lowest rendered line, then
+  // (within that line) highest severity — decision 13.
+  const firstFindingId = React.useMemo(() => {
+    if (annotationsByLine.size === 0) return undefined;
+    const firstLine = Math.min(...annotationsByLine.keys());
+    return annotationsByLine.get(firstLine)![0]!.findingId;
+  }, [annotationsByLine]);
+
+  const handleBadgeActivate = (e: React.SyntheticEvent) => {
+    e.stopPropagation();
+    if (firstFindingId) onFindingClick?.(firstFindingId);
   };
-
-  React.useEffect(() => {
-    if (!scrollTarget) return;
-    const el = bodyRef.current?.querySelector<HTMLElement>(`[data-line="${scrollTarget.line}"]`);
-    el?.scrollIntoView({ behavior: "smooth", block: "center" });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scrollTarget?.nonce]);
 
   // Group this file's comments into threads, then split into ones we can anchor
   // to a rendered line vs. "outdated" (GitHub dropped the line / it's not here).
@@ -119,7 +139,10 @@ export function FileCard({
 
   return (
     <div style={s.fileCard}>
-      <div onClick={() => setOpen((o) => !o)} style={s.fileHeader}>
+      <div
+        onClick={() => setOpen((o) => !o)}
+        style={isLarge ? { ...s.fileHeader, ...s.fileHeaderLarge } : s.fileHeader}
+      >
         <Icon.ChevronRight size={13} style={chevronFor(open)} />
         <Icon.FileText size={14} style={s.fileIcon} />
         <span className="mono" style={s.filePath}>
@@ -129,6 +152,9 @@ export function FileCard({
           <span style={s.addText}>+{file.additions}</span>{" "}
           <span style={s.delText}>−{file.deletions}</span>
         </span>
+        {isLarge && (
+          <span style={s.largeChip}>{t("diffViewer.largeFileChip", { count: totalLines })}</span>
+        )}
         {commentCount > 0 && (
           <span
             style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "var(--text-muted)" }}
@@ -137,31 +163,27 @@ export function FileCard({
             {commentCount}
           </span>
         )}
-        {findingLines && findingLines.length > 0 && (
+        {annotations && annotations.length > 0 && (
           <span
             role="button"
             tabIndex={0}
-            aria-label={t("diffViewer.findingsJumpAria", { count: findingLines.length })}
-            onClick={(e) => {
-              e.stopPropagation();
-              jumpToFinding();
-            }}
+            aria-label={t("diffViewer.findingsJumpAria", { count: annotations.length })}
+            onClick={handleBadgeActivate}
             onKeyDown={(e) => {
               if (e.key === "Enter" || e.key === " ") {
                 e.preventDefault();
-                e.stopPropagation();
-                jumpToFinding();
+                handleBadgeActivate(e);
               }
             }}
-            style={s.findingBadge}
+            style={findingBadgeFor(worstSeverity(annotations))}
           >
             <Icon.AlertTriangle size={12} />
-            {findingLines.length}
+            {annotations.length}
           </span>
         )}
       </div>
       {open && (
-        <div ref={bodyRef} style={s.fileBody}>
+        <div style={s.fileBody}>
           {lines.length === 0 ? (
             <div style={s.noDiff}>{t("diffViewer.noDiffText")}</div>
           ) : (
@@ -172,7 +194,8 @@ export function FileCard({
                 path={file.path}
                 threads={threadsForLine(ln, matched)}
                 commenting={commenting}
-                highlighted={ln.newNo != null && findingLineSet.has(ln.newNo)}
+                annotations={ln.newNo != null ? annotationsByLine.get(ln.newNo) : undefined}
+                onFindingClick={onFindingClick}
               />
             ))
           )}

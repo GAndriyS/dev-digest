@@ -68,13 +68,24 @@ export default function PRDetailPage() {
 
   const tab = search.get("tab") ?? "overview";
   const traceRunId = search.get("trace");
-  const setParam = (key: string, val: string | null) => {
+  // A click inside the Diff tab has to land on a specific finding's card in
+  // "Agent runs" — that means writing BOTH `tab` and `finding` in the same
+  // navigation. Two sequential setParam calls would each read the same
+  // `search` snapshot and clobber one another, so every multi-key update goes
+  // through this single router.replace.
+  const setParams = (patch: Record<string, string | null>) => {
     const sp = new URLSearchParams(search.toString());
-    if (val == null) sp.delete(key);
-    else sp.set(key, val);
+    for (const [key, val] of Object.entries(patch)) {
+      if (val == null) sp.delete(key);
+      else sp.set(key, val);
+    }
     router.replace(`/repos/${repoId}/pulls/${number}${sp.toString() ? `?${sp.toString()}` : ""}`);
   };
-  const setTab = (t: string) => setParam("tab", t);
+  const setParam = (key: string, val: string | null) => setParams({ [key]: val });
+  // Leaving the Diff tab for any other tab drops a stale `?finding=` target —
+  // otherwise reopening Diff later re-triggers Findings' auto-scroll.
+  const setTab = (t: string) => setParams({ tab: t, finding: null });
+  const targetFindingId = search.get("finding");
 
   // Severity filter lives in the query too, so the PR list can deep-link
   // straight into a pre-filtered findings view. An unknown value reads as
@@ -169,6 +180,7 @@ export default function PRDetailPage() {
             cancelMutation={cancel}
             severityFilter={severityFilter}
             onToggleSeverity={toggleSeverity}
+            targetFindingId={targetFindingId}
             onOpenTrace={(id) => setParam("trace", id)}
             onDelete={(id) => {
               if (window.confirm("Delete this run from history? (its logs are removed too)"))
@@ -188,6 +200,8 @@ export default function PRDetailPage() {
             filesCount={pr.files_count}
             files={pr.files}
             canComment={pr.status === "open"}
+            findings={allFindings}
+            onOpenFinding={(id) => setParams({ tab: "findings", finding: id })}
           />
         )}
       </div>
