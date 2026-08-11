@@ -1,0 +1,6 @@
+node_modules/
+dist/
+# This package never emits JS (run from source via tsx; `build` is a typecheck).
+src/**/*.js
+src/**/*.js.map
+src/**/*.d.ts
