@@ -41,7 +41,6 @@
     "viewOnGitHub": "View on GitHub",
     "postedToGitHub": "Posts to GitHub immediately",
     "outdatedTitle": "{count} comment(s) on older revisions",
-    "findingsJumpAria": "{count} finding-line(s) — click to jump to a flagged line",
-    "ungroupedTitle": "Other files"
+    "findingsJumpAria": "{count} finding-line(s) — click to jump to a flagged line"
   }
 }

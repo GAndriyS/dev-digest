@@ -56,9 +56,9 @@ export default function PRDetailPage() {
   };
   // When a run settles (done OR failed) refresh the full run history too, so a
   // just-failed run shows up in "Run history" immediately — no page reload.
-  // Smart Diff's finding-line badges are derived from the latest review, so a
-  // settled run also has to invalidate it — otherwise the Diff tab only picks
-  // up new badges on a reload.
+  // Smart Diff's finding-line badges come from every kind:'review' run
+  // (dismissed excluded), so a settled run also has to invalidate it —
+  // otherwise the Diff tab only picks up new badges on a reload.
   const invalidateRunHistory = () => {
     if (prId) {
       qc.invalidateQueries({ queryKey: ["pr-runs", prId] });

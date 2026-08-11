@@ -1,7 +1,7 @@
 /* SmartDiffViewer — L03: orders a PR's Diff tab by risk (core → wiring →
    boilerplate), deterministically, from GET /pulls/:id/smart-diff. No new
    model call: the endpoint combines already-imported pr_files with the
-   latest review's findings.
+   findings of every kind:'review' run, dismissed excluded.
 
    Ranking is a courtesy, not a requirement — on any fetch error, an empty
    response, or before a review exists, this falls back to the plain
@@ -81,7 +81,6 @@ export function SmartDiffViewer({
   commenting?: DiffCommentApi;
 }) {
   const t = useTranslations("prReview");
-  const shellT = useTranslations("shell");
   const { data, isLoading, isError } = usePrSmartDiff(prId);
 
   if (isLoading) {
@@ -142,7 +141,7 @@ export function SmartDiffViewer({
       {leftover.length > 0 && (
         <div style={s.group}>
           <div style={s.groupHeaderStatic}>
-            <span style={s.groupLabel}>{shellT("diffViewer.ungroupedTitle")}</span>
+            <span style={s.groupLabel}>{t("smartDiff.ungroupedTitle")}</span>
             <span style={s.groupMeta}>{t("smartDiff.filesCount", { count: leftover.length })}</span>
           </div>
           <div style={s.groupBody}>

@@ -1,17 +1,14 @@
 /** Pure helpers for SmartDiffViewer — turn the SmartDiff response (paths only,
-    no patch text) into the props DiffViewer/FileCard already understand.
-    `no-component-internals-from-app` means this folder may import only
-    `@/components/diff-viewer`'s barrel — so `DiffFileMeta`'s shape is
-    duck-typed here rather than imported; TS structural typing accepts it at
-    the `<DiffViewer fileMeta={...}>` call site without a named import. */
+    no patch text) into the props DiffViewer/FileCard already understand. */
 import type { PrFile, SmartDiffGroup, SmartDiffRole } from "@devdigest/shared";
+import type { DiffFileMeta } from "@/components/diff-viewer";
 import { DEFAULT_OPEN_BY_ROLE } from "./constants";
 
-/** Matches `DiffFileMeta` in `@/components/diff-viewer` structurally. */
-export interface FileMetaEntry {
-  defaultOpen?: boolean;
-  findingLines?: number[];
-}
+/** The shared viewer's own per-file override type, imported from its barrel
+    rather than restated here: both fields are optional, so a structural copy
+    stays assignable even after a rename and the badges would go quietly
+    missing. */
+export type FileMetaEntry = DiffFileMeta;
 
 export interface RoleFileGroup {
   role: SmartDiffRole;
