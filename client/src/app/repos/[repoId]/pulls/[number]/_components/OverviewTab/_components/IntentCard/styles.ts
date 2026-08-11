@@ -1,0 +1,85 @@
+import type { CSSProperties } from "react";
+
+export const s = {
+  card: {
+    border: "1px solid var(--border)",
+    borderRadius: 8,
+    background: "var(--bg-elevated)",
+    padding: 18,
+    display: "flex",
+    flexDirection: "column",
+    gap: 14,
+  } satisfies CSSProperties,
+  staleRow: {
+    display: "flex",
+  } satisfies CSSProperties,
+  summary: {
+    margin: 0,
+    padding: "0 0 0 12px",
+    borderLeft: "2px solid var(--border-strong)",
+    fontSize: 14,
+    color: "var(--text-primary)",
+    lineHeight: 1.5,
+    fontStyle: "italic",
+  } satisfies CSSProperties,
+  columns: {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    gap: 20,
+  } satisfies CSSProperties,
+  subLabel: {
+    fontSize: 11,
+    fontWeight: 700,
+    letterSpacing: "0.06em",
+    textTransform: "uppercase",
+    color: "var(--text-muted)",
+    marginBottom: 6,
+  } satisfies CSSProperties,
+  list: {
+    margin: 0,
+    paddingLeft: 18,
+    fontSize: 13,
+    color: "var(--text-secondary)",
+    display: "flex",
+    flexDirection: "column",
+    gap: 4,
+  } satisfies CSSProperties,
+  muted: {
+    fontSize: 13,
+    color: "var(--text-muted)",
+  } satisfies CSSProperties,
+  badgeRow: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: 6,
+  } satisfies CSSProperties,
+  footer: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    flexWrap: "wrap",
+    gap: 10,
+    paddingTop: 10,
+    borderTop: "1px solid var(--border)",
+  } satisfies CSSProperties,
+  sources: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: 10,
+    fontSize: 12,
+    color: "var(--text-muted)",
+  } satisfies CSSProperties,
+  sourceUnavailable: {
+    color: "var(--text-muted)",
+    textDecoration: "line-through",
+    textDecorationColor: "var(--border-strong)",
+  } satisfies CSSProperties,
+  error: {
+    border: "1px solid var(--crit)",
+    background: "var(--crit-bg)",
+    color: "var(--crit)",
+    borderRadius: 8,
+    padding: "10px 14px",
+    fontSize: 13,
+  } satisfies CSSProperties,
+} as const;

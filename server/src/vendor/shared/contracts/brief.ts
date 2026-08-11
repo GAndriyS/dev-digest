@@ -6,10 +6,31 @@ import { z } from 'zod';
  */
 
 // ---- Intent ----
+/**
+ * Provenance for one input the intent classifier tried to use. `ref` names the
+ * thing (an issue number, a repo-relative path, an external URL); `status` is
+ * `'unavailable'` for anything not actually read — an external http(s) link
+ * (never fetched, L03 open question 1), a linked issue the API call failed
+ * for, or a referenced file the guarded clone reader could not read. The UI
+ * renders `unavailable` entries so a low-confidence intent is explainable
+ * rather than just a number.
+ */
+export const IntentSource = z.object({
+  type: z.enum(['description', 'linked_issue', 'repo_file']),
+  ref: z.string().optional(),
+  status: z.enum(['used', 'unavailable']),
+});
+export type IntentSource = z.infer<typeof IntentSource>;
+
 export const Intent = z.object({
   intent: z.string(),
   in_scope: z.array(z.string()),
   out_of_scope: z.array(z.string()),
+  /** Short noun phrases naming where a reviewer should look closely — never a directive. */
+  risk_areas: z.array(z.string()),
+  /** Calibrated 0-1: lower when the description is thin or a source is unavailable. */
+  confidence: z.number().min(0).max(1),
+  sources: z.array(IntentSource),
 });
 export type Intent = z.infer<typeof Intent>;
 

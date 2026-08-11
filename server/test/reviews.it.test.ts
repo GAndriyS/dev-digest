@@ -7,7 +7,7 @@ import { seed } from '../src/db/seed.js';
 import { MockLLMProvider, MockEmbedder, MockGitClient } from '../src/adapters/mocks.js';
 import * as t from '../src/db/schema.js';
 import { eq } from 'drizzle-orm';
-import { PrMeta, type Review } from '@devdigest/shared';
+import { PrMeta, type Intent, type Review } from '@devdigest/shared';
 
 const hasDocker = await dockerAvailable();
 const d = hasDocker ? describe : describe.skip;
@@ -58,6 +58,22 @@ const REVIEW_FIXTURE: Review = {
       kind: 'finding',
     },
   ],
+};
+
+/**
+ * L03: every review run derives PR intent once, BEFORE the per-agent loop
+ * (`review_intent` defaults to `openrouter` — `platform.ts`). Every test below
+ * that runs a review needs this mocked too, or `container.llm('openrouter')`
+ * reaches a REAL provider using whatever key `server/.env` happens to have —
+ * slow, non-deterministic, and long enough to blow `waitForPrRuns`' 10s budget.
+ */
+const INTENT_FIXTURE: Intent = {
+  intent: 'Adds rate limiting to public endpoints.',
+  in_scope: ['src/config.ts'],
+  out_of_scope: [],
+  risk_areas: [],
+  confidence: 0.7,
+  sources: [],
 };
 
 let repoSeq = 0;
@@ -119,6 +135,9 @@ d('A2 reviews + agents (Testcontainers pg)', () => {
         git: new MockGitClient({ diff: DIFF }),
         llm: {
           [provider]: new MockLLMProvider(provider, { structured }),
+          // Same trick `conventions.it.test.ts` uses: the mock's own `.id` label
+          // doesn't need to match the override key it's registered under.
+          openrouter: new MockLLMProvider('openai', { structured: INTENT_FIXTURE }),
         },
       },
     });

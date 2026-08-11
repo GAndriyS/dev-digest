@@ -8,6 +8,7 @@ import { api, API_BASE } from "../api";
 import { notify } from "../toast";
 import type {
   FindingActionKind,
+  PrIntentRecord,
   PrReviewComment,
   ReviewRecord,
   ReviewRunResponse,
@@ -58,6 +59,32 @@ export function usePrReviews(
     queryKey: ["reviews", prId],
     queryFn: () => api.get<ReviewRecord[]>(`/pulls/${prId}/reviews`),
     enabled: !!prId && (opts.enabled ?? true),
+  });
+}
+
+// ---- Intent (L03): derived scope/risk shown on the Overview tab ----
+/** Persisted intent for a PR, or `null` for "not classified yet" — never a
+    404 (`GET /pulls/:id/intent`), so this renders an empty state, not an
+    error. Takes the PR's uuid, never the URL's `?number=`. */
+export function usePrIntent(prId: string | null | undefined) {
+  return useQuery({
+    queryKey: ["pr-intent", prId],
+    queryFn: () => api.get<PrIntentRecord | null>(`/pulls/${prId}/intent`),
+    enabled: !!prId,
+  });
+}
+
+/** Force a fresh classification (the card's re-classify button) — no auto
+    re-derive on PR head move; this IS that button. The `useExtractConventions`
+    precedent: the fresh record is written straight into the cache rather than
+    invalidated, so the card updates on THIS response instead of a refetch. */
+export function useDeriveIntent(prId: string | null | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post<PrIntentRecord>(`/pulls/${prId}/intent`),
+    onSuccess: (data) => {
+      qc.setQueryData(["pr-intent", prId], data);
+    },
   });
 }
 

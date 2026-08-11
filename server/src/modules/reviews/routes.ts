@@ -131,6 +131,30 @@ export default async function reviewsRoutes(appBase: FastifyInstance) {
     return service.reviewsForPull(workspaceId, req.params.id);
   });
 
+  // ---- Intent (L03) --------------------------------------------------------
+  // `null`, not a 404, for "not classified yet" (unlike the removed
+  // `15fa391^` route) — the overview card renders a "not classified yet"
+  // state, and e2e flow 02 must not see this as a page error.
+  app.get('/pulls/:id/intent', { schema: { params: IdParams } }, async (req) => {
+    const { workspaceId } = await getContext(container, req);
+    return service.getIntent(workspaceId, req.params.id);
+  });
+
+  // Force re-derive (no auto re-derive on PR head move — this IS the button).
+  // Rate-limited like `POST /pulls/:id/review` (`:29` above) rather than
+  // following the *unlimited* `POST /repos/:id/conventions/extract` precedent
+  // (`conventions/routes.ts:32-35` carries no per-route limit): this route
+  // spends money on an LLM call same as review, which is the reason that
+  // limit exists (Open question 1).
+  app.post(
+    '/pulls/:id/intent',
+    { schema: { params: IdParams }, config: { rateLimit: { max: 10, timeWindow: '1 minute' } } },
+    async (req) => {
+      const { workspaceId } = await getContext(container, req);
+      return service.deriveIntentNow(workspaceId, req.params.id, req.log);
+    },
+  );
+
   // ---- Delete a whole review run (one agent's pass) + its findings --------
   app.delete('/reviews/:id', { schema: { params: IdParams } }, async (req) => {
     const { workspaceId } = await getContext(container, req);

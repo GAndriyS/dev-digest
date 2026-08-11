@@ -84,6 +84,27 @@ promotion rules → root `INSIGHTS.md`.
 
 ## Recurring Errors & Fixes
 
+- **2026-08-11** — Any server-side pre-work that resolves its provider via
+  `resolveFeatureModel(container, workspaceId, '<feature>')` (L03's intent
+  classifier is the first: `review_intent` defaults to `openrouter`) reaches a
+  **REAL** provider in an integration test unless that specific provider key
+  is also in `overrides.llm`, because `container.llm()` falls back through
+  `secrets.get()` to `process.env`, and `server/.env` on a dev machine set up
+  for manual verification (see the Verification plan's "run against a real
+  provider" step) typically has real `OPENAI_API_KEY`/`ANTHROPIC_API_KEY`/
+  `OPENROUTER_API_KEY` values. `reviews.it.test.ts`'s `appWith()` only mocked
+  the AGENT's own provider; adding the intent pre-work call left 4/7 tests
+  failing with `expected [] to have length 1` — not a timeout or a network
+  error, but `waitForPrRuns`' 10s poll budget expiring while a real ~10s
+  OpenRouter round-trip ran before the (mocked, near-instant) agent review
+  even started. The tell: a console warning from the REAL `openai` SDK's
+  `zodResponseFormat` helper (`Zod field … uses .optional() without
+  .nullable()`) appearing in test stderr — that conversion only runs inside a
+  real provider's `completeStructured`, never inside `MockLLMProvider`. Fix:
+  mock every provider a review run's pre-work can reach, keyed by the
+  OVERRIDE slot, not by the mock's own `.id` (`conventions.it.test.ts` already
+  does this: `openrouter: new MockLLMProvider('openai', {...})`).
+
 - **2026-07-31** — A CLI guard of the form
   ``import.meta.url === `file://${process.argv[1]}` `` never matches on Windows
   (backslash argv path vs `file:///E:/...` URL), so the script exits 0 having
@@ -94,5 +115,13 @@ promotion rules → root `INSIGHTS.md`.
   entrypoint must use the same form.
 
 ## Session Notes
+
+- **2026-08-11** — Implemented the L03 intent layer end to end: contracts
+  (`Intent`/`IntentSource`/`PrIntentRecord`), migration 0015, the `_shared`
+  clone-fs promotion, the classifier (`intent.ts`), `flagOutOfScope`, the
+  run-executor wiring, and `GET`/`POST /pulls/:id/intent`. All server/client
+  lanes green (server unit 267, integration 45, client 221, reviewer-core 23).
+  See the Recurring Errors entry above for the one non-obvious failure hit
+  along the way.
 
 ## Open Questions

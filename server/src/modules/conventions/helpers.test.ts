@@ -3,13 +3,15 @@ import {
   ExtractedConvention,
   buildExtractionMessages,
   clipFile,
-  isInsideRoot,
   locateSnippet,
   normalizeCategory,
   normalizeRule,
   verifyCandidates,
   type SampleFile,
 } from './helpers.js';
+// isInsideRoot moved to modules/_shared/clone-fs.ts (server/INSIGHTS.md:24-36) —
+// these test cases moved with it (pure move; the assertions are unchanged).
+import { isInsideRoot } from '../_shared/clone-fs.js';
 import { MAX_CATEGORY_CHARS, MAX_FILE_CHARS, MIN_SNIPPET_CHARS } from './constants.js';
 
 const FILE = `import { Redis } from "ioredis";
