@@ -55,15 +55,22 @@ export function ReviewRunAccordion({
 }) {
   const [open, setOpen] = React.useState(defaultOpen);
   const rootRef = React.useRef<HTMLDivElement | null>(null);
+  // Two independent targets, deliberately two effects. They differ in source
+  // (the Timeline's local state vs. the URL), in key (`run_id` vs. `id`) and
+  // in what they own (this accordion scrolls itself vs. the panel scrolls to
+  // a card) — an `else if` would have made the URL target reachable only when
+  // the Timeline one happens not to match.
   React.useEffect(() => {
-    if (review.run_id && review.run_id === targetRunId) {
-      setOpen(true);
-      rootRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    } else if (review.id === targetReviewId) {
-      setOpen(true);
-    }
+    if (!review.run_id || review.run_id !== targetRunId) return;
+    setOpen(true);
+    rootRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    // targetNonce is the whole point: clicking the same run twice must re-scroll.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [targetRunId, targetNonce, review.run_id, targetReviewId, review.id]);
+  }, [targetRunId, targetNonce, review.run_id]);
+
+  React.useEffect(() => {
+    if (targetReviewId && review.id === targetReviewId) setOpen(true);
+  }, [targetReviewId, review.id]);
   const del = useDeleteReview(prId);
   const findings = review.findings;
   const blockers = findings.filter((f) => f.severity === "CRITICAL" && !f.dismissed_at).length;
@@ -166,7 +173,11 @@ export function ReviewRunAccordion({
             repoFullName={repoFullName}
             headSha={headSha}
             severityFilter={severityFilter}
-            targetFindingId={targetFindingId}
+            /* Only the review that actually holds the target hands it on.
+               Without the gate every open accordion's panel would run its own
+               settle loop over the same card — `targetReviewId` is computed in
+               FindingsTab precisely so this question is already answered. */
+            targetFindingId={review.id === targetReviewId ? targetFindingId : null}
           />
         </div>
       )}

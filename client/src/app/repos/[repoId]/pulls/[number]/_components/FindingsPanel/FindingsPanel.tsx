@@ -60,6 +60,7 @@ export function FindingsPanel({
   // frame cap keeps a genuinely never-settling layout from looping forever,
   // and `behavior` stays instant: a smooth animation would chase a target
   // that moves out from under it.
+  const listRef = React.useRef<HTMLDivElement | null>(null);
   React.useEffect(() => {
     if (!targetFindingId) return;
     const selector = `[data-finding-id="${CSS.escape(targetFindingId)}"]`;
@@ -73,7 +74,10 @@ export function FindingsPanel({
     let stableFrames = 0;
     let frames = 0;
     const tick = () => {
-      const el = document.querySelector<HTMLElement>(selector);
+      // Scoped to this panel's own list, not the document: the card only ever
+      // lives in the panel that was handed the target, and a document-wide
+      // query would let a neighbouring panel chase a card it does not own.
+      const el = listRef.current?.querySelector<HTMLElement>(selector);
       if (el) {
         const top = documentTop(el);
         el.scrollIntoView({ block: "center" });
@@ -110,7 +114,7 @@ export function FindingsPanel({
         </div>
       </div>
 
-      <div style={s.list}>
+      <div style={s.list} ref={listRef}>
         {shown.length === 0 ? (
           <EmptyState icon="Filter" title={t("panel.noMatchTitle")} body={t("panel.noMatchBody")} />
         ) : (
