@@ -1,4 +1,3 @@
-import { sep as pathSep } from 'node:path';
 import { z } from 'zod';
 import type { ChatMessage, ConventionCandidate } from '@devdigest/shared';
 import type { ConventionRow } from './repository.js';
@@ -39,18 +38,6 @@ export type ConventionExtraction = z.infer<typeof ConventionExtraction>;
 export interface SampleFile {
   path: string;
   content: string;
-}
-
-/**
- * Is `real` the clone root itself, or something beneath it?
- *
- * Both paths must already be resolved (`realpath`), because the whole point is
- * to judge where a file physically IS rather than how it was spelled. The
- * separator in the prefix is not decoration: without it `/clones/repo-evil`
- * passes as being inside `/clones/repo`.
- */
-export function isInsideRoot(root: string, real: string, sep = pathSep): boolean {
-  return real === root || real.startsWith(root + sep);
 }
 
 /** Truncate to the head — conventions show up in imports and the first handler. */

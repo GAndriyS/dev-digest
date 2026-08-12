@@ -1,0 +1,17 @@
+{
+  "card": {
+    "title": "Intent",
+    "reclassify": "Re-classify",
+    "reclassifying": "Classifying…",
+    "deriveFailed": "Classification failed",
+    "loadError": "Could not load this PR's intent.",
+    "emptyTitle": "Not classified yet",
+    "emptyBody": "Derive the PR's intent and scope before reviewing — the reviewer treats it as data for prioritization, never as a reason to skip a finding.",
+    "emptyCta": "Classify now",
+    "inScope": "In scope",
+    "outOfScope": "Out of scope",
+    "riskAreas": "Risk areas",
+    "none": "None noted",
+    "stale": "PR has new commits since this was derived"
+  }
+}

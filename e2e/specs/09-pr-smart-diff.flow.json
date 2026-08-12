@@ -1,0 +1,16 @@
+{
+  "name": "PR detail Files changed tab groups the seeded diff by Smart Diff role",
+  "description": "From PR #482, open the Files changed tab and confirm the Smart Diff grouping renders a role label, a seeded core file (src/middleware/ratelimit.ts), and the Smart/Original order toggle. Read-only seeded data (no model call); #482 has no lock file or patch text, so this proves grouping, ordering, and the toggle's presence only, not collapse, the lock-file rule, or switching to Original order. Assumes a freshly-seeded DB (see e2e/README.md).",
+  "steps": [
+    { "cmd": ["open", "{BASE}/"], "label": "load the app root" },
+    { "cmd": ["wait", "--url", "/pulls"], "label": "land on the PR list" },
+    { "cmd": ["find", "text", "Add rate limiting to public API endpoints", "click"], "label": "open the PR row" },
+    { "cmd": ["wait", "--url", "/pulls/482"], "label": "navigate to the PR detail route" },
+    { "cmd": ["wait", "--load", "networkidle"], "label": "PR detail data settles" },
+    { "cmd": ["find", "role", "button", "click", "--name", "Files changed"], "label": "switch to the Files changed tab" },
+    { "cmd": ["wait", "--url", "tab=diff"], "label": "diff tab is active in the URL" },
+    { "cmd": ["wait", "--text", "Core logic"], "label": "the Smart Diff core role group label renders" },
+    { "cmd": ["wait", "--text", "src/middleware/ratelimit.ts"], "label": "the seeded core file renders in its group" },
+    { "cmd": ["wait", "--text", "Original order"], "label": "the Smart/Original order toggle renders" }
+  ]
+}

@@ -1,3 +1,15 @@
 {
-  "$schema": "https://json.schemastore.org/claude-code-settings.json"
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "deny": [
+      "Edit(./server/clones/**)",
+      "Write(./server/clones/**)",
+      "Edit(./server/src/db/migrations/*.sql)",
+      "Write(./server/src/db/migrations/*.sql)",
+      "Edit(./**/src/vendor/ui/**)",
+      "Write(./**/src/vendor/ui/**)",
+      "Edit(./client/src/vendor/ui/**)",
+      "Write(./client/src/vendor/ui/**)"
+    ]
+  }
 }

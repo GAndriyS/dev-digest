@@ -50,10 +50,17 @@ export const FEATURE_MODELS: FeatureModelDef[] = [
   },
   {
     id: 'review_intent',
+    // A cheap model on purpose, same reasoning as `conventions` below: this
+    // pass only classifies scope/risk from a hunk-header digest + PR text (no
+    // patch bodies), and every out-of-scope hint it produces can only ever
+    // DROP a soft finding — CRITICAL severity and the security/bug categories
+    // are never touched — a flagship model buys accuracy the review pass's
+    // own severity floor already enforces. Override in Settings when a repo
+    // needs more.
     label: 'PR Review · Intent',
     description: 'Derives a PR’s intent and scope before review.',
-    defaultProvider: 'openai',
-    defaultModel: 'gpt-4.1',
+    defaultProvider: 'openrouter',
+    defaultModel: 'deepseek/deepseek-v4-flash',
   },
   {
     id: 'risk_brief',

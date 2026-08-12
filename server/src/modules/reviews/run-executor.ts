@@ -1,13 +1,14 @@
 import type { Container } from '../../platform/container.js';
-import type { Provider, Review, RunTrace, UnifiedDiff } from '@devdigest/shared';
+import type { Intent, Provider, Review, RunTrace, UnifiedDiff } from '@devdigest/shared';
 import { reviewPullRequest, countBlockers } from '@devdigest/reviewer-core';
 import { RunLogger } from '../../platform/run-logger.js';
 import * as schema from '../../db/schema.js';
 import type { AgentRow } from '../../db/rows.js';
 import type { ReviewRepository, FindingRow, PullRow, ReviewRow } from './repository.js';
 import { REVIEW_STRATEGY } from './constants.js';
-import { taskLine } from './helpers.js';
+import { taskLine, flagOutOfScope } from './helpers.js';
 import { loadDiff } from './diff-loader.js';
+import { deriveIntent } from './intent.js';
 
 /** Thrown by a run when the user cancels it mid-flight (between map files). */
 export class RunCancelledError extends Error {
@@ -104,6 +105,31 @@ export class ReviewRunExecutor {
     }
     runLog.info(`Diff ready — ${diff.files.length} changed file(s); starting ${jobs.length} agent run(s)`);
 
+    // ---- Intent (L03): once per PR, before the per-agent fan-out ----------
+    // Reuses an already-derived intent (no auto re-derive when the PR head
+    // moves — that's the user's button, `POST /pulls/:id/intent`). Unlike
+    // `loadDiff` above, a FAILURE here must NOT fail every queued run: log it
+    // and continue with `intent = undefined` — `taskLine`/`flagOutOfScope`
+    // both treat that as a pass-through, so a missing/broken intent call
+    // degrades the review, it doesn't block it.
+    let intent: Intent | undefined;
+    try {
+      const existing = await this.repo.getIntent(pull.id);
+      if (existing) {
+        intent = existing;
+        runLog.info('Using previously derived PR intent (no auto re-derive on PR head move)');
+      } else {
+        intent = await runLog.step(
+          'Deriving PR intent',
+          () => deriveIntent(this.container, this.repo, workspaceId, pull, repo, diff, runLog),
+          { kind: 'tool' },
+        );
+      }
+    } catch (err) {
+      runLog.info(`Intent derivation failed — continuing without it: ${(err as Error).message}`);
+      intent = undefined;
+    }
+
     for (const { agent, runId } of jobs) {
       const agentStart = Date.now();
       logger?.info(
@@ -111,7 +137,7 @@ export class ReviewRunExecutor {
         `review: agent "${agent.name}" started (${agent.provider}/${agent.model})`,
       );
       try {
-        const outcome = await this.runOneAgent(workspaceId, pull, repo, diff, agent, runId, runLog);
+        const outcome = await this.runOneAgent(workspaceId, pull, repo, diff, intent, agent, runId, runLog);
         logger?.info(
           {
             runId,
@@ -140,6 +166,7 @@ export class ReviewRunExecutor {
     pull: PullRow,
     repo: typeof schema.repos.$inferSelect,
     diff: UnifiedDiff,
+    intent: Intent | undefined,
     agent: AgentRow,
     runId: string,
     parentLog: RunLogger,
@@ -220,7 +247,7 @@ export class ReviewRunExecutor {
           runLog.info(`run_skills not recorded — ${(err as Error).message}`),
         );
 
-      const task = taskLine(pull) + rankNote;
+      const task = taskLine(pull, intent) + rankNote;
 
       // ---- Engine: assemble → single-pass → grounding -----------------------
       // The pure review pipeline lives in @devdigest/reviewer-core (shared with
@@ -255,7 +282,15 @@ export class ReviewRunExecutor {
       });
       const { tokensIn, tokensOut, costUsd, grounding } = outcome;
 
-      const keptFindings = outcome.review.findings;
+      // L03 — out-of-scope filter (dropped unless CRITICAL or security/bug,
+      // which always survive). Every drop is logged, never silent
+      // (`reviewer-core/src/review/run.ts:199-202` precedent) — a finding that
+      // vanished from the DB but not from the run log is the bug this whole
+      // feature is judged on.
+      const { kept: keptFindings, dropped } = flagOutOfScope(outcome.review.findings, intent);
+      for (const f of dropped) {
+        runLog.info(`Out of scope: dropped "${f.title}" (${f.file}, ${f.severity}/${f.category})`);
+      }
 
       // ---- Persist review + findings ----------------------------------------
       const review = await this.repo.insertReview({

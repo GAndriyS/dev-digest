@@ -52,6 +52,24 @@ export const prIntent = pgTable('pr_intent', {
   intent: text('intent').notNull(),
   inScope: jsonb('in_scope').$type<string[]>().notNull().default(sql`'[]'::jsonb`),
   outOfScope: jsonb('out_of_scope').$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+  // L03 — intent layer additions. All additive/defaulted so a pre-0015 row
+  // still round-trips (INSIGHTS.md:91-96: drizzle-kit generate would prompt
+  // interactively on a diff that both adds and drops a column; this only adds).
+  riskAreas: jsonb('risk_areas').$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+  confidence: doublePrecision('confidence'),
+  // Inline shape rather than importing `IntentSource` from @devdigest/shared:
+  // db/schema is the outermost ring (`db-schema-is-leaf`) and must not reach
+  // into app code even for a type-only import.
+  sources: jsonb('sources')
+    .$type<{ type: 'description' | 'linked_issue' | 'repo_file'; ref?: string; status: 'used' | 'unavailable' }[]>()
+    .notNull()
+    .default(sql`'[]'::jsonb`),
+  model: text('model'),
+  headSha: text('head_sha'),
+  tokensIn: integer('tokens_in'),
+  tokensOut: integer('tokens_out'),
+  costUsd: doublePrecision('cost_usd'),
+  createdAt: now(),
 });
 
 export const prBrief = pgTable('pr_brief', {

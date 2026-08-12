@@ -56,6 +56,23 @@ promotion rules → root `INSIGHTS.md`.
   that asserts the EXACT line set; `toContain` on a contiguous band passes for
   any start within the band's width and catches nothing.
 
+- **2026-08-11** — `modules/smart-diff/constants.ts`'s mini-glob DSL had one
+  directory-segment form (`name/` → matches at ANY depth) and it was wrong for
+  `vendor/`, `build/`, `out/`, `generated/`: these are common names for a
+  hand-authored nested folder (`server/src/vendor/shared`, `scripts/build/`, a
+  monorepo package's `out/`), and `BOILERPLATE_PATTERNS` runs before every
+  other role check while `boilerplate` is the one role forced collapsed — a
+  false positive here hides real source, it doesn't just mis-sort it. Fixed by
+  adding a second, ROOT-ANCHORED form (`/name/` — matches only when `name` is
+  the path's first directory) and using it for those four entries specifically;
+  `dist/`, `coverage/`, `.next/`, `node_modules/`, `__snapshots__/` stay
+  any-depth because no package hand-authors a nested folder with one of those
+  exact names for source code. Anyone adding a new directory-name pattern to
+  this file must ask the same question before picking `name/` vs `/name/`:
+  could this segment name plausibly be a hand-written subfolder somewhere
+  under `src/`? If yes, root-anchor it (`server/src/modules/smart-diff/helpers.ts`
+  `matchesPattern`).
+
 - **2026-07-31** — Course features cut from the starter were removed
   *surgically*: the computation usually survives and only persistence + display
   were stripped. Before building one, read the removal commit
@@ -82,7 +99,40 @@ promotion rules → root `INSIGHTS.md`.
   once at boot (`platform/config.ts`). Verified: `/settings/secrets-status`
   showed the new keys only after killing and restarting `pnpm dev`.
 
+- **2026-08-11** — `pnpm exec depcruise` crashes hard, not gracefully, under
+  Node 18: `SyntaxError: The requested module 'node:util' does not provide an
+  export named 'styleText'` from `dependency-cruiser/.../cli-feedback.mjs`,
+  with no mention of Node versions anywhere in the message. `.nvmrc` pins 22,
+  but nvm's own `default` alias on this machine is 18, so a fresh shell's
+  `node --version` silently disagrees with the repo's pin — `pnpm typecheck`
+  and `vitest` both run fine under 18 (only depcruise's CLI feedback module
+  needs the Node-22-only `styleText` export), so the first signal that node is
+  wrong shows up on the boundary-check step, not the typecheck step run just
+  before it. Fix: `nvm use 22` (or `source ~/.nvm/nvm.sh && nvm use 22`) before
+  running depcruise, every server or client verification pass.
+
 ## Recurring Errors & Fixes
+
+- **2026-08-11** — Any server-side pre-work that resolves its provider via
+  `resolveFeatureModel(container, workspaceId, '<feature>')` (L03's intent
+  classifier is the first: `review_intent` defaults to `openrouter`) reaches a
+  **REAL** provider in an integration test unless that specific provider key
+  is also in `overrides.llm`, because `container.llm()` falls back through
+  `secrets.get()` to `process.env`, and `server/.env` on a dev machine set up
+  for manual verification (see the Verification plan's "run against a real
+  provider" step) typically has real `OPENAI_API_KEY`/`ANTHROPIC_API_KEY`/
+  `OPENROUTER_API_KEY` values. `reviews.it.test.ts`'s `appWith()` only mocked
+  the AGENT's own provider; adding the intent pre-work call left 4/7 tests
+  failing with `expected [] to have length 1` — not a timeout or a network
+  error, but `waitForPrRuns`' 10s poll budget expiring while a real ~10s
+  OpenRouter round-trip ran before the (mocked, near-instant) agent review
+  even started. The tell: a console warning from the REAL `openai` SDK's
+  `zodResponseFormat` helper (`Zod field … uses .optional() without
+  .nullable()`) appearing in test stderr — that conversion only runs inside a
+  real provider's `completeStructured`, never inside `MockLLMProvider`. Fix:
+  mock every provider a review run's pre-work can reach, keyed by the
+  OVERRIDE slot, not by the mock's own `.id` (`conventions.it.test.ts` already
+  does this: `openrouter: new MockLLMProvider('openai', {...})`).
 
 - **2026-07-31** — A CLI guard of the form
   ``import.meta.url === `file://${process.argv[1]}` `` never matches on Windows
@@ -94,5 +144,13 @@ promotion rules → root `INSIGHTS.md`.
   entrypoint must use the same form.
 
 ## Session Notes
+
+- **2026-08-11** — Implemented the L03 intent layer end to end: contracts
+  (`Intent`/`IntentSource`/`PrIntentRecord`), migration 0015, the `_shared`
+  clone-fs promotion, the classifier (`intent.ts`), `flagOutOfScope`, the
+  run-executor wiring, and `GET`/`POST /pulls/:id/intent`. All server/client
+  lanes green (server unit 267, integration 45, client 221, reviewer-core 23).
+  See the Recurring Errors entry above for the one non-obvious failure hit
+  along the way.
 
 ## Open Questions

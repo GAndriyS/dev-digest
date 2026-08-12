@@ -1,5 +1,4 @@
-import { readFile, realpath, stat } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { realpath } from 'node:fs/promises';
 import type {
   ConventionCandidate,
   ConventionExtractResult,
@@ -8,6 +7,7 @@ import type {
 import type { Container } from '../../platform/container.js';
 import { AppError, ConfigError, NotFoundError } from '../../platform/errors.js';
 import { resolveFeatureModel } from '../settings/index.js';
+import { readInsideClone } from '../_shared/clone-fs.js';
 import { ConventionsRepository, type InsertConvention } from './repository.js';
 import {
   CONFIG_FILES,
@@ -23,7 +23,6 @@ import {
 import {
   ConventionExtraction,
   buildExtractionMessages,
-  isInsideRoot,
   normalizeCategory,
   toConventionDto,
   verifyCandidates,
@@ -187,36 +186,21 @@ export class ConventionsService {
     const root = await realpath(clonePath).catch(() => null);
     if (root === null) return [];
 
+    // The containment check inside `readInsideClone` is not paranoia about
+    // `..`: git tree entries cannot contain it and `CONFIG_FILES` is a static
+    // list, so the reachable attack is a SYMLINK. Any public repo can be
+    // imported, and a repo committing `tsconfig.json -> ~/.devdigest/secrets.json`
+    // would otherwise have this read the secrets file, ship it to a
+    // third-party model, and — since anything the model quotes back does
+    // locate in "the file" — store it as evidence and render it in the UI.
+    // `realpath` collapses the link first, so the escape is visible before
+    // the file is opened. See `modules/_shared/clone-fs.ts`.
     const read = await Promise.all(
       paths.map(async (path) => {
-        const content = await this.readInsideClone(root, path);
+        const content = await readInsideClone(root, path, MAX_FILE_BYTES);
         return content === null ? null : { path, content };
       }),
     );
     return read.filter((f): f is SampleFile => f !== null && f.content.trim().length > 0);
-  }
-
-  /**
-   * Read one sampled file, or `null` for anything that is not a plain file
-   * living inside the clone.
-   *
-   * The containment check is not paranoia about `..`: git tree entries cannot
-   * contain it and `CONFIG_FILES` is a static list, so the reachable attack is a
-   * SYMLINK. Any public repo can be imported, and a repo committing
-   * `tsconfig.json -> ~/.devdigest/secrets.json` would otherwise have this
-   * function read the secrets file, ship it to a third-party model, and — since
-   * anything the model quotes back does locate in "the file" — store it as
-   * evidence and render it in the UI. `realpath` collapses the link first, so
-   * the escape is visible before the file is opened.
-   */
-  private async readInsideClone(root: string, relPath: string): Promise<string | null> {
-    const real = await realpath(resolve(root, relPath)).catch(() => null);
-    if (real === null) return null;
-    if (!isInsideRoot(root, real)) return null;
-
-    const info = await stat(real).catch(() => null);
-    if (info === null || !info.isFile() || info.size > MAX_FILE_BYTES) return null;
-
-    return readFile(real, 'utf8').catch(() => null);
   }
 }

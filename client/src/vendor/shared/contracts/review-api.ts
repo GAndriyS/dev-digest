@@ -56,8 +56,22 @@ export const ReviewRunResponse = z.object({
 });
 export type ReviewRunResponse = z.infer<typeof ReviewRunResponse>;
 
-/** Intent persisted for a PR (the Intent plus the pr_id it scopes). */
-export const PrIntentRecord = Intent.extend({ pr_id: z.string() });
+/**
+ * Intent persisted for a PR (the Intent plus the pr_id it scopes, and the
+ * derivation metadata the UI needs: which model ran, the head SHA it read
+ * (so the card can flag itself stale once the PR moves), token/cost
+ * accounting, and when it ran). All nullable: a legacy pre-migration row (or
+ * one derived before a provider call completed) still parses.
+ */
+export const PrIntentRecord = Intent.extend({
+  pr_id: z.string(),
+  model: z.string().nullable(),
+  head_sha: z.string().nullable(),
+  created_at: z.string().nullable(),
+  tokens_in: z.number().int().nullable(),
+  tokens_out: z.number().int().nullable(),
+  cost_usd: z.number().nullable(),
+});
 export type PrIntentRecord = z.infer<typeof PrIntentRecord>;
 
 /** Smart-diff response for a PR (the SmartDiff). */

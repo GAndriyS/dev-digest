@@ -8,7 +8,9 @@ export const s = {
     padding: 18,
     fontSize: 14,
     color: "var(--text-secondary)",
-    whiteSpace: "pre-wrap",
+    /* No `whiteSpace: pre-wrap` — that was carrying the line breaks of the raw
+       body. Markdown emits real block elements, and pre-wrap would keep the
+       newlines *between* them as extra blank space on top of their margins. */
     lineHeight: 1.55,
   } satisfies CSSProperties,
 } as const;

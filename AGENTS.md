@@ -63,6 +63,15 @@ a package — read its own `AGENTS.md` (`server/`, `client/`, `reviewer-core/`,
 - Review-engine work → read `reviewer-core/AGENTS.md`
 - Browser e2e work → read `e2e/AGENTS.md`
 - Deep dives → read `docs/` · current work → read `specs/` · findings → read
-  `INSIGHTS.md` · skills catalog → read `.claude/skills/README.md`
+  `INSIGHTS.md` · skills catalog → read `.claude/skills/README.md` · subagents
+  catalog → read `.claude/agents/README.md`
+- Planning a change before writing it → delegate to the `planner` subagent; it
+  writes the plan to `.claude/plans/` (committed) and `implementer` executes it.
+  Neither can call the next step — no agent here lists `Agent` in its `tools`
+  allowlist, so the main session orchestrates.
+- Tests for a landed change → delegate to `test-writer`; boundary review →
+  `architecture-reviewer`; "was the plan actually followed" → `plan-verifier`;
+  documenting a shipped feature → `doc-writer`. The chain and when to invoke
+  each → read `.claude/agents/README.md`.
 - Captured a non-obvious finding or wrapping up a session → run
   `/engineering-insights` (recording nothing is a legitimate outcome)

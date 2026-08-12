@@ -29,6 +29,10 @@ interface FindingsTabProps {
   severityFilter?: Severity | null;
   /** Toggle the filter; clearing when the same severity is clicked again. */
   onToggleSeverity?: (severity: Severity) => void;
+  /** Finding navigated to from the Diff tab (?finding=) — a FindingRecord
+   *  carries `review_id` but no `run_id`, so this is mapped to the owning
+   *  review below and handed to that review's accordion. */
+  targetFindingId?: string | null;
 }
 
 export function FindingsTab({
@@ -47,6 +51,7 @@ export function FindingsTab({
   onRunDone,
   severityFilter = null,
   onToggleSeverity,
+  targetFindingId = null,
 }: FindingsTabProps) {
   const handleCancelAll = useCallback(() => {
     liveRunIds.forEach((id) => cancelMutation.mutate(id));
@@ -83,6 +88,15 @@ export function FindingsTab({
   // loaded for the accordions below, keyed by run_id.
   const severityByRun = React.useMemo(() => severityCountsByRun(runs), [runs]);
   const runFindings = React.useMemo(() => findingsByRun(runs), [runs]);
+
+  // Diff → Agent runs navigation: a FindingRecord carries `review_id` but no
+  // `run_id`, so the target finding is resolved to its owning review's id
+  // once here (rather than repeating the same scan inside every accordion)
+  // and handed down alongside the raw finding id.
+  const targetReviewId = React.useMemo(
+    () => (targetFindingId ? runs.find((r) => r.findings.some((f) => f.id === targetFindingId))?.id ?? null : null),
+    [runs, targetFindingId],
+  );
 
   // Picking a severity on a run row filters EVERY run's findings (the filter is
   // page-level, so a deep link from the PR list behaves identically) and scrolls
@@ -193,6 +207,8 @@ export function FindingsTab({
             targetRunId={target?.runId ?? null}
             targetNonce={target?.n ?? 0}
             severityFilter={severityFilter}
+            targetReviewId={targetReviewId}
+            targetFindingId={targetFindingId}
           />
         ))
       )}

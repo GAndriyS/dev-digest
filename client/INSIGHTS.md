@@ -40,7 +40,55 @@ append-only. Entry format and promotion rules → root `INSIGHTS.md`.
   against the table before suspecting the API. The hermetic e2e stack seeds fresh,
   so flow 02 never sees this.
 
+- **2026-08-11** — A page's `setParam(key, val)` helper that reads
+  `useSearchParams()` and does its own `router.replace` cannot be called twice
+  in the same handler: each call closes over the SAME `search` snapshot (the
+  hook doesn't re-render mid-handler), so `setParam("tab", "findings");
+  setParam("finding", id)` writes `tab` then throws it away when the second
+  call rebuilds `URLSearchParams` from the stale snapshot and only `finding`
+  survives. Symptom looks like "one of the two query params doesn't stick" and
+  reads like a router bug. Fix: one `setParams(patch: Record<string, string |
+  null>)` that applies every key to a single `URLSearchParams` before the one
+  `router.replace` (`page.tsx` — `?tab=` + `?finding=` navigating from Diff
+  into a specific finding's card in Agent runs). Any future multi-key query
+  update on this page (or a page copying the pattern) needs `setParams`, not
+  sequential `setParam` calls.
+
+- **2026-08-11** — When you widen a shared component's props, export the new
+  prop's type from its barrel. TS structural typing means a route can pass a
+  matching object literal without importing anything, and
+  `no-component-internals-from-app` tempts you to leave it at that — the rule
+  forbids reaching *past* `index.ts`, which a type-only re-export does not do,
+  so the barrel is not the obstacle it looks like. The trap is that prop types
+  are usually all-optional: `{ defaultOpen?, findingLines? }` on both sides
+  means the duplicate stays assignable through a rename of `findingLines`, the
+  weak-type check is satisfied by the one surviving key, and the feature
+  (Smart Diff's badges) goes quietly missing under a green typecheck. Shipped
+  the duplicate first and had it caught in review — see `diff-viewer/index.ts`
+  exporting `DiffFileMeta` next to `DiffCommentApi`, which is the same call
+  made for the same reason.
+
 ## Tool & Library Notes
+
+- **2026-08-11** — Scrolling to an element that a sibling's effect is about to
+  push down lands short, and it reads like a broken `scrollIntoView`. Measured
+  on the Diff→Agent-runs jump: the panel's mount effect scrolled to the target
+  finding, then the accordions above it opened in *their* effects and the card
+  slid 2252px further down; `behavior: "smooth"` made it worse, because the
+  animation aims at a position computed when it starts. Fix: re-scroll each
+  `requestAnimationFrame` until the element's DOCUMENT offset stops changing
+  (walk `offsetTop`/`offsetParent` — its viewport rect is useless here, since
+  our own scrolling changes it every frame), with a frame cap so a layout that
+  never settles stops instead of spinning. Instant behaviour, not smooth.
+  `FindingsPanel.tsx` + `SCROLL_SETTLE_MAX_FRAMES`.
+
+- **2026-08-11** — jsdom's `cssstyle` silently drops the `border-color`
+  SHORTHAND when the value is a `var(--token)`: `el.style.borderColor` reads
+  back `""`, while `border-left-color` and `box-shadow` with the identical
+  `var()` value round-trip fine. So a test asserting a focus ring via
+  `borderColor` gets an empty string rather than a failure — it passes or fails
+  for the wrong reason. `FindingCard` sets its focus indicator through both
+  `borderColor` and `boxShadow`; assert on the `boxShadow`.
 
 - **2026-08-06** — React Query discards a superseded mutation's per-`mutate`
   callbacks only when a NEW `mutate` starts on the same observer. So the usual
