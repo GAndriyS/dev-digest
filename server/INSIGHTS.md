@@ -19,7 +19,30 @@ promotion rules → root `INSIGHTS.md`.
 
 ## What Doesn't Work
 
+- **2026-08-13** — `[repo-intel]` An adapter that catches its own failures and
+  returns an empty result makes the whole degradation invisible downstream:
+  `DepCruiseGraph.buildEdges` swallowed every error into `[]`, so the pipeline's
+  `graphFailed` could never be set by a cruiser problem, `repo_index_state`
+  stamped `full`, and `GET /pulls/:id/blast` answered "0 caller(s) across 0
+  file(s)" with full confidence — the exact false claim the module promises
+  never to make. A swallowed failure needs a downstream INVARIANT check, not
+  just a try/catch: `pipeline/full.ts` now stamps `partial` +
+  `stats.graphEmpty` when a repo walked more than one file and resolved zero
+  edges. Any future adapter that degrades to an empty value needs the same
+  treatment, because "empty" and "broken" are indistinguishable at the call site.
+
 ## Codebase Patterns
+
+- **2026-08-13** — `[repo-intel]` `extractEndpoints` scanned line by line, so
+  it only ever matched single-line route registrations — and every Fastify
+  route in this repo that carries a schema puts its path on the line AFTER
+  `app.get(`. Result: 11 of the server's route files were absent from
+  `file_facts` entirely, and blast attributed 0 endpoints to changes it should
+  have flagged (PR #8 went 0 → 2 endpoints on the fix alone). Fact extractors
+  here must run their regexes over the whole file content with `matchAll`, and
+  bound any multi-part pattern's window (`[\s\S]{0,200}?`) so a lone `method:`
+  cannot pair with an unrelated `url:` further down
+  (`adapters/codeindex/extract.ts`).
 
 - **2026-08-13** — `pr_files` is populated as a side effect of `GET /pulls/:id`
   (`pulls/routes.ts:249-259`), not by import — so a PR the user has never opened
@@ -131,6 +154,20 @@ promotion rules → root `INSIGHTS.md`.
   before it. Fix: `nvm use 22` (or `source ~/.nvm/nvm.sh && nvm use 22`) before
   running depcruise, every server or client verification pass.
 
+- **2026-08-13** — `dependency-cruiser`'s `cruise()` resolves every input path
+  as `join(baseDir, path)` (`gatherInitialSources`, baseDir defaults to
+  `process.cwd()`), so handing it ABSOLUTE paths makes it stat
+  `cwd + /abs/path`, throw ENOENT, and — behind our try/catch — yield an empty
+  graph on every platform. It also echoes `source`/`resolved` back in whatever
+  form baseDir implies. Correct call: pin `baseDir` to the clone root and pass
+  repo-relative POSIX paths; then `source`/`resolved` come back in exactly the
+  form `walk.ts` produces and the file-set membership checks hit. Verified
+  against the real clone: 0 → 768 edges, `references.decl_file` 0 → 1262
+  resolved rows (`adapters/depgraph/index.ts`, covered by
+  `test/depgraph-adapter.test.ts`). Separately, `relative()` returns backslashes
+  on win32 — every path leaving an adapter must go through
+  `.split(sep).join('/')`, the same normalisation `walk.ts:119` applies.
+
 ## Recurring Errors & Fixes
 
 - **2026-08-11** — Any server-side pre-work that resolves its provider via
@@ -164,6 +201,17 @@ promotion rules → root `INSIGHTS.md`.
   entrypoint must use the same form.
 
 ## Session Notes
+
+- **2026-08-13** — Audited Blast Radius against the L04 requirements after PR #8
+  showed 76 symbols and 0 callers everywhere. The feature code met the spec; the
+  INDEX under it was empty — `file_edges` had 0 rows for every repo, so
+  `decl_file` was never resolved and every caller/endpoint query returned
+  nothing. Two writer bugs (cruiser called with absolute paths; endpoint
+  extraction line-by-line) plus a missing invariant check that let the broken
+  index report `full`. After the fixes and a forced reindex, PR #8 shows 41
+  callers across 7 files and 2 endpoints, MCP `get_blast_radius` matches the UI,
+  and the route answers in ~3ms (pure Postgres reads). Server unit 354 and
+  integration 58 green.
 
 - **2026-08-13** — Built Blast Radius (L04 homework) end to end: the `blast/`
   module over `GET /pulls/:id/blast` plus an opt-in

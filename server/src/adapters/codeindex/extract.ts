@@ -181,16 +181,19 @@ export function extractReferences(content: string, symbol: string): ExtractedRef
  */
 export function extractEndpoints(content: string): string[] {
   const out = new Set<string>();
-  const lines = content.split('\n');
+  // Matched against the whole file, not line by line: a Fastify route that
+  // carries a schema puts its path on the line after `app.get(`, which is the
+  // dominant form in this codebase, and a per-line scan misses every one of
+  // them — leaving the route file out of file_facts and blast with no
+  // endpoints to attribute.
   const verbRe =
-    /\b(?:app|router|fastify|server|api)\.(get|post|put|patch|delete|options|head)\s*(?:<[^>]*>)?\s*\(\s*(['"`])([^'"`]+)\2/i;
-  const routeObjRe = /method\s*:\s*['"`](GET|POST|PUT|PATCH|DELETE)['"`][\s\S]*?url\s*:\s*['"`]([^'"`]+)['"`]/i;
-  for (const raw of lines) {
-    const m = raw.match(verbRe);
-    if (m) out.add(`${m[1]!.toUpperCase()} ${m[3]}`);
-    const r = raw.match(routeObjRe);
-    if (r) out.add(`${r[1]!.toUpperCase()} ${r[2]}`);
-  }
+    /\b(?:app|router|fastify|server|api)\.(get|post|put|patch|delete|options|head)\s*(?:<[^>]*>)?\s*\(\s*(['"`])([^'"`]+)\2/gi;
+  // The window between `method:` and `url:` is bounded so a lone `method:`
+  // cannot pair with an unrelated `url:` further down the file.
+  const routeObjRe =
+    /method\s*:\s*['"`](GET|POST|PUT|PATCH|DELETE)['"`][\s\S]{0,200}?url\s*:\s*['"`]([^'"`]+)['"`]/gi;
+  for (const m of content.matchAll(verbRe)) out.add(`${m[1]!.toUpperCase()} ${m[3]}`);
+  for (const r of content.matchAll(routeObjRe)) out.add(`${r[1]!.toUpperCase()} ${r[2]}`);
   return [...out];
 }
 

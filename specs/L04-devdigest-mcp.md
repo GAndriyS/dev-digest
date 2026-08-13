@@ -34,9 +34,13 @@ see Out of scope.
       lists the imported repos and points at `list_agents`/the correct name;
       an API-down error points at `./scripts/dev.sh`) — never a bare stack
       trace or a generic "request failed".
-- [ ] `get_blast_radius` performs no I/O and always returns
-      `{status: "not_implemented", message}` with `isError` unset — it never
-      fails, and its description says plainly that it is a placeholder.
+- [x] `get_blast_radius` reads `GET /pulls/:id/blast` and reports a thin or
+      missing index through `status` (`full` / `partial` / `degraded`) plus a
+      `message`, always as a success with `isError` unset — "nothing calls this"
+      and "the index could not tell" must stay distinguishable. `isError` there
+      means the repo/PR did not resolve or the API was unreachable, nothing
+      else. (Superseded the original placeholder criterion when Blast Radius
+      landed — see Out of scope.)
 - [ ] The five tool descriptions together stay inside a ~400-token budget
       (measured: 1579 chars of `description` across `tools/list`), so
       the server's tool list is cheap to keep in an agent's context at session
@@ -46,9 +50,10 @@ see Out of scope.
 
 - ~~**Blast Radius proper.**~~ **Shipped** (the homework, landed after this
   spec): `server/src/modules/blast` serves `GET /pulls/:id/blast` over
-  `container.repoIntel.getBlastRadius`, the client renders it as the PR page's
-  **Blast radius** tab, and `get_blast_radius` is a real tool over that route —
-  no longer a stub. The facade gained a per-symbol caller cap and a two-level
+  `container.repoIntel.getBlastRadius`, the client renders it as the **Blast
+  radius** card beside Intent in the PR page's two-card Overview (not a tab of
+  its own — `?tab=blast` falls back to Overview), and `get_blast_radius` is a
+  real tool over that same route — no longer a stub. The facade gained a per-symbol caller cap and a two-level
   reverse walk over `file_edges` for endpoint reachability; the previously
   unused `BlastRadius` contract now carries `status`/`reason` so a thin index
   is reported rather than flattened into an empty map. An opt-in

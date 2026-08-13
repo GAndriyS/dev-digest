@@ -90,6 +90,28 @@ app.get<{ Params: { id: string } }>('/pulls/:id/blast', blast);
     expect(eps).toContain('GET /pulls/:id/blast');
   });
 
+  it('detects a route whose path sits on the line after the verb', () => {
+    // The house style for anything with a schema — and what a line-by-line
+    // scan used to drop, taking the whole route file out of file_facts.
+    const src = `
+  app.post(
+    '/repos/:id/resync',
+    { schema: { params: IdParams } },
+    async (req, reply) => {},
+  );
+`;
+    expect(extractEndpoints(src)).toContain('POST /repos/:id/resync');
+  });
+
+  it('does not pair a method with a url further down the file', () => {
+    const src = `
+const a = { method: 'GET' };
+${'// filler\n'.repeat(40)}
+const b = { url: '/unrelated' };
+`;
+    expect(extractEndpoints(src)).toEqual([]);
+  });
+
   it('detects cron expressions and background job kinds', () => {
     const src = `
 cron.schedule('*/5 * * * *', poll);

@@ -166,7 +166,9 @@ export default function PRDetailPage() {
         onRunsStarted={() => invalidateActiveRuns()}
       />
 
-      <div style={{ padding: "24px 32px 44px", display: "flex", flexDirection: "column", gap: 24, maxWidth: 1080, margin: "0 auto" }}>
+      {/* Overview is the one tab laid out in two columns — it gets the wider
+          cap so Intent and Blast each keep a readable width side by side. */}
+      <div style={{ padding: "24px 32px 44px", display: "flex", flexDirection: "column", gap: 24, maxWidth: tab === "overview" ? 1440 : 1080, margin: "0 auto" }}>
         {tab === "overview" && (
           <OverviewTab prId={prId} headSha={pr.head_sha} repoFullName={repoFullName} />
         )}

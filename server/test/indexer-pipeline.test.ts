@@ -128,11 +128,13 @@ interface MiniGit {
     head: string,
   ) => Promise<string[]>;
 }
-function makeContainer(git: MiniGit): Container {
+function makeContainer(git: MiniGit, edges: { from: string; to: string }[] = []): Container {
   return {
     git,
-    // T3 adapters — stubbed: empty graph (rank degrades to flat) + char/4 tokens.
-    depgraph: { buildEdges: async () => [] },
+    // T3 adapters — stubbed graph (rank degrades to flat when empty) + char/4
+    // tokens. Multi-file fixtures must pass their edges: a repo that walked
+    // more than one file and resolved none is stamped 'partial' on purpose.
+    depgraph: { buildEdges: async () => edges },
     tokenizer: { count: (text: string) => Math.ceil(text.length / 4) },
   } as unknown as Container;
 }
@@ -176,10 +178,13 @@ describe('runFullIndex', () => {
     const stub = makeRepoStub({
       basics: { id: 'r1', owner: 'acme', name: 'app', clonePath: root },
     });
-    const container = makeContainer({
-      currentHead: async () => 'sha-head',
-      diffNameOnly: async () => [],
-    });
+    const container = makeContainer(
+      {
+        currentHead: async () => 'sha-head',
+        diffNameOnly: async () => [],
+      },
+      [{ from: 'src/caller.ts', to: 'src/util.ts' }],
+    );
 
     const result = await runFullIndex(container, stub.repo, { repoId: 'r1' });
 
@@ -254,6 +259,31 @@ describe('runFullIndex', () => {
     expect(result.filesIndexed).toBe(0);
     expect(result.reason).toBe('no_files');
     expect(stub.getState()!.lastIndexedSha).toBe('sha-empty');
+  });
+
+  it('stamps partial when a multi-file repo resolved zero import edges', async () => {
+    // buildEdges never throws — it returns [] on any cruise failure — so an
+    // unusable graph reaches here as a clean pass. Left as 'full', blast would
+    // report "nothing depends on this" with no decl_file to back it up.
+    await writeFileAt(root, 'src/util.ts', `export function alpha() { return 1; }\n`);
+    await writeFileAt(
+      root,
+      'src/caller.ts',
+      `import { alpha } from './util';\nexport function caller() { return alpha(); }\n`,
+    );
+
+    const stub = makeRepoStub({
+      basics: { id: 'r4', owner: 'acme', name: 'app', clonePath: root },
+    });
+    const container = makeContainer({
+      currentHead: async () => 'sha-noedges',
+      diffNameOnly: async () => [],
+    });
+
+    const result = await runFullIndex(container, stub.repo, { repoId: 'r4' });
+    expect(result.status).toBe('partial');
+    expect(result.reason).toBe('graph_empty');
+    expect(stub.getState()!.status).toBe('partial');
   });
 });
 
