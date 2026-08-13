@@ -77,11 +77,20 @@ export interface BlastResult {
   /** "METHOD /path" (via extractEndpoints / file_facts) — flat union. */
   impactedEndpoints: string[];
   /**
-   * Per-caller-file precomputed facts, so consumers (blast) can attribute
-   * endpoints/crons to the changed symbol whose callers live in that file.
+   * Per-file precomputed facts, so consumers (blast) can attribute
+   * endpoints/crons to the changed symbol whose callers — or whose dependent
+   * closure — live in that file. Covers caller files AND `dependentClosure`.
    * Present on the persistent (non-degraded) path; absent otherwise.
    */
   factsByFile?: Record<string, { endpoints: string[]; crons: string[] }>;
+  /**
+   * Reverse import-graph closure per changed file: `level1` imports the changed
+   * file directly, `level2` imports something in `level1` (depth `BFS_DEPTH`).
+   * This is how an endpoint that never names the changed symbol — it just
+   * mounts a module that does — still shows up as impacted. Persistent path
+   * only; absent on the degraded path, where no import graph is available.
+   */
+  dependentClosure?: Record<string, { level1: string[]; level2: string[] }>;
   degraded?: boolean;
   reason?: DegradedReason;
 }

@@ -35,7 +35,7 @@ export async function buildHarness(api: ApiClient, config: Config = testConfig) 
   registerRunAgentOnPr(server, { api, config });
   registerGetFindings(server, { api });
   registerGetConventions(server, { api });
-  registerGetBlastRadius(server);
+  registerGetBlastRadius(server, { api });
 
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: 'devdigest-mcp-test-client', version: '0.0.0' });

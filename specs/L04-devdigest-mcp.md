@@ -44,19 +44,16 @@ see Out of scope.
 
 ## Out of scope
 
-- **Blast Radius proper.** The slides describe two L04 deliverables — this MCP
-  server and a Blast Radius feature (impacted symbols/callers for a changed
-  file, surfaced to reviewers). Only the server is built here.
-  `get_blast_radius` is a stub tool that validates its arguments and returns a
-  structured "not implemented" result; it does not call anything. The real
-  feature is a **later, separate piece of work** (the homework): a server
-  module and an HTTP route over the existing facade method
-  `container.repoIntel.getBlastRadius` (`server/src/modules/repo-intel`,
-  already implemented and unit-tested for L04's benefit — see
-  `server/src/modules/repo-intel/README.md`), wired to the existing but
-  currently unused `BlastRadius` contract in
-  `server/src/vendor/shared/contracts/brief.ts`. Until that route exists,
-  `get_blast_radius` has nothing to call and must not invent a response.
+- ~~**Blast Radius proper.**~~ **Shipped** (the homework, landed after this
+  spec): `server/src/modules/blast` serves `GET /pulls/:id/blast` over
+  `container.repoIntel.getBlastRadius`, the client renders it as the PR page's
+  **Blast radius** tab, and `get_blast_radius` is a real tool over that route —
+  no longer a stub. The facade gained a per-symbol caller cap and a two-level
+  reverse walk over `file_edges` for endpoint reachability; the previously
+  unused `BlastRadius` contract now carries `status`/`reason` so a thin index
+  is reported rather than flattened into an empty map. An opt-in
+  `POST /pulls/:id/blast/summary` adds one model call that narrates the
+  computed map; the `GET` never calls a model.
 - **HTTP transport or auth for the MCP server itself.** It talks stdio to the
   calling agent and plain HTTP (no auth) to the local API, exactly as the API
   itself has no auth locally (`LocalNoAuthProvider`).

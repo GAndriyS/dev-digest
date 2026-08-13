@@ -222,10 +222,47 @@ export const GetBlastRadiusInput = z
   .strict();
 export type GetBlastRadiusInput = z.infer<typeof GetBlastRadiusInput>;
 
+/** One caller of a changed symbol, trimmed to what locates it in the code. */
+export const BlastCallerSummary = z
+  .object({
+    name: z.string(),
+    file: z.string(),
+    line: z.number().int(),
+  })
+  .strict();
+export type BlastCallerSummary = z.infer<typeof BlastCallerSummary>;
+
+/** One changed symbol and the widest-reaching callers that reference it. */
+export const BlastImpactSummary = z
+  .object({
+    symbol: z.string(),
+    caller_count: z.number().int(),
+    top_callers: z.array(BlastCallerSummary),
+    endpoints_affected: z.array(z.string()),
+    crons_affected: z.array(z.string()),
+  })
+  .strict();
+export type BlastImpactSummary = z.infer<typeof BlastImpactSummary>;
+
+/**
+ * Counts plus the widest-reaching symbols — never the whole map. `status`
+ * distinguishes "nothing depends on this" from "the index could not tell",
+ * which is the one thing a caller must not have to guess at.
+ */
 export const GetBlastRadiusOutput = z
   .object({
-    status: z.literal('not_implemented'),
-    message: z.string(),
+    pr: z.string(),
+    status: z.enum(['full', 'partial', 'degraded']),
+    reason: z.string().optional(),
+    /** Commit the line numbers below resolve against — not the PR's head. */
+    indexed_sha: z.string().nullable(),
+    changed_symbols: z.number().int(),
+    total_callers: z.number().int(),
+    endpoints: z.array(z.string()),
+    crons: z.array(z.string()),
+    impacts: z.array(BlastImpactSummary),
+    truncated: z.boolean().optional(),
+    message: z.string().optional(),
   })
   .strict();
 export type GetBlastRadiusOutput = z.infer<typeof GetBlastRadiusOutput>;

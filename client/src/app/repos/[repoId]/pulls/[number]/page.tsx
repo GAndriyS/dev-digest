@@ -14,6 +14,7 @@ import { PrDetailHeader } from "./_components/PrDetailHeader";
 import { OverviewTab } from "./_components/OverviewTab";
 import { FindingsTab } from "./_components/FindingsTab";
 import { DiffTab } from "./_components/DiffTab";
+import { BlastTab } from "./_components/BlastTab";
 import RunTraceDrawer from "./_components/RunTraceDrawer";
 import { usePullDetail, usePulls } from "../../../../../lib/hooks";
 import { useQueryClient } from "@tanstack/react-query";
@@ -192,6 +193,10 @@ export default function PRDetailPage() {
               refetchReviews();
             }}
           />
+        )}
+
+        {tab === "blast" && (
+          <BlastTab prId={prId} repoFullName={repoFullName} headSha={pr.head_sha} />
         )}
 
         {tab === "diff" && (

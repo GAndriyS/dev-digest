@@ -60,8 +60,12 @@ Read `mcp/INSIGHTS.md` before starting work.
   `@devdigest/shared` (unlike `reviewer-core/vitest.config.ts`, which does) —
   a stray value import from that path fails fast in tests instead of quietly
   resolving through the alias like it would elsewhere in the repo.
-- `get_blast_radius` does no I/O at all (no HTTP endpoint exists yet — the
-  facade is homework for a later lesson) and never returns `isError`.
+- `get_blast_radius` reports a thin index through `status` (`full` / `partial`
+  / `degraded`) **plus a `message`**, as a success — never as `isError` and
+  never as an empty map. "Nothing calls this" and "the index could not tell"
+  are different answers, and a caller that cannot tell them apart will trust a
+  map that was never built. `isError` there means the repo/PR did not resolve
+  or the API was unreachable, nothing else.
 
 ## Use when
 

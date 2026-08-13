@@ -24,3 +24,13 @@ export const MAX_CONVENTIONS_LIMIT = 100;
  * are model output and have no length bound of their own.
  */
 export const MAX_TEXT_CHARS = 500;
+
+/**
+ * Blast-radius shaping caps. The server's map is built for a UI tree that a
+ * human scrolls; an agent asking "what else does this touch?" needs the shape
+ * of the impact, not every row — so the tool reports full counts and returns
+ * only the widest-reaching symbols with their top callers.
+ */
+export const MAX_BLAST_SYMBOLS = 10;
+export const MAX_BLAST_CALLERS_PER_SYMBOL = 5;
+export const MAX_BLAST_ENDPOINTS = 15;

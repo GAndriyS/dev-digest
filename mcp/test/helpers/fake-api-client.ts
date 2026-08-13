@@ -18,5 +18,15 @@ export function makeFakeApiClient(overrides: Partial<ApiClient> = {}): ApiClient
     listRuns: vi.fn(overrides.listRuns ?? (async () => [])),
     listReviews: vi.fn(overrides.listReviews ?? (async () => [])),
     listConventions: vi.fn(overrides.listConventions ?? (async () => [])),
+    getBlastRadius: vi.fn(
+      overrides.getBlastRadius ??
+        (async () => ({
+          changed_symbols: [],
+          downstream: [],
+          summary: '0 changed symbol(s); 0 caller(s) across 0 file(s); 0 endpoint(s), 0 cron(s) affected.',
+          status: 'full' as const,
+          indexed_sha: null,
+        })),
+    ),
   };
 }

@@ -21,6 +21,26 @@ promotion rules → root `INSIGHTS.md`.
 
 ## Codebase Patterns
 
+- **2026-08-13** — `pr_files` is populated as a side effect of `GET /pulls/:id`
+  (`pulls/routes.ts:249-259`), not by import — so a PR the user has never opened
+  has `files_count` set but **zero** `pr_files` rows, and any feature keyed on
+  changed files sees an empty list. `repoIntel.getBlastRadius` answers an empty
+  file list with `degraded: 'no_data'`, which reads as "the index is broken" and
+  sends the reader off to re-index for nothing. Verified on PR #4 of
+  `GAndriyS/dev-digest`: `degraded` before the detail fetch, `full` with 72
+  symbols right after. Check `changedFiles.length === 0` first and report the
+  missing file list as its own cause (`blast/service.ts` → `no_changed_files`).
+
+- **2026-08-13** — `[repo-intel]` Precomputed `file_facts` cover **every**
+  indexed file including specs, so attributing endpoints through the import
+  graph hands a reviewer the routes that tests stand up. On PR #7 of
+  `GAndriyS/dev-digest` this inflated one symbol's "impacted endpoints" from 10
+  real routes to 23, burying them under `GET /agents/${ghost}/versions` and
+  friends. `isJunkPath` (`repo-intel/service.ts`, already used for rank-driven
+  samples) is the repo's filter for this — apply it to FACTS attribution only,
+  never to the caller list: a spec calling the changed symbol is a real caller
+  worth showing, its routes are not a real dependency.
+
 - **2026-08-06** — Anything read out of `server/clones/**` is ATTACKER-CONTROLLED
   content: importing an arbitrary public repo is the product's normal flow, so a
   repo can commit `tsconfig.json -> ~/.devdigest/secrets.json` and any code that
@@ -144,6 +164,16 @@ promotion rules → root `INSIGHTS.md`.
   entrypoint must use the same form.
 
 ## Session Notes
+
+- **2026-08-13** — Built Blast Radius (L04 homework) end to end: the `blast/`
+  module over `GET /pulls/:id/blast` plus an opt-in
+  `POST /pulls/:id/blast/summary` (one model call, never on the GET), a
+  per-symbol caller cap and a two-level reverse walk over `file_edges` inside
+  repo-intel, the client's Blast tab, and the real `get_blast_radius` MCP tool.
+  All lanes green (server unit 347, integration 58, client 275, mcp 67);
+  `pnpm arch` and both dependency-cruiser configs clean. Two defects were found
+  only by cross-checking the live map against the repo by hand, not by any
+  test — see the two Codebase Patterns entries dated today.
 
 - **2026-08-11** — Implemented the L03 intent layer end to end: contracts
   (`Intent`/`IntentSource`/`PrIntentRecord`), migration 0015, the `_shared`

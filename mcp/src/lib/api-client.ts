@@ -1,6 +1,7 @@
 import type {
   Agent,
   ApiErrorBody,
+  BlastRadius,
   ConventionCandidate,
   PrMeta,
   Repo,
@@ -29,6 +30,7 @@ export interface ApiClient {
   listRuns(prId: string): Promise<RunSummary[]>;
   listReviews(prId: string): Promise<ReviewRecord[]>;
   listConventions(repoId: string): Promise<ConventionCandidate[]>;
+  getBlastRadius(prId: string): Promise<BlastRadius>;
 }
 
 function isApiErrorBody(json: unknown): json is ApiErrorBody {
@@ -85,5 +87,6 @@ export function createApiClient(config: Config): ApiClient {
     listRuns: (prId) => request<RunSummary[]>(`/pulls/${prId}/runs`),
     listReviews: (prId) => request<ReviewRecord[]>(`/pulls/${prId}/reviews`),
     listConventions: (repoId) => request<ConventionCandidate[]>(`/repos/${repoId}/conventions`),
+    getBlastRadius: (prId) => request<BlastRadius>(`/pulls/${prId}/blast`),
   };
 }

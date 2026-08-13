@@ -1,5 +1,6 @@
 import type {
   Agent,
+  BlastRadius,
   ConventionCandidate,
   PrMeta,
   Repo,
@@ -138,6 +139,27 @@ export function makeConvention(overrides: Partial<ConventionCandidate> = {}): Co
     evidence_line: 3,
     confidence: 0.9,
     status: 'accepted',
+    ...overrides,
+  };
+}
+
+export function makeBlastRadius(overrides: Partial<BlastRadius> = {}): BlastRadius {
+  return {
+    changed_symbols: [{ name: 'rateLimit', file: 'src/lib/rate-limit.ts', kind: 'function' }],
+    downstream: [
+      {
+        symbol: 'rateLimit',
+        callers: [
+          { name: 'publicRouter', file: 'src/api/public/index.ts', line: 23, rank: 0.6 },
+          { name: 'buildServer', file: 'src/server.ts', line: 88, rank: 0.3 },
+        ],
+        endpoints_affected: ['GET /api/public/items'],
+        crons_affected: ['reset-rate-buckets (hourly)'],
+      },
+    ],
+    summary: '1 changed symbol(s); 2 caller(s) across 2 file(s); 1 endpoint(s), 1 cron(s) affected.',
+    status: 'full',
+    indexed_sha: 'b4a4f6e',
     ...overrides,
   };
 }

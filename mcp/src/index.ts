@@ -25,7 +25,7 @@ async function main(): Promise<void> {
     { name: 'devdigest-mcp', version: '0.0.0' },
     {
       instructions:
-        'Local stdio bridge to a running DevDigest API — discover agents, run a review on a pull request and wait for its findings, and read stored findings/conventions.',
+        'Local stdio bridge to a running DevDigest API — discover agents, run a review on a pull request and wait for its findings, read stored findings/conventions, and map a PR’s blast radius.',
     },
   );
 
@@ -33,7 +33,7 @@ async function main(): Promise<void> {
   registerRunAgentOnPr(server, { api, config });
   registerGetFindings(server, { api });
   registerGetConventions(server, { api });
-  registerGetBlastRadius(server);
+  registerGetBlastRadius(server, { api });
 
   const transport = new StdioServerTransport();
   await server.connect(transport);

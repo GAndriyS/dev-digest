@@ -16,7 +16,7 @@ Drizzle — see `AGENTS.md`'s iron rule.
 | `run_agent_on_pr` | `repo: string`, `pr: number`, `agent?: string` | Starts a review, **waits for it to finish**, then `{status, verdict, score, counts, agents_run[], findings[]}`. Errors when nothing started (no enabled agent) rather than reporting an empty review as clean |
 | `get_findings` | `repo: string`, `pr: number`, `severity?`, `limit?` (default 20, max 100), `offset?` | `{pr, total, returned, offset, next_offset?, counts, findings[]}` — every review of the PR, dismissed excluded |
 | `get_conventions` | `repo: string`, `status?` (default `accepted`), `limit?` (default 50, max 100), `offset?` | `{repo, total, returned, offset, next_offset?, conventions[]}` |
-| `get_blast_radius` | `repo: string`, `pr: number` | **Stub** — `{status: "not_implemented", message}`. No HTTP endpoint exists yet (homework for a later lesson); this tool does no I/O and never fails. |
+| `get_blast_radius` | `repo: string`, `pr: number` | `{pr, status, reason?, changed_symbols, total_callers, endpoints[], crons[], impacts[]}` — symbols the diff declares, who calls them, and the endpoints/crons downstream. Counts cover the whole map; `impacts` carries the widest-reaching symbols with their top callers. A thin index is reported through `status`/`reason`, never as an empty map |
 
 `run_agent_on_pr` is the only tool that spends real LLM tokens and mutates
 anything (a new review row per call). The other four are free reads.

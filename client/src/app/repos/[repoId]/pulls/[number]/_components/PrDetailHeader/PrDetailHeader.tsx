@@ -115,6 +115,7 @@ export function PrDetailHeader({
         tabs={[
           { key: "overview", label: "Overview", icon: "FileText" },
           { key: "findings", label: "Agent runs", icon: "AlertOctagon", count: findingsCount || undefined },
+          { key: "blast", label: "Blast radius", icon: "Target" },
           { key: "diff", label: "Files changed", icon: "Code", count: pr.files_count },
         ]}
       />

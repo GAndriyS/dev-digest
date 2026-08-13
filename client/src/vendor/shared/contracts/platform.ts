@@ -17,6 +17,7 @@ export const FeatureModelId = z.enum([
   'risk_brief',
   'conformance',
   'conventions',
+  'blast_summary',
 ]);
 export type FeatureModelId = z.infer<typeof FeatureModelId>;
 
@@ -77,6 +78,17 @@ export const FEATURE_MODELS: FeatureModelDef[] = [
     // gate already enforces. Override in Settings when a repo needs more.
     label: 'Conventions',
     description: 'Extracts coding conventions from the repo.',
+    defaultProvider: 'openrouter',
+    defaultModel: 'deepseek/deepseek-v4-flash',
+  },
+  {
+    id: 'blast_summary',
+    // A cheap model on purpose, and the only model call in the blast feature:
+    // the map itself (symbols, callers, endpoints) is computed from the index
+    // and handed to the model as facts — it narrates them in a paragraph and
+    // is never the source of a node or an edge. Opt-in per PR, never on GET.
+    label: 'Blast Radius · Summary',
+    description: 'Explains a PR’s blast radius map in one paragraph.',
     defaultProvider: 'openrouter',
     defaultModel: 'deepseek/deepseek-v4-flash',
   },

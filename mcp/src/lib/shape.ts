@@ -1,4 +1,5 @@
 import type {
+  BlastRadius,
   Finding,
   FindingRecord,
   ReviewRecord,
@@ -6,8 +7,14 @@ import type {
   Severity,
   Verdict,
 } from '@devdigest/shared';
-import { CHARACTER_LIMIT, MAX_TEXT_CHARS } from '../constants.js';
-import type { AgentRunOutcome, FindingSummary, SeverityCounts } from '../schemas.js';
+import {
+  CHARACTER_LIMIT,
+  MAX_BLAST_CALLERS_PER_SYMBOL,
+  MAX_BLAST_ENDPOINTS,
+  MAX_BLAST_SYMBOLS,
+  MAX_TEXT_CHARS,
+} from '../constants.js';
+import type { AgentRunOutcome, BlastImpactSummary, FindingSummary, SeverityCounts } from '../schemas.js';
 
 /**
  * Pure shaping helpers (plan decision 8's service layer): take resolved
@@ -127,6 +134,53 @@ export function toFindingSummary(
     confidence: finding.confidence,
     rationale: truncateText(finding.rationale, MAX_TEXT_CHARS),
     ...(finding.suggestion ? { suggestion: truncateText(finding.suggestion, MAX_TEXT_CHARS) } : {}),
+  };
+}
+
+/**
+ * Compact the server's blast map: full counts, then only the widest-reaching
+ * symbols with their top callers. The UI tree is built for a human who
+ * scrolls; a coding agent needs the shape of the impact and a few precise
+ * `file:line` anchors it can open next.
+ *
+ * Counts are taken from the WHOLE map, never from the truncated slice — a
+ * caller must not read "3 callers" when the symbol has forty.
+ */
+export function toBlastSummary(blast: BlastRadius): {
+  changedSymbols: number;
+  totalCallers: number;
+  endpoints: string[];
+  crons: string[];
+  impacts: BlastImpactSummary[];
+  truncated: boolean;
+} {
+  const totalCallers = blast.downstream.reduce((n, d) => n + d.callers.length, 0);
+  const endpoints = [...new Set(blast.downstream.flatMap((d) => d.endpoints_affected))].sort();
+  const crons = [...new Set(blast.downstream.flatMap((d) => d.crons_affected))].sort();
+
+  const ranked = [...blast.downstream].sort((a, b) => b.callers.length - a.callers.length);
+  const impacts: BlastImpactSummary[] = ranked.slice(0, MAX_BLAST_SYMBOLS).map((d) => ({
+    symbol: d.symbol,
+    caller_count: d.callers.length,
+    top_callers: d.callers.slice(0, MAX_BLAST_CALLERS_PER_SYMBOL).map((c) => ({
+      name: c.name,
+      file: c.file,
+      line: c.line,
+    })),
+    endpoints_affected: d.endpoints_affected,
+    crons_affected: d.crons_affected,
+  }));
+
+  return {
+    changedSymbols: blast.changed_symbols.length,
+    totalCallers,
+    endpoints: endpoints.slice(0, MAX_BLAST_ENDPOINTS),
+    crons,
+    impacts,
+    truncated:
+      ranked.length > MAX_BLAST_SYMBOLS ||
+      endpoints.length > MAX_BLAST_ENDPOINTS ||
+      ranked.some((d) => d.callers.length > MAX_BLAST_CALLERS_PER_SYMBOL),
   };
 }
 
