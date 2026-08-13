@@ -14,7 +14,6 @@ import { PrDetailHeader } from "./_components/PrDetailHeader";
 import { OverviewTab } from "./_components/OverviewTab";
 import { FindingsTab } from "./_components/FindingsTab";
 import { DiffTab } from "./_components/DiffTab";
-import { BlastTab } from "./_components/BlastTab";
 import RunTraceDrawer from "./_components/RunTraceDrawer";
 import { usePullDetail, usePulls } from "../../../../../lib/hooks";
 import { useQueryClient } from "@tanstack/react-query";
@@ -67,7 +66,10 @@ export default function PRDetailPage() {
     }
   };
 
-  const tab = search.get("tab") ?? "overview";
+  // Unknown/retired keys (e.g. a bookmarked `?tab=blast` from when Blast had
+  // its own tab) fall back to the overview instead of rendering an empty body.
+  const rawTab = search.get("tab") ?? "overview";
+  const tab = ["findings", "diff"].includes(rawTab) ? rawTab : "overview";
   const traceRunId = search.get("trace");
   // A click inside the Diff tab has to land on a specific finding's card in
   // "Agent runs" — that means writing BOTH `tab` and `finding` in the same
@@ -165,7 +167,9 @@ export default function PRDetailPage() {
       />
 
       <div style={{ padding: "24px 32px 44px", display: "flex", flexDirection: "column", gap: 24, maxWidth: 1080, margin: "0 auto" }}>
-        {tab === "overview" && <OverviewTab prBody={pr.body} prId={prId} headSha={pr.head_sha} />}
+        {tab === "overview" && (
+          <OverviewTab prId={prId} headSha={pr.head_sha} repoFullName={repoFullName} />
+        )}
 
         {tab === "findings" && (
           <FindingsTab
@@ -193,10 +197,6 @@ export default function PRDetailPage() {
               refetchReviews();
             }}
           />
-        )}
-
-        {tab === "blast" && (
-          <BlastTab prId={prId} repoFullName={repoFullName} headSha={pr.head_sha} />
         )}
 
         {tab === "diff" && (

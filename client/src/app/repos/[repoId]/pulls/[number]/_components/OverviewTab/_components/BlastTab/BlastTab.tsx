@@ -223,15 +223,17 @@ function SymbolNode({
             impact.callers.map((c) => (
               <div key={`${c.file}:${c.line}:${c.name}`} style={s.callerRow}>
                 <Icon.CornerDownRight size={12} style={s.arrow} />
-                <MonoLink
-                  href={
-                    repoFullName && sha
-                      ? githubBlobUrl(repoFullName, sha, c.file, c.line)
-                      : undefined
-                  }
-                >
-                  {c.file}:{c.line}
-                </MonoLink>
+                <span style={s.callerLink} title={`${c.file}:${c.line}`}>
+                  <MonoLink
+                    href={
+                      repoFullName && sha
+                        ? githubBlobUrl(repoFullName, sha, c.file, c.line)
+                        : undefined
+                    }
+                  >
+                    {c.file}:{c.line}
+                  </MonoLink>
+                </span>
                 <span style={s.callerName}>{c.name}</span>
               </div>
             ))

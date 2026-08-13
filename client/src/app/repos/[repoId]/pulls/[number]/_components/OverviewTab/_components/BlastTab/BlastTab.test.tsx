@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import { NextIntlClientProvider } from "next-intl";
 import type { BlastRadius } from "@devdigest/shared";
-import messages from "../../../../../../../../messages/en/blast.json";
+import messages from "../../../../../../../../../../messages/en/blast.json";
 
 const summarizeMutate = vi.fn();
 const refetchMock = vi.fn();

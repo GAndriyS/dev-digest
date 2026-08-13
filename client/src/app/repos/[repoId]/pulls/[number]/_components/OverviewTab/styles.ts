@@ -1,16 +1,14 @@
 import type { CSSProperties } from "react";
+import { OVERVIEW_GRID_COLS } from "./constants";
 
 export const s = {
-  descriptionBox: {
-    border: "1px solid var(--border)",
-    borderRadius: 8,
-    background: "var(--bg-elevated)",
-    padding: 18,
-    fontSize: 14,
-    color: "var(--text-secondary)",
-    /* No `whiteSpace: pre-wrap` — that was carrying the line breaks of the raw
-       body. Markdown emits real block elements, and pre-wrap would keep the
-       newlines *between* them as extra blank space on top of their margins. */
-    lineHeight: 1.55,
+  grid: {
+    display: "grid",
+    gridTemplateColumns: OVERVIEW_GRID_COLS,
+    gap: 24,
+    // The two cards load independently and Blast's skeleton/degraded states
+    // render without a card box — start-aligned so neither column stretches
+    // to the other's height.
+    alignItems: "start",
   } satisfies CSSProperties,
 } as const;

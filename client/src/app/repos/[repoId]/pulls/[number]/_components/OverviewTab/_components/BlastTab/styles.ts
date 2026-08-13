@@ -8,7 +8,7 @@ export const s = {
     padding: 20,
     display: "flex",
     flexDirection: "column",
-    gap: 16,
+    gap: 18, // matches IntentCard's card, which sits in the adjacent column
   } satisfies CSSProperties,
 
   // ---- stats row ----
@@ -111,11 +111,21 @@ export const s = {
     alignItems: "center",
     gap: 8,
     fontSize: 12.5,
+    // Half-width column: a long file:line must ellipsize, not push the row.
+    minWidth: 0,
+    overflow: "hidden",
+  } satisfies CSSProperties,
+  callerLink: {
+    minWidth: 0,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
   } satisfies CSSProperties,
   callerName: {
     fontFamily: "var(--font-mono)",
     fontSize: 12,
     color: "var(--text-secondary)",
+    flexShrink: 0,
   } satisfies CSSProperties,
   arrow: {
     color: "var(--text-muted)",
