@@ -125,8 +125,8 @@ export function toFindingSummary(
     lines: formatLines(finding.start_line, finding.end_line),
     agent,
     confidence: finding.confidence,
-    rationale: truncateText(finding.rationale, 500),
-    ...(finding.suggestion ? { suggestion: truncateText(finding.suggestion, 500) } : {}),
+    rationale: truncateText(finding.rationale, MAX_TEXT_CHARS),
+    ...(finding.suggestion ? { suggestion: truncateText(finding.suggestion, MAX_TEXT_CHARS) } : {}),
   };
 }
 

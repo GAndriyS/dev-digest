@@ -29,6 +29,18 @@ export function repoNotFoundError(repo: string, knownRepos: string[]): McpToolEr
   return new McpToolError(`No imported repo matches "${repo}". Imported repos: ${list}.`);
 }
 
+/**
+ * A bare `name` that several imported repos share. Distinct from
+ * `repoNotFoundError` on purpose: "nothing matches" would send the caller
+ * looking for a typo when the argument was in fact too broad.
+ */
+export function repoAmbiguousError(repo: string, matches: string[]): McpToolError {
+  return new McpToolError(
+    `"${repo}" matches ${matches.length} imported repos: ${matches.join(', ')}. ` +
+      'Call again with the full "owner/name".',
+  );
+}
+
 export function prNotFoundError(repo: string, pr: number, knownNumbers: number[]): McpToolError {
   const list = knownNumbers.length > 0 ? knownNumbers.join(', ') : '(no pull requests imported)';
   return new McpToolError(
@@ -46,6 +58,20 @@ export function prMissingIdError(repo: string, pr: number): McpToolError {
 export function agentNotFoundError(agent: string, knownAgents: string[]): McpToolError {
   const list = knownAgents.length > 0 ? knownAgents.join(', ') : '(no agents configured)';
   return new McpToolError(`No agent named "${agent}". Call list_agents to see valid names: ${list}.`);
+}
+
+/**
+ * `POST /pulls/:id/review {all:true}` answers 200 `{runs: []}` when no agent is
+ * enabled (server `resolveTargets` → `listEnabled`, no guard on the empty set).
+ * Nothing ran, so there is nothing to poll or report — surfacing that as a
+ * finished review with zero findings would read as "reviewed, all clean".
+ */
+export function noRunsStartedError(repo: string, pr: number): McpToolError {
+  return new McpToolError(
+    `No review started for ${repo}#${pr}: DevDigest has no enabled agent to run. ` +
+      'Call list_agents with enabled_only:false to see the configured agents, then enable one ' +
+      'in the DevDigest studio or pass an explicit `agent`.',
+  );
 }
 
 export function rateLimitedError(): RateLimitedError {

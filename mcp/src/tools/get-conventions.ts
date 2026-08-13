@@ -24,13 +24,15 @@ export function registerGetConventions(server: McpServer, deps: { api: ApiClient
         const repo = await resolveRepo(deps.api, args.repo);
         const candidates = await deps.api.listConventions(repo.id);
         // Un-extracted repo → [], not an error (verified API fact).
-        const filtered = candidates.filter((c) => c.status === args.status).slice(0, args.limit);
+        const matching = candidates.filter((c) => c.status === args.status);
+        const total = matching.length;
+        const page = matching.slice(args.offset, args.offset + args.limit);
 
         // `rule` is extractor (model) output with no length bound of its own,
         // and the page itself gets the same CHARACTER_LIMIT backstop the two
         // findings tools use — an uncapped tool is one call away from filling
         // the caller's context.
-        const mapped: ConventionSummary[] = filtered.map((c) => ({
+        const mapped: ConventionSummary[] = page.map((c) => ({
           category: c.category,
           rule: truncateText(c.rule, MAX_TEXT_CHARS),
           evidence: c.evidence_line != null ? `${c.evidence_path}:${c.evidence_line}` : c.evidence_path,
@@ -39,16 +41,23 @@ export function registerGetConventions(server: McpServer, deps: { api: ApiClient
         }));
         const { items: conventions, truncated } = truncateToCharacterLimit(mapped);
 
-        const message =
-          conventions.length === 0 && args.status === 'accepted'
-            ? 'No accepted conventions for this repo. Call again with status:"pending" to see unratified candidates, or run the conventions extractor in the DevDigest studio.'
-            : truncated
-              ? 'Response was capped — call again with a smaller limit to see the rest.'
-              : undefined;
+        let message: string | undefined;
+        if (total === 0 && args.status === 'accepted') {
+          message =
+            'No accepted conventions for this repo. Call again with status:"pending" to see unratified candidates, or run the conventions extractor in the DevDigest studio.';
+        } else if (conventions.length === 0 && total > 0) {
+          message = `offset ${args.offset} is past the end (total ${total}) — call again with a smaller offset.`;
+        } else if (truncated) {
+          message = 'Response was capped — call again with a smaller limit to see the rest.';
+        }
 
+        const nextOffset = args.offset + conventions.length;
         const payload = GetConventionsOutput.parse({
           repo: repo.full_name,
-          count: conventions.length,
+          total,
+          returned: conventions.length,
+          offset: args.offset,
+          ...(nextOffset < total ? { next_offset: nextOffset } : {}),
           conventions,
           ...(truncated ? { truncated: true } : {}),
           ...(message ? { message } : {}),
@@ -56,7 +65,10 @@ export function registerGetConventions(server: McpServer, deps: { api: ApiClient
 
         return {
           content: [
-            { type: 'text' as const, text: `${payload.repo}: ${payload.count} ${args.status} convention(s).` },
+            {
+              type: 'text' as const,
+              text: `${payload.repo}: ${payload.returned} of ${payload.total} ${args.status} convention(s).`,
+            },
           ],
           structuredContent: payload,
         };

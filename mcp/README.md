@@ -12,10 +12,10 @@ Drizzle — see `AGENTS.md`'s iron rule.
 
 | Tool | Arguments | Returns |
 |---|---|---|
-| `list_agents` | `enabled_only?: boolean` (default `true`) | `{count, agents[]}` — name, provider, model, enabled, strategy, ci_fail_on |
-| `run_agent_on_pr` | `repo: string`, `pr: number`, `agent?: string` | Starts a review, **waits for it to finish**, then `{status, verdict, score, counts, agents_run[], findings[]}` |
-| `get_findings` | `repo: string`, `pr: number`, `severity?`, `limit?` (default 20, max 100), `offset?` | `{pr, total, returned, offset, counts, findings[]}` — every review of the PR, dismissed excluded |
-| `get_conventions` | `repo: string`, `status?` (default `accepted`), `limit?` (default 50) | `{repo, count, conventions[]}` |
+| `list_agents` | `enabled_only?: boolean` (default `true`) | `{count, agents[], truncated?}` — name, provider, model, enabled, strategy, ci_fail_on |
+| `run_agent_on_pr` | `repo: string`, `pr: number`, `agent?: string` | Starts a review, **waits for it to finish**, then `{status, verdict, score, counts, agents_run[], findings[]}`. Errors when nothing started (no enabled agent) rather than reporting an empty review as clean |
+| `get_findings` | `repo: string`, `pr: number`, `severity?`, `limit?` (default 20, max 100), `offset?` | `{pr, total, returned, offset, next_offset?, counts, findings[]}` — every review of the PR, dismissed excluded |
+| `get_conventions` | `repo: string`, `status?` (default `accepted`), `limit?` (default 50, max 100), `offset?` | `{repo, total, returned, offset, next_offset?, conventions[]}` |
 | `get_blast_radius` | `repo: string`, `pr: number` | **Stub** — `{status: "not_implemented", message}`. No HTTP endpoint exists yet (homework for a later lesson); this tool does no I/O and never fails. |
 
 `run_agent_on_pr` is the only tool that spends real LLM tokens and mutates
@@ -86,6 +86,12 @@ Resolved SDK version: **`@modelcontextprotocol/sdk@1.30.0`** (uses the modern
   confirm you're really reaching DevDigest (its 404 body says `Route GET:/x
   not found`; a look-alike Express server on the same port over `localhost`
   says `Cannot GET /x`).
+- **"No review started … no enabled agent to run"** — `run_agent_on_pr`
+  without an explicit `agent` runs every *enabled* agent, and the API happily
+  answers `200 {runs: []}` when there are none. That is an error here, not an
+  empty success: enable an agent in the DevDigest studio (or pass `agent`
+  explicitly), then retry. `list_agents` with `enabled_only:false` shows what
+  is configured.
 - **A tool result has no `structuredContent`** — that only happens when
   `isError:true` is also set (plan decision: an error object would fail the
   tool's own `outputSchema`). Read `content[0].text` for the message; it

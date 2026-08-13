@@ -1,7 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { Config } from '../config.js';
 import type { ApiClient } from '../lib/api-client.js';
-import { toErrorResult } from '../lib/errors.js';
+import { noRunsStartedError, toErrorResult } from '../lib/errors.js';
 import { pollRuns } from '../lib/poll.js';
 import { resolveAgent, resolvePr, resolveRepo } from '../lib/resolve.js';
 import {
@@ -53,6 +53,11 @@ export function registerRunAgentOnPr(
           : { all: true };
         const started = await deps.api.startReview(prId, runBody);
         const startedRunIds = started.map((r) => r.run_id);
+
+        // Nothing started → nothing to poll: an empty id set is trivially
+        // "every run terminal", so the loop would return `completed` at once
+        // and the caller would read a review that never ran as a clean one.
+        if (startedRunIds.length === 0) throw noRunsStartedError(repo.full_name, args.pr);
 
         const poll = await pollRuns(deps.api, prId, startedRunIds, {
           pollIntervalMs: deps.config.pollIntervalMs,

@@ -10,6 +10,19 @@ root `INSIGHTS.md`.
 
 ## Codebase Patterns
 
+- **2026-08-13** — `POST /pulls/:id/review {all:true}` answers **200 `{runs: []}`**
+  when the workspace has no *enabled* agent — it does not 400. `resolveTargets`
+  returns `agents.listEnabled(workspaceId)` verbatim and neither the service nor
+  the route guards the empty set (`server/src/modules/reviews/service.ts:51`,
+  `routes.ts:33`). Anything that polls "until every started run is terminal"
+  must reject the empty id set explicitly first: an empty set trivially
+  satisfies *every* terminal predicate, so the loop returns on its first tick
+  and a review that never ran is indistinguishable from one that ran and found
+  nothing — the worst possible answer to give a coding agent, which will report
+  the PR as clean. Note this is only reachable via `all` (a `{agentId}` request
+  404s on an unknown agent, and runs a disabled one). (`mcp/src/tools/run-agent-on-pr.ts`,
+  guard + regression test in `test/tools/run-agent-on-pr.test.ts`)
+
 ## Tool & Library Notes
 
 - **2026-08-12** — Do NOT copy reviewer-core's `"zod/*": ["./node_modules/zod/*"]`

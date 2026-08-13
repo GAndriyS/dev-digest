@@ -126,6 +126,30 @@ describe('run_agent_on_pr (round-trip through a real MCP server + client)', () =
     expect(payload.message).toMatch(/get_findings/);
   });
 
+  // The API answers 200 `{runs: []}` when `all:true` matches no enabled agent.
+  // Polling an empty id set terminates instantly, so before the guard this
+  // returned `completed` with a null verdict — a review that never ran, read as
+  // a review that found nothing.
+  it('refuses to report a clean run when no agent was started', async () => {
+    const api = makeFakeApiClient({
+      listRepos: async () => [REPO],
+      listPulls: async () => [PR],
+      startReview: async () => [],
+    });
+    const harness = await buildHarness(api);
+    close = harness.close;
+
+    const result = await harness.client.callTool({
+      name: 'run_agent_on_pr',
+      arguments: { repo: 'devdigest/demo', pr: 42 },
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.structuredContent).toBeUndefined();
+    expect((result.content as { text: string }[])[0]!.text).toMatch(/list_agents/);
+    expect(api.listRuns).not.toHaveBeenCalled();
+  });
+
   it('names the next call when the agent does not exist', async () => {
     const api = makeFakeApiClient({
       listRepos: async () => [REPO],

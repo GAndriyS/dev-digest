@@ -31,6 +31,11 @@ function sleep(ms: number): Promise<void> {
  *                  is a structured result, not a thrown error — the caller's
  *                  next call (`get_findings`) is named in the tool's message.
  *
+ * `startedRunIds` must be non-empty: an empty set satisfies "every run is
+ * terminal" on the first tick and returns `completed` immediately. The caller
+ * (`run_agent_on_pr`) rejects that case before getting here — a review that
+ * never started is not a review that found nothing.
+ *
  * Backs off from `pollIntervalMs` to a wider interval after the first minute
  * so a long-running review doesn't compete with the API's global rate limit.
  *

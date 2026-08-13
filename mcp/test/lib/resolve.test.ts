@@ -20,6 +20,18 @@ describe('resolveRepo', () => {
     expect(repo.full_name).toBe('devdigest/demo');
   });
 
+  it('says a bare name is ambiguous rather than claiming nothing matched', async () => {
+    const api = makeFakeApiClient({
+      listRepos: async () => [
+        makeRepo({ id: 'r1', name: 'demo', full_name: 'devdigest/demo' }),
+        makeRepo({ id: 'r2', name: 'demo', full_name: 'acme/demo' }),
+      ],
+    });
+    await expect(resolveRepo(api, 'demo')).rejects.toThrow(
+      /matches 2 imported repos: devdigest\/demo, acme\/demo/,
+    );
+  });
+
   it('lists candidates in the error on a miss', async () => {
     const api = makeFakeApiClient({
       listRepos: async () => [makeRepo({ full_name: 'devdigest/demo' })],

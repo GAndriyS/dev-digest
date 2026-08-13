@@ -58,6 +58,26 @@ describe('list_agents (round-trip through a real MCP server + client)', () => {
     expect(payload.agents[0]!.description.length).toBe(120);
   });
 
+  // This was the one tool whose page skipped CHARACTER_LIMIT entirely — short
+  // in practice is not a bound, and the cap is a per-tool invariant.
+  it('caps the page at CHARACTER_LIMIT and says how many agents it dropped', async () => {
+    const many = Array.from({ length: 400 }, (_, i) =>
+      makeAgent({ id: `agent-${i}`, name: `Agent ${i}`, description: 'd'.repeat(120) }),
+    );
+    const api = makeFakeApiClient({ listAgents: async () => many });
+    const harness = await buildHarness(api);
+    close = harness.close;
+
+    const result = await harness.client.callTool({ name: 'list_agents', arguments: {} });
+
+    const payload = ListAgentsOutput.parse(result.structuredContent);
+    expect(payload.truncated).toBe(true);
+    expect(payload.count).toBeLessThan(400);
+    expect(payload.count).toBe(payload.agents.length);
+    expect(JSON.stringify(payload.agents).length).toBeLessThanOrEqual(25_000);
+    expect(payload.message).toMatch(new RegExp(`${400 - payload.count} more agent`));
+  });
+
   it('returns isError with no structuredContent when the API is unreachable', async () => {
     const api = makeFakeApiClient({
       listAgents: async () => {

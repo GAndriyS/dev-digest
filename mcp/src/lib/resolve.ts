@@ -1,6 +1,12 @@
 import type { Agent, PrMeta, Repo } from '@devdigest/shared';
 import type { ApiClient } from './api-client.js';
-import { agentNotFoundError, prMissingIdError, prNotFoundError, repoNotFoundError } from './errors.js';
+import {
+  agentNotFoundError,
+  prMissingIdError,
+  prNotFoundError,
+  repoAmbiguousError,
+  repoNotFoundError,
+} from './errors.js';
 
 /**
  * Resolution seam (plan decision 3): tool arguments are human-friendly
@@ -21,6 +27,12 @@ export async function resolveRepo(api: ApiClient, repoArg: string): Promise<Repo
 
   const byName = repos.filter((r) => r.name.toLowerCase() === needle);
   if (byName.length === 1) return byName[0]!;
+  if (byName.length > 1) {
+    throw repoAmbiguousError(
+      repoArg,
+      byName.map((r) => r.full_name),
+    );
+  }
 
   throw repoNotFoundError(
     repoArg,

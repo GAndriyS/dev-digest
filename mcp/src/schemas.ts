@@ -74,6 +74,8 @@ export const ListAgentsOutput = z
   .object({
     count: z.number().int(),
     agents: z.array(AgentSummary),
+    truncated: z.boolean().optional(),
+    message: z.string().optional(),
   })
   .strict();
 export type ListAgentsOutput = z.infer<typeof ListAgentsOutput>;
@@ -173,7 +175,13 @@ export const GetConventionsInput = z
       .min(1)
       .max(MAX_CONVENTIONS_LIMIT)
       .default(DEFAULT_CONVENTIONS_LIMIT)
-      .describe('Max conventions returned, 1-100 (default 50).'),
+      .describe('Max conventions per page, 1-100 (default 50).'),
+    offset: z
+      .number()
+      .int()
+      .min(0)
+      .default(0)
+      .describe('Conventions to skip for pagination (default 0).'),
   })
   .strict();
 export type GetConventionsInput = z.infer<typeof GetConventionsInput>;
@@ -187,10 +195,16 @@ export const ConventionSummary = z.object({
 });
 export type ConventionSummary = z.infer<typeof ConventionSummary>;
 
+/** Same `total`/`returned`/`offset`/`next_offset` shape as `get_findings` — a
+ *  caller that learned to page one list can page the other without re-reading
+ *  a second convention. */
 export const GetConventionsOutput = z
   .object({
     repo: z.string(),
-    count: z.number().int(),
+    total: z.number().int(),
+    returned: z.number().int(),
+    offset: z.number().int(),
+    next_offset: z.number().int().optional(),
     conventions: z.array(ConventionSummary),
     truncated: z.boolean().optional(),
     message: z.string().optional(),

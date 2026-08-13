@@ -1,7 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { ApiClient } from '../lib/api-client.js';
 import { toErrorResult } from '../lib/errors.js';
-import { truncateText } from '../lib/shape.js';
+import { truncateText, truncateToCharacterLimit } from '../lib/shape.js';
 import { ListAgentsInput, ListAgentsOutput, type AgentSummary } from '../schemas.js';
 
 const DESCRIPTION =
@@ -30,7 +30,24 @@ export function registerListAgents(server: McpServer, deps: { api: ApiClient }):
           strategy: a.strategy,
           ci_fail_on: a.ci_fail_on,
         }));
-        const payload = ListAgentsOutput.parse({ count: summaries.length, agents: summaries });
+        // Agents are configuration, so this list is short in practice and gets
+        // no pagination knob — but "short in practice" is not a bound, and the
+        // CHARACTER_LIMIT rule holds for every tool, not just the ones with an
+        // obvious way to overflow.
+        const { items: page, truncated } = truncateToCharacterLimit(summaries);
+        const dropped = summaries.length - page.length;
+        const message = truncated
+          ? `Response was capped — ${dropped} more agent(s) not shown.${
+              args.enabled_only ? '' : ' Call again with enabled_only:true to narrow the list.'
+            }`
+          : undefined;
+
+        const payload = ListAgentsOutput.parse({
+          count: page.length,
+          agents: page,
+          ...(truncated ? { truncated: true } : {}),
+          ...(message ? { message } : {}),
+        });
         return {
           content: [{ type: 'text' as const, text: `${payload.count} agent(s).` }],
           structuredContent: payload,
