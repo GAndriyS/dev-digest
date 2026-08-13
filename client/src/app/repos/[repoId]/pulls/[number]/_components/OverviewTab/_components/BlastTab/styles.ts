@@ -27,6 +27,10 @@ export const s = {
     fontSize: 12,
     color: "var(--text-muted)",
   } satisfies CSSProperties,
+  statIcon: {
+    color: "var(--text-muted)",
+    flexShrink: 0,
+  } satisfies CSSProperties,
   statNum: {
     fontSize: 13,
     fontWeight: 700,
@@ -83,14 +87,14 @@ export const s = {
     font: "inherit",
     color: "var(--text-primary)",
   } satisfies CSSProperties,
+  symbolIcon: {
+    color: "var(--accent)",
+    flexShrink: 0,
+  } satisfies CSSProperties,
   symbolName: {
     fontFamily: "var(--font-mono)",
     fontSize: 13,
     fontWeight: 600,
-  } satisfies CSSProperties,
-  symbolKind: {
-    fontSize: 11,
-    color: "var(--text-muted)",
   } satisfies CSSProperties,
   callerCount: {
     marginLeft: "auto",

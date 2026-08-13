@@ -130,7 +130,11 @@ d('Blast Radius route (Testcontainers pg)', () => {
    * — so the same mock is registered under both keys.
    */
   function appWithMockedLlm() {
-    const llm = new MockLLMProvider('openai');
+    // The summary goes through `completeStructured` (OpenRouter has no plain
+    // `complete`), so the mock needs a fixture that satisfies BlastSummaryOutput.
+    const llm = new MockLLMProvider('openai', {
+      structured: { summary: 'One paragraph about the map.' },
+    });
     return {
       app: buildApp({
         config: config(),

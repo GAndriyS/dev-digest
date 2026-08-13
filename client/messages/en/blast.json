@@ -12,7 +12,6 @@
     "graph": "graph"
   },
   "callerCount": "{count} callers",
-  "indexedAt": "Lines below are from the indexed commit {sha}, not this PR's head — links open that commit.",
   "noDownstream": "{count} changed symbol(s), no downstream callers found.",
   "empty": {
     "title": "Nothing downstream",

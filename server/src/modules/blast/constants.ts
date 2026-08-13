@@ -3,8 +3,24 @@
  * `index.ts` may be imported by another module.
  */
 
+import { z } from 'zod';
+
 /** Model budget for the opt-in paragraph. One short paragraph, nothing more. */
 export const BLAST_SUMMARY_MAX_TOKENS = 400;
+
+/** Reprompt-on-schema-error budget, mirroring the intent classifier's spirit. */
+export const BLAST_SUMMARY_MAX_RETRIES = 2;
+
+/**
+ * Structured output for the paragraph. The workspace's default provider is
+ * OpenRouter, whose adapter implements ONLY `completeStructured` — a plain
+ * `complete()` call throws (`reviewer-core/src/llm/openrouter.ts:25`), so the
+ * summary goes through the structured path like every other model call here.
+ */
+export const BlastSummaryOutput = z.object({
+  summary: z.string().min(1),
+});
+export type BlastSummaryOutput = z.infer<typeof BlastSummaryOutput>;
 
 /** The map is facts; the model only narrates it. */
 export const BLAST_SUMMARY_SYSTEM_PROMPT = [

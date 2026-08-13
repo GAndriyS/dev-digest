@@ -77,9 +77,22 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
+/** Every symbol starts collapsed — expanding is part of arranging the scene. */
+function expandFirstSymbol() {
+  fireEvent.click(screen.getByRole("button", { expanded: false }));
+}
+
 describe("BlastTab — the tree", () => {
+  it("starts with every symbol collapsed", () => {
+    renderTab();
+
+    expect(screen.queryByText("src/api/public/index.ts:23")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { expanded: false })).toBeInTheDocument();
+  });
+
   it("renders each caller as a file:line link to the right GitHub line", () => {
     renderTab();
+    expandFirstSymbol();
 
     const link = screen.getByText("src/api/public/index.ts:23").closest("a");
     expect(link).toHaveAttribute(
@@ -89,28 +102,22 @@ describe("BlastTab — the tree", () => {
     expect(screen.getByText("src/server.ts:88")).toBeInTheDocument();
   });
 
-  it("links lines to the INDEXED commit, not the PR head, and says so", () => {
+  it("links lines to the INDEXED commit, not the PR head", () => {
     // The index lags the PR head here — linking to head would open whatever
     // line happens to sit there in a file that moved since.
     state.data = blast({ indexed_sha: "b4a4f6e" });
     renderTab({ headSha: "cf683a0" });
+    expandFirstSymbol();
 
     expect(screen.getByText("src/api/public/index.ts:23").closest("a")).toHaveAttribute(
       "href",
       "https://github.com/acme/payments-api/blob/b4a4f6e/src/api/public/index.ts#L23",
     );
-    expect(screen.getByText(/indexed commit b4a4f6e/)).toBeInTheDocument();
-  });
-
-  it("stays quiet about the commit when the index is level with the PR head", () => {
-    state.data = blast({ indexed_sha: "abc123" });
-    renderTab({ headSha: "abc123" });
-
-    expect(screen.queryByText(/indexed commit/)).not.toBeInTheDocument();
   });
 
   it("shows the endpoints and crons the callers reach", () => {
     renderTab();
+    expandFirstSymbol();
 
     expect(screen.getByText("GET /api/public/items")).toBeInTheDocument();
     expect(screen.getByText("reset-rate-buckets (hourly)")).toBeInTheDocument();
@@ -118,12 +125,14 @@ describe("BlastTab — the tree", () => {
 
   it("renders file:line as plain text when there is no repo/sha to link to", () => {
     renderTab({ repoFullName: null, headSha: null });
+    expandFirstSymbol();
 
     expect(screen.getByText("src/api/public/index.ts:23").closest("a")).toBeNull();
   });
 
-  it("collapses a symbol's callers when its row is toggled", () => {
+  it("collapses a symbol's callers again when its row is re-toggled", () => {
     renderTab();
+    expandFirstSymbol();
     expect(screen.getByText("src/server.ts:88")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { expanded: true }));
@@ -169,7 +178,7 @@ describe("BlastTab — index status is visible, never swallowed", () => {
     renderTab();
 
     expect(screen.getByText(messages.status.partial)).toBeInTheDocument();
-    expect(screen.getByText("src/api/public/index.ts:23")).toBeInTheDocument();
+    expect(screen.getByText("rateLimit()")).toBeInTheDocument();
   });
 
   it("an empty map on a healthy index is the empty state, with no degraded copy", () => {

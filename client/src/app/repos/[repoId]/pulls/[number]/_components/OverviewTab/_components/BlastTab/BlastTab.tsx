@@ -5,7 +5,6 @@ import { useTranslations } from "next-intl";
 import {
   Badge,
   Button,
-  Chip,
   EmptyState,
   ErrorState,
   Icon,
@@ -17,7 +16,7 @@ import type { BlastRadius, DownstreamImpact } from "@devdigest/shared";
 import { usePrBlast, useBlastSummary } from "@/lib/hooks/blast";
 import { githubBlobUrl } from "@/lib/github-urls";
 import { ApiError } from "@/lib/api";
-import { BLAST_SKELETON_HEIGHT, DEFAULT_EXPANDED_SYMBOLS } from "./constants";
+import { BLAST_SKELETON_HEIGHT } from "./constants";
 import { s } from "./styles";
 
 /**
@@ -98,13 +97,6 @@ export function BlastTab({
           </div>
         )}
 
-        {data.indexed_sha && headSha && data.indexed_sha !== headSha && (
-          <div style={s.banner}>
-            <Icon.GitCommit size={13} style={{ color: "var(--warn)", flexShrink: 0 }} />
-            <span>{t("indexedAt", { sha: data.indexed_sha.slice(0, 7) })}</span>
-          </div>
-        )}
-
         <StatsRow blast={data} />
 
         {summaryError && (
@@ -118,12 +110,10 @@ export function BlastTab({
           <EmptyState icon="Target" title={t("empty.title")} body={t("empty.body")} />
         ) : (
           <div style={s.tree}>
-            {data.downstream.map((impact, i) => (
+            {data.downstream.map((impact) => (
               <SymbolNode
                 key={impact.symbol}
                 impact={impact}
-                kind={data.changed_symbols.find((c) => c.name === impact.symbol)?.kind}
-                defaultExpanded={i < DEFAULT_EXPANDED_SYMBOLS}
                 repoFullName={repoFullName}
                 // Lines come from the index, so they resolve against the commit
                 // it was built at — linking them to the PR head would land on
@@ -156,24 +146,25 @@ function degradedReasonKey(reason: string | undefined): (typeof DEGRADED_REASONS
   return DEGRADED_REASONS.find((r) => r === reason) ?? "no_data";
 }
 
-/** Counts across the whole map — the pre-seeded `stat.*` labels. */
+/** Counts across the whole map — the mockup's icon + number + muted label row. */
 function StatsRow({ blast }: { blast: BlastRadius }) {
   const t = useTranslations("blast");
   const callers = blast.downstream.reduce((n, d) => n + d.callers.length, 0);
   const endpoints = new Set(blast.downstream.flatMap((d) => d.endpoints_affected)).size;
   const crons = new Set(blast.downstream.flatMap((d) => d.crons_affected)).size;
 
-  const items: Array<[string, number]> = [
-    [t("stat.symbols"), blast.changed_symbols.length],
-    [t("stat.callers"), callers],
-    [t("stat.endpoints"), endpoints],
-    [t("stat.crons"), crons],
+  const items: Array<[React.ComponentType<{ size?: number; style?: React.CSSProperties }>, string, number]> = [
+    [Icon.Code, t("stat.symbols"), blast.changed_symbols.length],
+    [Icon.CornerDownRight, t("stat.callers"), callers],
+    [Icon.Globe, t("stat.endpoints"), endpoints],
+    [Icon.Clock, t("stat.crons"), crons],
   ];
 
   return (
     <div style={s.stats}>
-      {items.map(([label, value]) => (
+      {items.map(([I, label, value]) => (
         <span key={label} style={s.stat}>
+          <I size={13} style={s.statIcon} />
           <span style={s.statNum}>{value}</span> {label}
         </span>
       ))}
@@ -181,23 +172,22 @@ function StatsRow({ blast }: { blast: BlastRadius }) {
   );
 }
 
-/** One changed symbol → its callers → the endpoints/crons they reach. */
+/**
+ * One changed symbol → its callers → the endpoints/crons they reach.
+ * Every node starts collapsed — the card is a summary first, a tree second.
+ */
 function SymbolNode({
   impact,
-  kind,
-  defaultExpanded,
   repoFullName,
   sha,
 }: {
   impact: DownstreamImpact;
-  kind?: string;
-  defaultExpanded: boolean;
   repoFullName?: string | null;
   /** The commit the line numbers resolve against — the indexed one. */
   sha?: string | null;
 }) {
   const t = useTranslations("blast");
-  const [expanded, setExpanded] = React.useState(defaultExpanded);
+  const [expanded, setExpanded] = React.useState(false);
   const Caret = expanded ? Icon.ChevronDown : Icon.ChevronRight;
 
   return (
@@ -209,9 +199,8 @@ function SymbolNode({
         onClick={() => setExpanded((e) => !e)}
       >
         <Caret size={14} style={s.arrow} />
-        <Icon.Code size={13} style={s.arrow} />
+        <Icon.Code size={13} style={s.symbolIcon} />
         <span style={s.symbolName}>{impact.symbol}()</span>
-        {kind && <span style={s.symbolKind}>{kind}</span>}
         <span style={s.callerCount}>{t("callerCount", { count: impact.callers.length })}</span>
       </button>
 
@@ -242,9 +231,9 @@ function SymbolNode({
           {(impact.endpoints_affected.length > 0 || impact.crons_affected.length > 0) && (
             <div style={s.chips}>
               {impact.endpoints_affected.map((e) => (
-                <Chip key={e} icon="Globe">
+                <Badge key={e} icon="Globe" color="var(--accent-text)" bg="var(--accent-bg)" mono>
                   {e}
-                </Chip>
+                </Badge>
               ))}
               {impact.crons_affected.map((c) => (
                 <Badge key={c} icon="Clock" color="var(--warn)" bg="var(--warn-bg)" mono>

@@ -5,7 +5,12 @@ import { assemblePrompt } from '../../platform/prompt.js';
 import type { RunLogger } from '../../platform/run-logger.js';
 import type { BlastResult } from '../repo-intel/types.js';
 import { resolveFeatureModel } from '../settings/index.js';
-import { BLAST_SUMMARY_MAX_TOKENS, BLAST_SUMMARY_SYSTEM_PROMPT } from './constants.js';
+import {
+  BLAST_SUMMARY_MAX_RETRIES,
+  BLAST_SUMMARY_MAX_TOKENS,
+  BLAST_SUMMARY_SYSTEM_PROMPT,
+  BlastSummaryOutput,
+} from './constants.js';
 
 /**
  * Blast Radius (L04) — "what else can this diff touch?".
@@ -120,13 +125,18 @@ export class BlastService {
       }. Deterministic counts: ${blast.summary}`,
     });
 
-    const res = await llm.complete({
+    // Structured, not plain `complete()`: the default provider (OpenRouter)
+    // implements only `completeStructured` — see `BlastSummaryOutput`'s note.
+    const res = await llm.completeStructured<BlastSummaryOutput>({
       model,
+      schema: BlastSummaryOutput,
+      schemaName: 'BlastSummary',
       messages,
       maxTokens: BLAST_SUMMARY_MAX_TOKENS,
+      maxRetries: BLAST_SUMMARY_MAX_RETRIES,
     });
     log?.result(`Blast summary: ${res.tokensIn} in / ${res.tokensOut} out via ${res.model}`);
-    return { summary: res.text.trim() };
+    return { summary: res.data.summary.trim() };
   }
 
   /**

@@ -60,8 +60,8 @@ describe("OverviewTab — Intent and Blast side by side", () => {
 
     // Left column: the intent card in its not-classified state.
     expect(screen.getByText("Not classified yet")).toBeInTheDocument();
-    // Right column: the blast tree with a real caller.
-    expect(screen.getByText("src/api/public/index.ts:23")).toBeInTheDocument();
+    // Right column: the blast tree with its symbol row (collapsed by default).
+    expect(screen.getByText("rateLimit()")).toBeInTheDocument();
     // The raw PR body block is gone for good.
     expect(screen.queryByText("Description")).not.toBeInTheDocument();
   });

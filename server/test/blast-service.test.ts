@@ -33,14 +33,18 @@ function buildService(opts: {
   llm?: { complete: ReturnType<typeof vi.fn> };
   settingsRows?: unknown[];
 }) {
+  // `completeStructured`, not `complete` — the default provider (OpenRouter)
+  // implements only the structured path, which is why the service uses it.
   const complete =
     opts.llm?.complete ??
     vi.fn(async () => ({
-      text: '  A paragraph about the map.  ',
+      data: { summary: '  A paragraph about the map.  ' },
       model: 'deepseek/deepseek-v4-flash',
       tokensIn: 100,
       tokensOut: 20,
       costUsd: 0.0001,
+      raw: '{}',
+      attempts: 1,
     }));
 
   const container = {
@@ -52,7 +56,7 @@ function buildService(opts: {
       getBlastRadius: async () => opts.blast,
       getIndexState: async () => indexState(opts.status ?? 'full'),
     },
-    llm: async () => ({ complete }),
+    llm: async () => ({ completeStructured: complete }),
     // `resolveFeatureModel` reads settings straight off the db handle.
     db: {
       select: () => ({ from: () => ({ where: async () => opts.settingsRows ?? [] }) }),
