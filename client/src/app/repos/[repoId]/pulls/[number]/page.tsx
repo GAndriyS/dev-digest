@@ -66,7 +66,10 @@ export default function PRDetailPage() {
     }
   };
 
-  const tab = search.get("tab") ?? "overview";
+  // Unknown/retired keys (e.g. a bookmarked `?tab=blast` from when Blast had
+  // its own tab) fall back to the overview instead of rendering an empty body.
+  const rawTab = search.get("tab") ?? "overview";
+  const tab = ["findings", "diff"].includes(rawTab) ? rawTab : "overview";
   const traceRunId = search.get("trace");
   // A click inside the Diff tab has to land on a specific finding's card in
   // "Agent runs" — that means writing BOTH `tab` and `finding` in the same
@@ -163,8 +166,12 @@ export default function PRDetailPage() {
         onRunsStarted={() => invalidateActiveRuns()}
       />
 
-      <div style={{ padding: "24px 32px 44px", display: "flex", flexDirection: "column", gap: 24, maxWidth: 1080, margin: "0 auto" }}>
-        {tab === "overview" && <OverviewTab prBody={pr.body} prId={prId} headSha={pr.head_sha} />}
+      {/* Overview is the one tab laid out in two columns — it gets the wider
+          cap so Intent and Blast each keep a readable width side by side. */}
+      <div style={{ padding: "24px 32px 44px", display: "flex", flexDirection: "column", gap: 24, maxWidth: tab === "overview" ? 1440 : 1080, margin: "0 auto" }}>
+        {tab === "overview" && (
+          <OverviewTab prId={prId} headSha={pr.head_sha} repoFullName={repoFullName} />
+        )}
 
         {tab === "findings" && (
           <FindingsTab

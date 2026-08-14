@@ -8,3 +8,4 @@ export * from "./trace";
 export * from "./repo-intel";
 export * from "./skills";
 export { useConventions, useExtractConventions, useUpdateConvention } from "./conventions";
+export { usePrBlast, useBlastSummary, useCachedBlastSummary } from "./blast";

@@ -247,9 +247,15 @@ export async function runFullIndex(
     await repository.replaceFileFacts(repoId, factsBuf);
   }
 
-  // Clean pass → 'full'. Any degradation (soft budget, graph failure, or a
-  // parse error) keeps it honestly 'partial'.
-  const clean = !softBudgetReached && !graphFailed && parseDegraded.length === 0;
+  // buildEdges swallows its own failures and returns [] (adapters/depgraph),
+  // so graphFailed can never catch a cruiser problem. A multi-file repo that
+  // resolved zero edges is one: without them decl_file stays NULL and blast
+  // reports "nothing depends on this" with full confidence.
+  const graphEmpty = !softBudgetReached && walk.files.length > 1 && edgeRows.length === 0;
+
+  // Clean pass → 'full'. Any degradation (soft budget, graph failure, an empty
+  // graph, or a parse error) keeps it honestly 'partial'.
+  const clean = !softBudgetReached && !graphFailed && !graphEmpty && parseDegraded.length === 0;
   const status: IndexStatus = clean ? 'full' : 'partial';
   const stats: Record<string, unknown> = {
     ...walk.stats,
@@ -261,6 +267,7 @@ export async function runFullIndex(
     factsWritten: factsBuf.length,
     hotnessAvailable: false, // Option B — rank = pagerank only
     ...(graphFailed ? { graphFailed } : {}),
+    ...(graphEmpty ? { graphEmpty: true } : {}),
     softBudgetReached,
     parseDegraded,
     durationMs: Date.now() - startedAt,
@@ -281,7 +288,13 @@ export async function runFullIndex(
     filesIndexed,
     filesSkipped,
     durationMs: Date.now() - startedAt,
-    reason: softBudgetReached ? 'soft_budget' : graphFailed ? 'graph_failed' : undefined,
+    reason: softBudgetReached
+      ? 'soft_budget'
+      : graphFailed
+        ? 'graph_failed'
+        : graphEmpty
+          ? 'graph_empty'
+          : undefined,
   };
 }
 

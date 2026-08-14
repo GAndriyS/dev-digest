@@ -52,6 +52,18 @@ live in `<package>/INSIGHTS.md`. Maintained by the `engineering-insights` skill.
 
 ## Codebase Patterns
 
+- **2026-08-13** — Any `file:line` derived from repo-intel resolves against
+  `repo_index_state.last_indexed_sha`, **never** the PR's `head_sha` — the index
+  is built per repo at whatever commit was last synced, not per PR. Rendering
+  those lines against the head silently opens the wrong code: on PR #7 of
+  `GAndriyS/dev-digest` the index sat at `b4a4f6e` while the head was `cf683a0`,
+  and `reviews/routes.ts:137` was the `deleteReview` call at the former but an
+  unrelated intent route at the latter — a link that looks right and is wrong.
+  Any feature surfacing indexed line references (blast, callers, repo map) must
+  carry the indexed SHA on the wire and link with it; `BlastRadius.indexed_sha`
+  (`server/src/vendor/shared/contracts/brief.ts`) is the pattern to copy, and
+  the Blast tab warns the reader when it differs from the head.
+
 - **2026-08-04** — Generic skills vendored into `.claude/skills/` can carry rules
   that contradict this repo and an agent will follow them silently, because
   nothing cross-checks a skill against the conventions in `AGENTS.md`. Live

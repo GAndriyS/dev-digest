@@ -19,7 +19,50 @@ promotion rules → root `INSIGHTS.md`.
 
 ## What Doesn't Work
 
+- **2026-08-13** — `[repo-intel]` An adapter that catches its own failures and
+  returns an empty result makes the whole degradation invisible downstream:
+  `DepCruiseGraph.buildEdges` swallowed every error into `[]`, so the pipeline's
+  `graphFailed` could never be set by a cruiser problem, `repo_index_state`
+  stamped `full`, and `GET /pulls/:id/blast` answered "0 caller(s) across 0
+  file(s)" with full confidence — the exact false claim the module promises
+  never to make. A swallowed failure needs a downstream INVARIANT check, not
+  just a try/catch: `pipeline/full.ts` now stamps `partial` +
+  `stats.graphEmpty` when a repo walked more than one file and resolved zero
+  edges. Any future adapter that degrades to an empty value needs the same
+  treatment, because "empty" and "broken" are indistinguishable at the call site.
+
 ## Codebase Patterns
+
+- **2026-08-13** — `[repo-intel]` `extractEndpoints` scanned line by line, so
+  it only ever matched single-line route registrations — and every Fastify
+  route in this repo that carries a schema puts its path on the line AFTER
+  `app.get(`. Result: 11 of the server's route files were absent from
+  `file_facts` entirely, and blast attributed 0 endpoints to changes it should
+  have flagged (PR #8 went 0 → 2 endpoints on the fix alone). Fact extractors
+  here must run their regexes over the whole file content with `matchAll`, and
+  bound any multi-part pattern's window (`[\s\S]{0,200}?`) so a lone `method:`
+  cannot pair with an unrelated `url:` further down
+  (`adapters/codeindex/extract.ts`).
+
+- **2026-08-13** — `pr_files` is populated as a side effect of `GET /pulls/:id`
+  (`pulls/routes.ts:249-259`), not by import — so a PR the user has never opened
+  has `files_count` set but **zero** `pr_files` rows, and any feature keyed on
+  changed files sees an empty list. `repoIntel.getBlastRadius` answers an empty
+  file list with `degraded: 'no_data'`, which reads as "the index is broken" and
+  sends the reader off to re-index for nothing. Verified on PR #4 of
+  `GAndriyS/dev-digest`: `degraded` before the detail fetch, `full` with 72
+  symbols right after. Check `changedFiles.length === 0` first and report the
+  missing file list as its own cause (`blast/service.ts` → `no_changed_files`).
+
+- **2026-08-13** — `[repo-intel]` Precomputed `file_facts` cover **every**
+  indexed file including specs, so attributing endpoints through the import
+  graph hands a reviewer the routes that tests stand up. On PR #7 of
+  `GAndriyS/dev-digest` this inflated one symbol's "impacted endpoints" from 10
+  real routes to 23, burying them under `GET /agents/${ghost}/versions` and
+  friends. `isJunkPath` (`repo-intel/service.ts`, already used for rank-driven
+  samples) is the repo's filter for this — apply it to FACTS attribution only,
+  never to the caller list: a spec calling the changed symbol is a real caller
+  worth showing, its routes are not a real dependency.
 
 - **2026-08-06** — Anything read out of `server/clones/**` is ATTACKER-CONTROLLED
   content: importing an arbitrary public repo is the product's normal flow, so a
@@ -111,6 +154,20 @@ promotion rules → root `INSIGHTS.md`.
   before it. Fix: `nvm use 22` (or `source ~/.nvm/nvm.sh && nvm use 22`) before
   running depcruise, every server or client verification pass.
 
+- **2026-08-13** — `dependency-cruiser`'s `cruise()` resolves every input path
+  as `join(baseDir, path)` (`gatherInitialSources`, baseDir defaults to
+  `process.cwd()`), so handing it ABSOLUTE paths makes it stat
+  `cwd + /abs/path`, throw ENOENT, and — behind our try/catch — yield an empty
+  graph on every platform. It also echoes `source`/`resolved` back in whatever
+  form baseDir implies. Correct call: pin `baseDir` to the clone root and pass
+  repo-relative POSIX paths; then `source`/`resolved` come back in exactly the
+  form `walk.ts` produces and the file-set membership checks hit. Verified
+  against the real clone: 0 → 768 edges, `references.decl_file` 0 → 1262
+  resolved rows (`adapters/depgraph/index.ts`, covered by
+  `test/depgraph-adapter.test.ts`). Separately, `relative()` returns backslashes
+  on win32 — every path leaving an adapter must go through
+  `.split(sep).join('/')`, the same normalisation `walk.ts:119` applies.
+
 ## Recurring Errors & Fixes
 
 - **2026-08-11** — Any server-side pre-work that resolves its provider via
@@ -144,6 +201,27 @@ promotion rules → root `INSIGHTS.md`.
   entrypoint must use the same form.
 
 ## Session Notes
+
+- **2026-08-13** — Audited Blast Radius against the L04 requirements after PR #8
+  showed 76 symbols and 0 callers everywhere. The feature code met the spec; the
+  INDEX under it was empty — `file_edges` had 0 rows for every repo, so
+  `decl_file` was never resolved and every caller/endpoint query returned
+  nothing. Two writer bugs (cruiser called with absolute paths; endpoint
+  extraction line-by-line) plus a missing invariant check that let the broken
+  index report `full`. After the fixes and a forced reindex, PR #8 shows 41
+  callers across 7 files and 2 endpoints, MCP `get_blast_radius` matches the UI,
+  and the route answers in ~3ms (pure Postgres reads). Server unit 354 and
+  integration 58 green.
+
+- **2026-08-13** — Built Blast Radius (L04 homework) end to end: the `blast/`
+  module over `GET /pulls/:id/blast` plus an opt-in
+  `POST /pulls/:id/blast/summary` (one model call, never on the GET), a
+  per-symbol caller cap and a two-level reverse walk over `file_edges` inside
+  repo-intel, the client's Blast tab, and the real `get_blast_radius` MCP tool.
+  All lanes green (server unit 347, integration 58, client 275, mcp 67);
+  `pnpm arch` and both dependency-cruiser configs clean. Two defects were found
+  only by cross-checking the live map against the repo by hand, not by any
+  test — see the two Codebase Patterns entries dated today.
 
 - **2026-08-11** — Implemented the L03 intent layer end to end: contracts
   (`Intent`/`IntentSource`/`PrIntentRecord`), migration 0015, the `_shared`

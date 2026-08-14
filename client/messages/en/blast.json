@@ -1,4 +1,6 @@
 {
+  "title": "Blast radius",
+  "loadError": "Could not load the blast radius for this pull request.",
   "stat": {
     "symbols": "symbols",
     "callers": "callers",
@@ -11,6 +13,30 @@
   },
   "callerCount": "{count} callers",
   "noDownstream": "{count} changed symbol(s), no downstream callers found.",
+  "empty": {
+    "title": "Nothing downstream",
+    "body": "No indexed symbol in this PR's changed files is referenced anywhere else in the repository."
+  },
+  "status": {
+    "partial": "The index for this repository is only partially built — this map may be missing callers or endpoints."
+  },
+  "degraded": {
+    "title": "The index couldn't answer this",
+    "reason": {
+      "flag_off": "Repository indexing is disabled, so downstream impact can't be computed. Enable REPO_INTEL_ENABLED and re-index the repository.",
+      "index_failed": "The last indexing run for this repository failed. Re-sync it from the repository page, then reopen this tab.",
+      "index_partial": "The index is too incomplete to establish downstream impact. Re-sync the repository to finish indexing.",
+      "repo_too_large": "This repository exceeds the indexer's size limits, so its import graph was not built.",
+      "no_changed_files": "This pull request's changed files haven't been imported yet, so there is nothing to trace. Reload the pull request to fetch them, then reopen this tab.",
+      "no_data": "This repository has not been indexed yet, so callers and affected endpoints are unknown — this is not the same as nothing depending on the change. Re-sync the repository to build the index."
+    }
+  },
+  "summary": {
+    "cta": "Explain",
+    "pending": "Explaining…",
+    "failed": "Could not generate the explanation",
+    "hint": "One model call, on demand — the map itself is computed from the index."
+  },
   "graph": {
     "empty": "No downstream callers to graph.",
     "ariaLabel": "Blast radius graph"

@@ -86,12 +86,25 @@ describe('AI contracts parse fixtures', () => {
         downstream: [
           {
             symbol: 'rateLimit',
-            callers: [{ name: 'publicRouter', file: 'b.ts', line: 23 }],
+            callers: [{ name: 'publicRouter', file: 'b.ts', line: 23, rank: 0.42 }],
             endpoints_affected: ['GET /x'],
             crons_affected: ['c'],
           },
         ],
         summary: 's',
+        status: 'full',
+        indexed_sha: 'abc1234',
+      }),
+    ).not.toThrow();
+    // `reason` rides along only when the index could not back the map.
+    expect(() =>
+      BlastRadius.parse({
+        changed_symbols: [],
+        downstream: [],
+        summary: 's',
+        status: 'degraded',
+        reason: 'no_data',
+        indexed_sha: null,
       }),
     ).not.toThrow();
     expect(() =>

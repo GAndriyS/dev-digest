@@ -428,6 +428,20 @@ export class RepoIntelRepository {
   // T3 — reads (facade + repo-map).
   // -------------------------------------------------------------------------
 
+  /**
+   * One reverse level of the import graph: every file that imports any of
+   * `files`. Hits `file_edges_repo_to_idx` on `(repo_id, to_file)`, so this is
+   * O(degree) — unlike `getEdges`, which loads the whole graph and must not be
+   * used to walk a handful of files.
+   */
+  async getDependentsOf(repoId: string, files: string[]): Promise<IndexerEdgeRow[]> {
+    if (files.length === 0) return [];
+    return this.db
+      .select({ fromFile: t.fileEdges.fromFile, toFile: t.fileEdges.toFile })
+      .from(t.fileEdges)
+      .where(and(eq(t.fileEdges.repoId, repoId), inArray(t.fileEdges.toFile, files)));
+  }
+
   /** All import edges for a repo (rank graph build + critical-paths). */
   async getEdges(repoId: string): Promise<IndexerEdgeRow[]> {
     return this.db

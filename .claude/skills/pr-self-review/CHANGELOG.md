@@ -12,6 +12,18 @@ Semver for this skill:
 - **minor** — new checks, new routing entries, new stages that do not newly block.
 - **patch** — wording, caps, link fixes, syncing a command with CI.
 
+## 3.0.1 — 2026-08-12
+
+**`mcp/**` routed to the `backend` slice.** The new `mcp/` package (L04, a
+local stdio MCP server over the API) had no row in the slice table, so it fell
+through to `anything else → meta` and got no skill review at all. It now maps
+to `backend` like `reviewer-core/**`, with a note that `fastify-best-practices`
+and `drizzle-orm-patterns` legitimately find nothing there — the package has no
+Fastify routes or Drizzle schema, only an HTTP client of the existing API.
+
+Patch, by this skill's own policy: a row was added, no rule changed and
+nothing that passed before now blocks.
+
 ## 3.0.0 — 2026-08-06
 
 **A client-only contract edit is now CRITICAL, not a WARNING.** The two mirror

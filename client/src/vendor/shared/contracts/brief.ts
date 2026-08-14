@@ -46,6 +46,8 @@ export const BlastCaller = z.object({
   name: z.string(),
   file: z.string(),
   line: z.number().int(),
+  /** `file_rank.rank` (pagerank) of the calling file — 0 on the degraded path. */
+  rank: z.number(),
 });
 export type BlastCaller = z.infer<typeof BlastCaller>;
 
@@ -57,10 +59,30 @@ export const DownstreamImpact = z.object({
 });
 export type DownstreamImpact = z.infer<typeof DownstreamImpact>;
 
+/**
+ * How much of the index backed this map. Missing data is never a silent `[]`:
+ * `partial` still renders (the index is usable but incomplete), `degraded`
+ * means the persistent path was unavailable and `reason` says why — the caller
+ * shows an explanation instead of "nothing depends on this".
+ */
+export const BlastStatus = z.enum(['full', 'partial', 'degraded']);
+export type BlastStatus = z.infer<typeof BlastStatus>;
+
 export const BlastRadius = z.object({
   changed_symbols: z.array(ChangedSymbol),
   downstream: z.array(DownstreamImpact),
+  /** Deterministic counts sentence built from the index — never model-written. */
   summary: z.string(),
+  status: BlastStatus,
+  /** A `DegradedReason` when `status` is `degraded`; absent otherwise. */
+  reason: z.string().optional(),
+  /**
+   * The commit the INDEX was built at — which is what every `file`/`line` here
+   * refers to, and usually not the PR's head. Resolve line references against
+   * this, never against `head_sha`, or a file that moved between the two sends
+   * the reader to an unrelated line.
+   */
+  indexed_sha: z.string().nullable(),
 });
 export type BlastRadius = z.infer<typeof BlastRadius>;
 

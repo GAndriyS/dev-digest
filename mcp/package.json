@@ -1,0 +1,23 @@
+{
+  "name": "@devdigest/mcp",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "devdigest-mcp — local stdio MCP server over the DevDigest API. Lets a coding agent discover review agents, run a review on a pull request and wait for its findings, and read stored findings/conventions. No DB, no Fastify/Drizzle — HTTP only, talking to a running `pnpm dev` API.",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "build": "tsc --noEmit -p tsconfig.json",
+    "start": "node node_modules/tsx/dist/cli.mjs src/index.ts",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^4.1.10"
+  }
+}

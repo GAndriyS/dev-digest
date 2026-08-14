@@ -69,6 +69,7 @@ encode the two couplings a top-level-directory split would miss.
 | `server/**` | `backend` | excluding `server/clones/**` and applied `src/db/migrations/*.sql` |
 | `server/src/vendor/shared/**` | `backend` + `contracts` | canonical copy; mirror check |
 | `reviewer-core/**` | `backend` | server type-checks this source via alias |
+| `mcp/**` | `backend` | no Fastify/Drizzle surface in this package — `fastify-best-practices` and `drizzle-orm-patterns` find nothing to say there |
 | `e2e/**` | `e2e` | deterministic gates only, no skill review |
 | `.claude/**`, `*.md`, `docs/`, `specs/` | `meta` | no skill review |
 | anything else | `meta` | listed in the report so nothing is silently ignored |

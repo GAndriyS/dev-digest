@@ -371,9 +371,40 @@ export class RepoIntelService implements RepoIntel {
     }
     callers.sort((a, b) => b.rank - a.rank);
 
-    // Precomputed facts per caller file (endpoints + crons), so consumers can
-    // attribute them to the changed symbol whose callers live in that file.
-    const facts = await this.repo.getFileFacts(repoId, callerFiles);
+    // Cap PER CHANGED SYMBOL, not globally. A global slice lets one popular
+    // symbol's callers fill the budget and starve every later symbol of its
+    // callers entirely — the symbol then reads as "nothing calls this", which
+    // is the one thing this map must never say by accident.
+    const perSymbol = new Map<string, number>();
+    const cappedCallers = callers.filter((c) => {
+      const used = perSymbol.get(c.viaSymbol) ?? 0;
+      if (used >= MAX_CALLERS_PER_SYMBOL) return false;
+      perSymbol.set(c.viaSymbol, used + 1);
+      return true;
+    });
+
+    // Reverse import-graph closure: who depends on the changed files, two
+    // levels deep (BFS_DEPTH). Two indexed queries, no whole-graph load.
+    const dependentClosure = await this.walkDependents(repoId, changedFiles);
+
+    // Precomputed facts for every file the change can reach — caller files plus
+    // the closure — so consumers can attribute endpoints/crons to the changed
+    // symbol without touching Postgres again.
+    const closureFiles = new Set<string>();
+    for (const c of Object.values(dependentClosure)) {
+      for (const f of c.level1) closureFiles.add(f);
+      for (const f of c.level2) closureFiles.add(f);
+    }
+    // Tests and configs are dropped from FACTS only, never from `callers`: a
+    // spec that calls the changed symbol is a real caller worth showing, but
+    // the routes it stands up are not endpoints that depend on the change —
+    // attributing them buries the handful of real ones (same junk-path rule
+    // the rank-driven samples use).
+    const factFiles = [...new Set([...callerFiles, ...closureFiles])].filter(
+      (f) => !isJunkPath(f),
+    );
+
+    const facts = await this.repo.getFileFacts(repoId, factFiles);
     const endpoints = new Set<string>();
     const factsByFile: Record<string, { endpoints: string[]; crons: string[] }> = {};
     for (const f of facts) {
@@ -383,11 +414,59 @@ export class RepoIntelService implements RepoIntel {
 
     return {
       changedSymbols,
-      callers: callers.slice(0, MAX_CALLERS_PER_SYMBOL),
+      callers: cappedCallers,
       impactedEndpoints: [...endpoints],
       factsByFile,
+      dependentClosure,
       degraded: false,
     };
+  }
+
+  /**
+   * Reverse import-graph closure rooted at each changed file, `BFS_DEPTH`
+   * levels deep — one index-backed query per level, never a whole-graph load.
+   *
+   * Cycle-safe: `seen` carries every file already placed (roots included), so
+   * an import cycle stops instead of walking forever. Each hop keeps the roots
+   * it came from, so a level-2 file is attributed to the changed file that
+   * actually reaches it rather than to all of them.
+   */
+  private async walkDependents(
+    repoId: string,
+    changedFiles: string[],
+  ): Promise<Record<string, { level1: string[]; level2: string[] }>> {
+    const closure: Record<string, { level1: string[]; level2: string[] }> = {};
+    for (const f of changedFiles) closure[f] = { level1: [], level2: [] };
+
+    const seen = new Set(changedFiles);
+    // frontier: file -> the changed files it (transitively) depends on.
+    let frontier = new Map<string, Set<string>>(changedFiles.map((f) => [f, new Set([f])]));
+
+    for (let depth = 0; depth < BFS_DEPTH; depth += 1) {
+      if (frontier.size === 0) break;
+      const edges = await this.repo.getDependentsOf(repoId, [...frontier.keys()]);
+      const next = new Map<string, Set<string>>();
+
+      for (const e of edges) {
+        if (seen.has(e.fromFile)) continue; // cycle, or already placed nearer
+        const roots = frontier.get(e.toFile);
+        if (!roots) continue;
+        const carried = next.get(e.fromFile) ?? new Set<string>();
+        for (const root of roots) {
+          carried.add(root);
+          const entry = closure[root];
+          if (!entry) continue;
+          const bucket = depth === 0 ? entry.level1 : entry.level2;
+          if (!bucket.includes(e.fromFile)) bucket.push(e.fromFile);
+        }
+        next.set(e.fromFile, carried);
+      }
+
+      for (const f of next.keys()) seen.add(f);
+      frontier = next;
+    }
+
+    return closure;
   }
 
   /**

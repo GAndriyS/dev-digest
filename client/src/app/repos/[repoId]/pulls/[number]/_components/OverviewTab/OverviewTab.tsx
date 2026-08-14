@@ -1,34 +1,27 @@
 "use client";
 
 import React from "react";
-import { Markdown, SectionLabel } from "@devdigest/ui";
 import { IntentCard } from "./_components/IntentCard";
+import { BlastTab } from "./_components/BlastTab";
 import { s } from "./styles";
 
 interface OverviewTabProps {
-  prBody: string | null | undefined;
   prId: string | null;
   headSha: string;
+  repoFullName: string | null;
 }
 
-export function OverviewTab({ prBody, prId, headSha }: OverviewTabProps) {
+/**
+ * The Overview is the mockup's two-card layout: Intent on the left, Blast
+ * Radius on the right (stacked when the viewport can't fit both). The old
+ * Description block is gone — the PR body already lives on GitHub and in the
+ * diff context; the overview's job is the derived signal, not the raw prose.
+ */
+export function OverviewTab({ prId, headSha, repoFullName }: OverviewTabProps) {
   return (
-    <>
+    <div style={s.grid}>
       <IntentCard prId={prId} headSha={headSha} />
-
-      {prBody && (
-        <section>
-          <SectionLabel icon="MessageSquare">Description</SectionLabel>
-          {/* A PR body is Markdown, and this repo's own convention puts an
-              `## Insights` section at the end of every one — rendered raw, that
-              heading and the surrounding lists read as literal `##` and `-`.
-              `Markdown` escapes embedded HTML (no rehype-raw), which matters
-              because a PR body is attacker-controlled input. */}
-          <div style={s.descriptionBox}>
-            <Markdown>{prBody}</Markdown>
-          </div>
-        </section>
-      )}
-    </>
+      <BlastTab prId={prId} repoFullName={repoFullName} headSha={headSha} />
+    </div>
   );
 }
