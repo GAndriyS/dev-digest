@@ -267,7 +267,8 @@ body under their own heading; the human opens the PR. Flip the spec to
 
 `/engineering-insights` with the **Insight candidates** from every report;
 finish the run-file table (every stage, every token count); commit the run
-file.
+file. `/workflow-retro` is **not** part of this stage — the human runs it by
+hand when they want a retrospective of the run; do not invoke it from here.
 
 ## Resuming (`--from`)
 

@@ -93,3 +93,6 @@ a package — read its own `AGENTS.md` (`server/`, `client/`, `reviewer-core/`,
 - Captured a non-obvious finding or wrapping up a session → run
   `/engineering-insights` (recording nothing is a legitimate outcome). Subagents
   do not write `INSIGHTS.md`; they return insight candidates in their reports.
+- Retrospective of a multi-agent run (agents, order, tokens, handoff losses,
+  proposals) → the human runs `/workflow-retro [slug] [--deep]` by hand; it
+  appends to `docs/retro/ledger/`. Never auto-invoked, never from `/implement`.
