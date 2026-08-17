@@ -67,13 +67,29 @@ a package — read its own `AGENTS.md` (`server/`, `client/`, `reviewer-core/`,
 - Deep dives → read `docs/` · current work → read `specs/` · findings → read
   `INSIGHTS.md` · skills catalog → read `.claude/skills/README.md` · subagents
   catalog → read `.claude/agents/README.md`
-- Planning a change before writing it → delegate to the `planner` subagent; it
-  writes the plan to `.claude/plans/` (committed) and `implementer` executes it.
-  Neither can call the next step — no agent here lists `Agent` in its `tools`
-  allowlist, so the main session orchestrates.
-- Tests for a landed change → delegate to `test-writer`; boundary review →
-  `architecture-reviewer`; "was the plan actually followed" → `plan-verifier`;
-  documenting a shipped feature → `doc-writer`. The chain and when to invoke
-  each → read `.claude/agents/README.md`.
+- Specifying a feature before planning it → delegate to `spec-creator`; it writes
+  the feature spec (EARS criteria with `AC-N` ids, edge cases, design review)
+  to `specs/` or `<package>/specs/` and nowhere else. Template and naming →
+  read `specs/README.md`.
+- Planning a change before writing it → delegate to the `implementation-planner`
+  subagent; it reviews the requirements (a spec in `specs/` or the request —
+  it never writes specs, `spec-creator` does), asks whether the plan runs multi-agent or in a single
+  pass, writes the plan to `.claude/plans/` (committed) and `implementer`
+  executes it. Neither can call the next step — no agent here lists `Agent` in
+  its `tools` allowlist, so the main session orchestrates.
+- Building an approved plan → run `/implement .claude/plans/<slug>.md`; it
+  drives implementer → architecture-reviewer ∥ /code-review → fix loop →
+  plan-verifier → doc-writer → /pr-self-review, stops at the human gates and
+  logs state + agent cost to `.claude/sdd/<slug>.md` (`--from` resumes in a
+  new chat). `spec-creator` and `implementation-planner` are run by hand
+  before it, never from it. `test-writer` is off the default chain (token
+  budget) — delegate to it by hand when a feature needs a test pass. Why the
+  order → read `.claude/agents/README.md`.
+- Running a CI lane locally (any agent, any session) → `node scripts/verify.mjs
+  --slice <frontend|backend|reviewer-core|mcp|integration>` — one line per
+  gate, failure output only. Do not inline `tsc`/`depcruise`/`vitest` in
+  prompts; the script mirrors `.github/workflows/**` and is the one place to
+  keep in step with them.
 - Captured a non-obvious finding or wrapping up a session → run
-  `/engineering-insights` (recording nothing is a legitimate outcome)
+  `/engineering-insights` (recording nothing is a legitimate outcome). Subagents
+  do not write `INSIGHTS.md`; they return insight candidates in their reports.

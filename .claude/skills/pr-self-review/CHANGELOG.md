@@ -12,6 +12,16 @@ Semver for this skill:
 - **minor** — new checks, new routing entries, new stages that do not newly block.
 - **patch** — wording, caps, link fixes, syncing a command with CI.
 
+## 3.0.2 — 2026-08-17
+
+**Stage 2 gates run through `scripts/verify.mjs`.** The four lane commands were
+inlined here, in `implementer`, `test-writer`, `plan-verifier` and the
+workflows — five copies to keep in step, and every run read the full vitest
+output. The script inlines the same workflow commands (still no package
+scripts) and prints one line per gate plus the failing gate's tail. Same
+commands, same exit codes — a patch. Also adds the `mcp` slice, which the
+inline block had never listed.
+
 ## 3.0.1 — 2026-08-12
 
 **`mcp/**` routed to the `backend` slice.** The new `mcp/` package (L04, a

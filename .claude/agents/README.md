@@ -8,12 +8,13 @@ is `.claude/agents/`; shared with the team via version control.
 
 | Agent | Model | Tools | `skills:` (preloaded) | Owns | May not |
 |-------|-------|-------|-----------------------|------|---------|
+| [spec-creator](spec-creator.md) | opus | `Read, Grep, Glob, Bash, Write, Edit, TodoWrite` | **none — and no `Skill` tool either.** A skill is a rulebook for writing code; a spec-writer holding one starts specifying the implementation. It reads `specs/README.md` for the template on every run instead of carrying a copy | Feature specs in `specs/` and `<package>/specs/` — EARS acceptance criteria with `AC-N` ids, each with a `(← source)` trace tag and a `· verify:` hint, edge cases, NFRs, input provenance, `[NEEDS CLARIFICATION]` — plus a critical read of the supplied design (uncovered states, corner cases, cross-module gaps, UX proposals), the interview and research handshakes, and a 9-point self-check before returning | Write anywhere else — no `docs/`, no `.claude/plans/`, no code, no `e2e/specs/*.flow.json`; write architecture specs; turn a UX proposal into an AC without a human's yes; write a half-spec next to an interview or open research question; fill in a fact `researcher` could not establish; read every `INSIGHTS.md` — only the touched modules' |
 | [researcher](researcher.md) | sonnet | `Read, Grep, Glob, Bash, WebSearch, WebFetch, TodoWrite` | **none — and no `Skill` tool either.** A skill arrives as an instruction, and every rule this agent meets must arrive as *evidence*; it `Read`s a `SKILL.md` as a file and cites it | Answering "how does this repo do X" and "what do the upstream docs say", with locators for every claim | Change anything; enforce a rule it cited; return prose instead of the report format |
-| [planner](planner.md) | opus | `Read, Grep, Glob, Bash, Write, TodoWrite, Skill` | **none.** `pr-self-review` is a workflow, and preloading a workflow invites running it; the load-bearing part is `routing.md`, a companion file no preload would have brought in anyway | Turning a request into a Development Plan in [`.claude/plans/`](../plans/README.md), incl. the skills each step needs | `Edit` anything; write outside `.claude/plans/`; run tests or builds |
-| [implementer](implementer.md) | sonnet | `Read, Edit, Write, Grep, Glob, Bash, TodoWrite, Skill` | **none.** The plan's *Skills* column names them per step; it loads each one with `Skill` when that step comes up | Executing a plan across `client/`, `server/`, `reviewer-core/`, `e2e/`; running the touched lanes; recording insights at the end | Commit, push, open a PR; touch the do-not-touch paths; pass architecture or security verdict |
-| [test-writer](test-writer.md) | sonnet | `Read, Edit, Write, Grep, Glob, Bash, TodoWrite, Skill` | `react-testing-library`, `onion-architecture` — the two needed on every run of their half; the seven that shape *production* code stay on demand | Tests in all four packages: the right file name, the right lane, and running the lane it touched | Write anywhere outside its may-write table (`src/**` is production, including `mocks.ts`); weaken a test or adopt its output as the expectation; write `e2e/specs/*.flow.json`; commit |
-| [architecture-reviewer](architecture-reviewer.md) | opus | `Read, Grep, Glob, Bash, TodoWrite, Skill` | `onion-architecture`, `frontend-ui-architecture` — its whole remit is those two skills' non-mechanical half. **Not** `pr-self-review`, for the reason in the `planner` row | Boundary findings with `file:line` evidence, scored on `routing.md`'s scale; deterministic gates CRITICAL by construction | Write or edit anything; edit a `.dependency-cruiser.cjs` or grow a `GRANDFATHERED` list; hunt bugs or security |
-| [plan-verifier](plan-verifier.md) | opus | `Read, Grep, Glob, Bash, TodoWrite` | **none — and no `Skill` tool either.** A verifier holding a rulebook becomes a second code reviewer within three findings | A verdict per plan requirement with a locator, the conformance verdict, plus the changes no requirement asked for | Write or edit anything; run a mutating command even when the plan names it; offer style, naming or refactor advice; mark MET on intent; ask a question |
+| [implementation-planner](implementation-planner.md) | opus | `Read, Grep, Glob, Bash, Write, TodoWrite, Skill` | **none.** `Skill`-loads at most three, and only when a Step-5 answer needs the rulebook to make a *plan* decision: `onion-architecture` to name a seam, `postgresql-table-design` + `drizzle-orm-patterns` to shape a new migration, `zod` for a wire-crossing contract. Most runs load nothing. `pr-self-review` is never loaded — it is a workflow, and preloading a workflow invites running it; the load-bearing part is `routing.md`, a companion file it `Read`s | Turning a spec (`specs/`, `<package>/specs/`) or stated requirements into an Implementation Plan in [`.claude/plans/`](../plans/README.md): the requirements review, the recommendations, the execution mode (multi-agent vs single-agent), and the skills each step needs | Write or edit a spec, or state acceptance criteria the spec/caller did not; `Edit` anything; write outside `.claude/plans/` or over an existing plan; run tests or builds |
+| [implementer](implementer.md) | sonnet | `Read, Edit, Write, Grep, Glob, Bash, TodoWrite, Skill` | **none.** The plan's *Skills* column names them per step; it loads each `SKILL.md` with `Skill` when that step comes up — companion files (`references/`, up to 185 KB per skill) only on an explicit pointer | Executing a plan (or a fix-pass list) across `client/`, `server/`, `reviewer-core/`, `mcp/`, `e2e/`; verifying through `scripts/verify.mjs` — `--only` while iterating, the full slice once; returning **Insight candidates** | Commit, push, open a PR; touch the do-not-touch paths; write `INSIGHTS.md` (main session does, from its candidates); pass architecture or security verdict |
+| [test-writer](test-writer.md) | sonnet | `Read, Edit, Write, Grep, Glob, Bash, TodoWrite, Skill` | **none.** Loads `react-testing-library` or `onion-architecture` by slice — every run uses exactly one, so preloading both put 20 KB of RTL into every backend run | Tests in all five packages against the spec's `AC-N` / `· verify:` hints: the right file name, the right lane, run through `scripts/verify.mjs` | Write anywhere outside its may-write table (`src/**` is production, including `mocks.ts`); weaken a test or adopt its output as the expectation; write `e2e/specs/*.flow.json`; commit |
+| [architecture-reviewer](architecture-reviewer.md) | sonnet | `Read, Grep, Glob, Bash, TodoWrite, Skill` | **none.** Loads `onion-architecture` / `frontend-ui-architecture` for the slices the diff actually contains. **Not** `pr-self-review`, for the reason in the `implementation-planner` row | Boundary findings with `file:line` evidence, scored on `routing.md`'s scale; deterministic gates CRITICAL by construction | Write or edit anything; edit a `.dependency-cruiser.cjs` or grow a `GRANDFATHERED` list; hunt bugs or security |
+| [plan-verifier](plan-verifier.md) | sonnet | `Read, Grep, Glob, Bash, TodoWrite` | **none — and no `Skill` tool either.** A verifier holding a rulebook becomes a second code reviewer within three findings | A verdict per plan requirement with a locator, the conformance verdict, plus the changes no requirement asked for. Runs **once, last** among the reviewers; a re-run with its previous report regrades only what was not `MET` | Write or edit anything; run a mutating command even when the plan names it; offer style, naming or refactor advice; mark MET on intent; ask a question |
 | [doc-writer](doc-writer.md) | sonnet | `Read, Edit, Write, Grep, Glob, Bash, TodoWrite, Skill` | **none.** `mermaid-diagram` is loaded on demand, once a diagram has earned its place — most runs (a stale-doc patch, a reference table) produce no diagram at all | Docs for shipped behaviour, the diagrams, and the layering call about which section a piece belongs in | Write rules into `AGENTS.md`, entries into `INSIGHTS.md`, or specs into `specs/`; document unbuilt behaviour; run builds or tests |
 
 The `skills:` field **preloads full skill bodies** into the agent's startup
@@ -21,13 +22,19 @@ context, on every run, and it cannot express a condition. That makes it the
 wrong tool for anything routed: preloading ten skills so a body can then order
 the model to ignore six of them spends ~25k tokens of standing attention to
 *create* a distraction. So the bar is narrow — **preload only what every run of
-that agent uses**, which today is true for exactly two agents. Everything else
-is `Skill`-loaded at the moment its slice comes up, which is also when the
-model is actually about to apply it.
+that agent uses** — and today **no agent clears it**: `test-writer` and
+`architecture-reviewer` used to preload their two rulebooks, but every run of
+either uses exactly one half, so the other half was 8–20 KB of standing
+attention per run. Everything is `Skill`-loaded at the moment its slice comes
+up, which is also when the model is actually about to apply it. The `skills:`
+field stays documented below for the day an agent genuinely needs it.
 
 Companion files (`examples.md`, `rules/`, `references/`, and
-`pr-self-review/routing.md`) are **never** preloaded either way and are always
-opened on demand.
+`pr-self-review/routing.md`) are **never** preloaded either way and are opened
+only on an explicit pointer from the `SKILL.md` for the question at hand — the
+`references/` trees run to 185 KB (`fastify-best-practices`) and 171 KB
+(`zod`), and "open them to be thorough" was the single biggest token sink in
+an `implementer` run.
 
 Never given to any of them: `security` (owned by `/security-review`, and the
 vendored skill targets Express + Mongoose, not Fastify + Drizzle) and
@@ -40,47 +47,87 @@ only later. `plan-verifier` asks whether a requirement was met, and any rulebook
 in its context turns that into a second code review; `researcher` reports what
 the rules *say*, and a rule it can invoke is a rule it starts enforcing.
 
-Opus where the judgement *is* the product — `planner` choosing what to build,
-`architecture-reviewer` deciding whether an edge is a real boundary break,
-`plan-verifier` telling "met differently" from "quietly dropped". Sonnet where
-the judgement is already fixed by something else: a plan that names its files
-and commands (`implementer`), a sibling test that sets the shape
-(`test-writer`), the source being described (`doc-writer`), a question with a
-locatable answer (`researcher`).
+Opus only where the judgement *is* the product and nothing downstream can
+catch a bad call: `spec-creator` deciding what the feature is, and
+`implementation-planner` reviewing the requirements and choosing how to build
+them. Sonnet everywhere the judgement is fixed by something else — a plan that
+names its files and commands (`implementer`), the source being described
+(`doc-writer`), a question with a locatable answer (`researcher`) — **and, since
+2026-08-18, for both reviewers.** `architecture-reviewer` and `plan-verifier`
+were opus; they are the agents that run most often per feature (the fix loop
+re-runs the reviewer, a re-verify re-runs the verifier), their outputs are
+locator-shaped (`file:line` or it is not a finding; a locator or it is not
+`MET`), and that discipline is what guards against a wrong call, not the
+model. The trade is stated: a subtler boundary break may go unflagged; the PR
+still passes `/pr-self-review` and CI's dependency-cruiser, so the cost of a
+miss is bounded.
 
-The model is per agent, not per step, so the opus reviewers also bill opus for
-their mechanical halves — running `depcruise`, listing a diff, reading exit
-codes. Splitting those out means a second agent and a handoff for work that is
-three commands long, and the handoff would cost more than it saves. Stated
-rather than pretended away.
+The model is per agent, not per step, so a reviewer also bills its model for
+its mechanical half — running `depcruise`, listing a diff, reading exit codes.
+Splitting those out means a second agent and a handoff for work that is three
+commands long, and the handoff would cost more than it saves.
 
 ## The chain
 
 ```
-planner (opus)
-   ├─ requirements vague? → "## Interview required" → main session asks you → re-delegate with answers
-   └─ .claude/plans/<slug>.md
-        ├─ TDD? → test-writer (sonnet) → red tests → ⛔ YOU COMMIT THEM ← before the next step
-        → implementer (sonnet) → implementation report
-             → test-writer (sonnet)            — writes the tests the plan did not
-             → then, in parallel, read-only:
-                  architecture-reviewer (opus)   — boundaries, evidence-backed findings
-                  plan-verifier (opus)           — per-requirement conformance
-             → doc-writer (sonnet)             — once the behaviour has stopped moving
-                  → /pr-self-review → /code-review · /security-review → PR
+spec-creator (opus)
+   ├─ design supplied? → critical read: uncovered states, corner cases, cross-module gaps, UX proposals
+   ├─ two readings → two different specs? → "## Interview required" → main session asks you → re-delegate with answers
+   ├─ a fact it cannot grep decides an AC? → "## Research required" → main session fans out researcher ×N in parallel → re-delegate with reports
+   └─ specs/SPEC-NN-<slug>.md · <package>/specs/SPEC-NN-<slug>.md  (Status: draft) → ⛔ YOU APPROVE IT ← a spec nobody read is a guess with ids
+   ↓
+implementation-planner (opus)
+   ├─ requirements review → ambiguous / untestable / conflicting? + "multi-agent or single-agent?"
+   │     → "## Interview required" → main session asks you → re-delegate with answers
+   └─ .claude/plans/<slug>.md  (**Mode:** multi-agent | single-agent)
+        │
+        ├─ single-agent → the main session executes every step itself, in one pass,
+        │                 then runs the reviews below by hand
+        │
+        └─ multi-agent — from here on, one command: /implement .claude/plans/<slug>.md
+             → implementer (sonnet) — one, or several in parallel by file ownership
+                  → report: Steps done/total · Deviations
+                  → ⛔ done < total? → implementer again (same plan + its report) — no reviewer yet
+                  → in parallel, both produce rework, neither writes code:
+                       architecture-reviewer (sonnet) — boundaries, evidence-backed findings
+                       /code-review                   — bugs (architecture-reviewer does NOT hunt them)
+                  → fix loop: implementer fix pass → architecture-reviewer re-review (scoped to prior findings + new hunks)
+                       … until PASS or --max-review-loops → ⛔ YOU accept the standing WARNINGs
+                  → plan-verifier (sonnet)            — ONCE, on the settled tree, with the last implementer report
+                       → INCOMPLETE? → implementer on the gaps → plan-verifier re-verify (previous report supplied)
+                  → doc-writer (sonnet)              — once the behaviour has stopped moving
+                       → /pr-self-review → /code-review · /security-review → PR → spec Status: implemented (by hand)
 ```
 
-The ordering is not decorative. `test-writer` **writes**; the two reviewers
-**read**. Running them alongside it grades a moving tree. Run `test-writer` to
-completion, then the two reviewers together — they share no files and answer
-different questions.
+The first two stages are **manual by decision** — you delegate to
+`spec-creator`, read and approve the spec, delegate to `implementation-planner`,
+read and approve the plan. From the approved plan on, one command runs the
+rest with the delegation prompts and the human gates baked in:
+[`/implement`](../skills/implement/SKILL.md). It logs stage state and agent
+token cost to `.claude/sdd/<slug>.md`, and `--from <stage>` resumes it in a new
+chat.
 
-**The TDD checkpoint is yours and nothing else can do it.** No subagent can
-commit. When `test-writer` runs first, its red tests sit in a dirty tree that
-`implementer` may edit, and "loosened the assertion" is indistinguishable from
-"made it pass" in a diff that never had the original. Commit the red tests
-before delegating; `test-writer` will remind you in its report, but the reminder
-is not the guard — the commit is.
+The planner asks the mode question on every run unless the delegation states
+it, and the plan carries the answer as `**Mode:**` plus an **Executor** column.
+Both modes produce the same plan headings — the difference is who takes each
+step and where verification sits — so `plan-verifier` grades either.
+
+**Why the order is what it is.** Everything that can send work back to
+`implementer` runs together and early: `architecture-reviewer` (a CRITICAL)
+and `/code-review` (a bug). Then the fix loop — a fix can clear one boundary
+break and open another, so the reviewer re-reviews after each pass, scoped to
+its own prior findings plus the hunks that changed. Then `plan-verifier`
+**once**, last, on a tree nobody is still editing: running it earlier means
+grading a tree the fix loop is about to change and paying for the re-verify.
+The cheap early completeness signal is the `implementer` report's own
+`Steps: done/total` line, and it costs nothing to read.
+
+**`test-writer` is off the default chain, by decision (token budget).** The
+agent stays in the catalog and is delegated by hand — between the fix loop and
+`plan-verifier` — when a feature needs a test pass; tell the planner "no
+test-writer stage" so the plan carries no rows nobody executes. When it does
+run: after `implementer`, against the spec's `AC-N` and their `· verify:`
+hints. **No TDD** in either case — no red-tests-first checkpoint.
 
 `doc-writer` runs **before** `/pr-self-review`, not after the PR is open. It
 still goes last among the agents, because documenting a branch that is still
@@ -90,19 +137,40 @@ connects to the first. Its output is uncommitted like everything else: you
 commit it into the same branch, and the review sees the docs next to the diff
 that produced them.
 
-`researcher` is not on the chain: it answers questions, it is not a stage.
+`spec-creator` writes the spec **before** the planner reads it — its ACs carry
+the `AC-N` ids the plan's **Requirements review** and `plan-verifier` cite, so
+a plan written against no spec has nothing stable to point at. The spec lands
+as `draft`; moving it to `approved` is a human decision, and to `implemented`
+follows `plan-verifier`'s `COMPLETE` — both are a **one-line edit made by hand**
+(you, or the main session), not a re-delegation: an opus run to change one word
+was the most expensive edit in the chain. `spec-creator` stays the only *agent*
+that writes content into `specs/` (the lifecycle table is in
+[`specs/README.md`](../../specs/README.md)). `scripts/check-specs.mjs` lints
+the result in `pr-gate.yml`, so a duplicated `SPEC-NN` or a dropped heading is
+a red check rather than something the prompt has to hold.
+
+**Designs reach `spec-creator` through the delegation, not through tools.** Its
+`tools:` list strips MCP, so it cannot open a Figma link. Before delegating,
+export the frame yourself — a screenshot on disk it can `Read`, or a pasted
+`get_design_context` dump — and name the path in the prompt. A bare link
+produces an interview question, not a spec.
+
+`researcher` is not on the chain: it answers questions, it is not a stage. Its
+regular caller is `spec-creator`'s **research gate** — see the handshake below —
+and any question you have yourself before choosing between approaches.
 
 | Agent | Delegate to it when |
 |-------|---------------------|
-| `test-writer` | a plan's steps shipped without coverage; a bug needs a regression test; a lane is red — or **before** `implementer`, for TDD (then commit the red tests) |
-| `architecture-reviewer` | a change touches structure, or a `depcruise` rule fails. Before `/pr-self-review`, not instead of it |
-| `plan-verifier` | `implementer` reports done. Its verdict is what decides whether the branch is finished — pass it the implementation report, or it cannot tell a declared deviation from a dropped requirement |
+| `spec-creator` | a lesson item, feature or design needs a spec; a design (screenshot, mockup, description) has to become checkable requirements; an existing spec must be revised or superseded — and **before** `implementation-planner`, so the plan has `AC-N` ids to review |
+| `test-writer` | **off the default chain** (token budget). By hand, after the fix loop and before `plan-verifier`, when a feature needs a test pass; a bug needs a regression test; a lane is red. Never before `implementer` |
+| `architecture-reviewer` | `/implement` stage 3, in the same message as `/code-review`; then once per fix-loop iteration with its previous report (scoped re-review). Also by hand when a `depcruise` rule fails |
+| `plan-verifier` | `/implement` stage 4 — after the fix loop, once, on a settled tree — with the last implementer report (else it cannot tell a declared deviation from a dropped requirement); on a re-run pass its previous report too |
 | `doc-writer` | the reviews have settled, before `/pr-self-review`, so the docs are in the diff |
 
 **No link calls the next one.** Two tools are absent from every subagent here,
 and both shape the design above:
 
-- **`Agent`** — none of the seven lists it, so none of them can spawn a
+- **`Agent`** — none of the eight lists it, so none of them can spawn a
   subagent. This is our allowlist doing the work, not a platform guarantee:
   Claude Code lets subagents nest by default, up to a depth limit, and a
   subagent that inherited its tools *would* be able to. The `tools:` line is the
@@ -110,37 +178,88 @@ and both shape the design above:
   pipeline here, and trying to build one is the first thing people attempt.
 - **`AskUserQuestion`** — removed from every subagent by the platform itself, so
   no `tools:` line is needed for it. A subagent cannot ask you anything mid-run,
-  which is why the planner's interview is a two-pass handshake rather than an
-  inline question, and why `researcher` returns `## Clarification required`
-  instead of asking.
+  which is why the `spec-creator` and planner interviews are two-pass handshakes
+  rather than inline questions, and why `researcher` returns
+  `## Clarification required` instead of asking.
 
 ## Running the interview handshake
 
-When `planner` returns `## Interview required` instead of a plan path:
+`spec-creator` and `implementation-planner` share one shape. When either returns
+`## Interview required` instead of a file path:
 
 1. Ask the questions it listed (it supplies a default for each, so an
-   unanswered question is not a dead end).
-2. Re-invoke `planner` with the **original task and the answers verbatim**.
-   Answers alone, without the task, produce a plan for nothing.
+   unanswered question is not a dead end). The planner's block also carries a
+   **Requirements review** table and **Recommendations** — put those in front
+   of the human too: a recommendation is only advice until the human accepts
+   it, and an accepted one has to travel back as an answer. `spec-creator`'s
+   block carries **What I can already commit to** instead — show it, so the
+   human answers knowing what will not change.
+2. Answer the **Execution mode** question — `multi-agent` or `single-agent`.
+   It is asked on every run unless your delegation already stated the mode, so
+   the cheap path is to state it up front.
+   (`spec-creator` asks no mode question — its blocking questions are the ones
+   where two answers produce two different specs.)
+3. **Continue the same run** with `SendMessage` (the agent's id is in the
+   `Agent` result), carrying the answers verbatim. Its context — the map it
+   read, the review table — is intact, so it goes straight to writing. Only if
+   the run is gone re-invoke fresh with the **original task and the answers**;
+   answers alone, without the task, produce a plan for nothing.
 
-   Resending everything is a choice, not a platform limit — Claude Code can
-   resume a subagent with its context intact, and a subagent can be given
-   persistent `memory`. We do not use either here: an answer that has to be
-   restated in the delegation is an answer a human can see and correct, and the
-   planner marks each one *human-answered* or *default-assumed* in the plan.
-   Context that arrives invisibly cannot be audited six weeks later, which is
-   the entire reason plans are committed.
+   The earlier rule here was "always re-invoke fresh, so the answers are visible
+   in the delegation". That bought auditability the plan file already provides
+   — every answer lands verbatim under **Decisions taken**, tagged
+   *human-answered* or *default-assumed* — and it cost a full opus re-read of
+   `AGENTS.md`, `INSIGHTS.md`, the spec, `routing.md` and the workflows on
+   nearly every planning run, because the mode question makes pass 1 an
+   interview almost always. The plan is the record; the delegation never was.
 
 ```
-Original task: <paste the original request>
-
 Answers to your interview:
 1. <question> → <answer>
 2. <question> → <answer>
+Execution mode: multi-agent | single-agent      (if it asked)
+Recommendations accepted: <which ones, or "none">
 ```
 
 The planner copies these into the plan's **Decisions taken** section, which is
 the only durable record of the conversation.
+
+## Running the research handshake
+
+`spec-creator` may also return `## Research required` — alone or in the same
+block as its interview. These are **facts**, not decisions: what an upstream API
+does on a 404, how a behaviour is actually wired across three packages, what
+prior art does with the same state. Its questions are independent by
+construction, so:
+
+1. Spawn one `researcher` per question, **all in the same message**, so they run
+   in parallel — they share no state and each returns its own report with
+   locators and a confidence. Pass each researcher the question verbatim plus
+   the "Where to look" hint; do not merge two questions into one agent, because
+   one report with two confidences is one the spec cannot cite cleanly.
+2. Answer any interview questions in the same round (see above) — the human
+   waits once, not twice.
+3. Continue the `spec-creator` run (`SendMessage`) with the **interview answers
+   and every research report verbatim** — including the ones that say "could
+   not establish": an unresolved fact becomes a `[NEEDS CLARIFICATION]` with a
+   default, and the agent has to see it to write it. (Fresh re-invoke with the
+   original task only if the run is gone.)
+
+```
+Answers to your interview:
+1. <question> → <answer>
+
+Research reports:
+1. <question> →
+   <researcher report, verbatim>
+2. …
+```
+
+`spec-creator` tags each fact *research-answered* or *research-unresolved* under
+**Decisions taken** and cites the researcher's locator in the AC's `(← …)` tag,
+so a reviewer can follow an AC back to the source that justified it. It caps
+itself at three research questions per run; if it keeps coming back with more,
+the request is bigger than one spec — split it.
 
 ## Permissions
 
@@ -206,7 +325,7 @@ model: opus | sonnet | haiku | inherit
 Only `name` and `description` are required; the other three are the levers that
 matter here. Claude Code accepts more fields than these (`hooks`,
 `permissionMode`, `memory`, `maxTurns`, `effort`, `isolation`, …) — keep to this
-set unless a new agent genuinely needs one, so seven agents stay comparable at a
+set unless a new agent genuinely needs one, so eight agents stay comparable at a
 glance. See the Permissions section above for the one we deliberately left on
 the table.
 
