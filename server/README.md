@@ -96,17 +96,25 @@ findings-join rule, classification, client fallback, that client-side join)
 is in [`../docs/smart-diff.md`](../docs/smart-diff.md).
 
 `context` (`modules/context/`) is a bounded, read-only walk of a cloned repo's
-working tree: `GET /repos/:id/context` lists every `.md` file found under the
-configured ROOT NAMES (`PROJECT_CONTEXT_ROOTS`, see **Environment** below),
-capped at 2,000 files with `total`/`truncated` carrying the rest; `GET
+working tree, matched by **two independent rules**: `GET /repos/:id/context`
+lists every `.md` file found under the configured ROOT NAMES
+(`PROJECT_CONTEXT_ROOTS`, see **Environment** below), plus every file — at any
+depth, including the clone root itself — whose file *name* matches one of the
+configured document names (`PROJECT_CONTEXT_FILES`, default `INSIGHTS.md`,
+see **Environment**). A file that matches both rules is listed once, badged by
+the root; a name-only match badges with the configured name minus its
+extension, lowercased (`INSIGHTS.md` → `insights`). `SKIP_DIR_NAMES` and
+symlinks are checked before either rule, so a skipped directory is never a way
+in through the name rule either. Both rules together stay capped at 2,000
+files with `total`/`truncated` carrying the rest; `GET
 /repos/:id/context/doc?path=` previews one. `GET|POST /agents/:id/context` and
 `GET|POST /skills/:id/context` set-write which of those paths an agent or a
 skill has attached (whole-set replace, deduped, ordered). The walk and every
-read re-check the path against the clone root and the configured roots even
-though the wire contract already validates its shape — a stored path is never
-by itself a reason to open a file (same guarded reader as `modules/_shared/
-clone-fs.ts` uses elsewhere). What an attachment does at run time is covered
-in **Review context (non-obvious)** below.
+read re-check the path against the clone root and the configured roots and
+file names even though the wire contract already validates its shape — a
+stored path is never by itself a reason to open a file (same guarded reader as
+`modules/_shared/clone-fs.ts` uses elsewhere). What an attachment does at run
+time is covered in **Review context (non-obvious)** below.
 
 ## Environment
 
@@ -122,6 +130,7 @@ in **Review context (non-obvious)** below.
 | `REPO_INTEL_ENABLED` | `true` | repo skeleton + callers in the prompt; `false` → ripgrep-only |
 | `DEVDIGEST_CLONE_DIR` | `./clones` | imported-repo checkouts (git-ignored) |
 | `PROJECT_CONTEXT_ROOTS` | `specs,docs,insights` | comma-separated directory NAMES the Project Context walk descends into anywhere in a clone's tree (`specs/foo.md` and `packages/x/docs/bar.md` both match) |
+| `PROJECT_CONTEXT_FILES` | `INSIGHTS.md` | comma-separated document file NAMES (not directories) the Project Context walk also matches anywhere in a clone's tree, on any depth including the clone root; an entry that doesn't end in `.md` or contains a path separator is dropped and logged at boot |
 | `LOG_LEVEL` | `info` (`silent` in test) | pino level |
 | `NODE_ENV` | `development` | `test` → silent logs + global rate-limit disabled |
 
@@ -160,7 +169,7 @@ What the reviewer actually sends to the model is assembled in
   `run-executor.ts` resolves an agent's own attached docs plus everything
   inherited from its **enabled** linked skills (same kill-switch rule as
   `## Skills / rules`), in "own docs first, then skills in link order"
-  order, deduplicated on first occurrence and packed under a 32,000-character
+  order, deduplicated on first occurrence and packed under an 80,000-character
   block budget via `container.projectContext.resolveForRun`. The packed chunks
   are passed into `reviewPullRequest` under reviewer-core's existing `specs`
   slot — unchanged, already rendering `## Project context` with each document
