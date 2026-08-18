@@ -1,6 +1,6 @@
 # Spec: Project Context — документи, що збігаються за іменем файла (`INSIGHTS.md`)
 Spec ID: SPEC-02
-Status: approved
+Status: implemented
 Source: запит користувача («project context не має в собі insights/ — додай це в специфікацію») · L05 · Project Context Folder
 Supersedes: none
 

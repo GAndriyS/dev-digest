@@ -45,6 +45,28 @@ promotion rules → root `INSIGHTS.md`.
 
 ## Codebase Patterns
 
+- **2026-08-18** — A pure function that restates a walk's acceptance rule
+  drifts from it **twice** if you only test the accepted shapes.
+  `modules/context/helpers.ts`'s `badgeFor` is the read/attach gate —
+  `classifyAndRead` asks it before touching the disk, so "has a badge" IS "may
+  be read" — and it diverged from `walkContextFiles` once on `SKIP_DIR_NAMES`
+  and again on the `.md` extension, the second time despite a doc comment at
+  the site warning about exactly this and despite a paired parity test. The
+  parity test missed it because its fixture only carried files the walk
+  *accepts*: the gap lives in paths that partially match (a real root segment,
+  a file the rule still rejects — `specs/notes.txt`). Any edit to either side
+  needs a fixture entry per **rejected-despite-partial-match** shape, not just
+  per accepted one.
+
+- **2026-08-18** — `loadConfig()` runs before Fastify and its logger exist — it
+  computes `logLevel` itself — so there is no seam inside `platform/config.ts`
+  to report a bad env value from. Config validation that must be *visible*
+  plumbs a diagnostic field out on `AppConfig` and logs it from `app.ts` after
+  the container is decorated (`contextFilesDropped` + the `app.log.warn` next to
+  the existing "stale-run reaping failed" warning is the pattern). Do not add a
+  logger to `config.ts`, and do not let a dropped entry stay silent — an env
+  var that silently falls back to its default reads as "my setting is applied".
+
 - **2026-08-18** — `AppConfig.cloneDir` can BE the do-not-touch path. The
   checked-in `server/.env` and `.env.example` set `DEVDIGEST_CLONE_DIR=./clones`,
   which is relative, so `loadConfig()` resolves it against `process.cwd()` —

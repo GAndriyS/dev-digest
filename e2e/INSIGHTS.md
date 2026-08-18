@@ -33,6 +33,20 @@ skill, append-only. Entry format and promotion rules → root `INSIGHTS.md`.
 
 ## Recurring Errors & Fixes
 
+- **2026-08-18** — `scripts/e2e.sh` can run a whole suite against a **stale
+  server from an earlier interrupted run** and report the failures as flaky
+  flows. Its readiness check `curl`s the target port and does not verify the
+  responder is the process it just spawned, so an orphaned `node.exe` still
+  bound to 3100/3101 satisfies it while the script's own `next dev`/`tsx`
+  died a few lines earlier with `EADDRINUSE`. The tell: flows that assert on
+  seeded text (`Add rate limiting to public API endpoints`) fail while flows
+  with no seed-specific assertions pass — a stale differently-seeded app, not
+  a broken flow. Kill whatever listens on the configured `E2E_*_PORT`s before
+  rerunning. Related, same run: port 5433 was held by an unrelated project's
+  Postgres container, which the script's own `E2E_PG_PORT` override handles —
+  do not stop another project's container, and do not rely on the bare
+  defaults on a machine that runs more than one Postgres.
+
 - **2026-08-04** — Running `scripts/e2e.sh` while a dev `next dev` is up in the
   same checkout poisons BOTH: they share `client/.next`, and `NEXT_PUBLIC_*` is
   inlined into the compiled chunks at dev-server start. The hermetic run bakes
