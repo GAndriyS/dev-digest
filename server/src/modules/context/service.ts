@@ -36,7 +36,7 @@ export interface WalkedContextFile {
   /**
    * The file's badge — either the configured ROOT name it was found under
    * (SPEC-01), or the lowercased stem of the configured file NAME it matched
-   * (SPEC-02 AC-1/AC-2). Root wins when both apply (AC-3) — see `badgeFor`.
+   * (SPEC-01 AC-26/AC-27). Root wins when both apply (AC-28) — see `badgeFor`.
    */
   root: string;
   size: number;
@@ -57,12 +57,12 @@ export interface ContextWalkResult {
  * 1. Root rule (SPEC-01): a `.md` file under any of `roots` (a directory
  *    NAME, not a path — matched anywhere in the tree, e.g. both `specs/` and
  *    `packages/x/docs/`).
- * 2. Name rule (SPEC-02 AC-1): a file whose NAME matches one of `fileNames`
+ * 2. Name rule (SPEC-01 AC-26): a file whose NAME matches one of `fileNames`
  *    case-insensitively, on ANY depth — including the clone root itself —
  *    regardless of whether it is under a configured root.
  *
  * A file matching both is collected exactly once, badged by the root
- * (SPEC-02 AC-3) — `badgeFor` (`helpers.ts`) is the pure restatement of both
+ * (SPEC-01 AC-28) — `badgeFor` (`helpers.ts`) is the pure restatement of both
  * rules together and MUST stay in lockstep with this function; see its doc
  * comment.
  *

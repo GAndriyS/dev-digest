@@ -57,7 +57,7 @@ is the easy part.
 | A rule, an invariant, a "never do X" | `AGENTS.md` (root or package) | **Propose only.** Capped section, human-owned |
 | The architecture map, a boot flow, a system diagram | the relevant `README.md` | This is where Mermaid actually lives in this repo today |
 | Stable "why" — design rationale, a deep dive, a how-to, a decision record | `docs/` (cross-cutting) or `<package>/docs/` (scoped) | The charter is `docs/README.md:5-11` |
-| What we are about to build | `specs/SPEC-NN-<feature>.md` | **Not yours** — `spec-creator` writes it before the code |
+| What we are about to build | `specs/SPEC-NN-<feature>-DD-MM-YYYY.md` | **Not yours** — `spec-creator` writes it before the code |
 | A non-obvious finding from this session | `INSIGHTS.md`, via `engineering-insights` | **Propose only.** Skill-owned; recording nothing is a legitimate outcome |
 | Anything that changes with the code on every commit | nowhere — it belongs in the code | A doc that restates a signature is stale on the next rename |
 | Reference the types, Zod schemas or route definitions already express | nowhere | Duplicating a contract in prose creates a second source of truth that will disagree |

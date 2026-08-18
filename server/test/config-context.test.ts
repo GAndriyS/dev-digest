@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { loadConfig } from '../src/platform/config.js';
 
 /**
- * L05/SPEC-02 — `PROJECT_CONTEXT_FILES` parsing (AC-4, AC-5). Pure — no
+ * L05/SPEC-01 name rule — `PROJECT_CONTEXT_FILES` parsing (AC-29, AC-30). Pure — no
  * filesystem, no container. Mirrors the existing `PROJECT_CONTEXT_ROOTS`
  * precedent this config seam is built from.
  */
@@ -17,7 +17,7 @@ describe('loadConfig — PROJECT_CONTEXT_FILES', () => {
     expect(config.contextFiles).toEqual(['INSIGHTS.md']);
   });
 
-  it('drops every entry that is not a bare .md file name (AC-5), falling back to the default when nothing survives', () => {
+  it('drops every entry that is not a bare .md file name (AC-30), falling back to the default when nothing survives', () => {
     const config = loadConfig({
       NODE_ENV: 'test',
       PROJECT_CONTEXT_FILES: 'Makefile,docs/X.md',
@@ -25,7 +25,7 @@ describe('loadConfig — PROJECT_CONTEXT_FILES', () => {
     expect(config.contextFiles).toEqual(['INSIGHTS.md']);
   });
 
-  it('reports every AC-5-dropped entry on `contextFilesDropped`, even when the drop falls all the way back to the default (code-review, fix pass 1, item 2)', () => {
+  it('reports every AC-30-dropped entry on `contextFilesDropped`, even when the drop falls all the way back to the default (code-review, fix pass 1, item 2)', () => {
     const config = loadConfig({
       NODE_ENV: 'test',
       PROJECT_CONTEXT_FILES: 'Makefile,docs/X.md',

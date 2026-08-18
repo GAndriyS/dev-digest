@@ -41,11 +41,11 @@ const FIXTURE_STRIPE_KEY = ['sk', 'live', '51H8xQ2eZvKYlo2CkqPmNbVwX'].join('_')
  * Two files, one per configured root (`specs`, `docs`), matches interview
  * decision Q1 ("extend the seed — full e2e flow").
  *
- * SPEC-02 AC-12 adds a third: `INSIGHTS.md` at the fixture clone's ROOT (not
+ * SPEC-01 AC-36 adds a third: `INSIGHTS.md` at the fixture clone's ROOT (not
  * under an `insights/` directory — the spec's own default), matched by the
  * NEW file-name rule rather than by root, so the listing shows a badge that
  * comes from a name match, not a root. `attachedToDemoRun: false` — the
- * plan's Recommendations §1 was declined ("Default: as requested"): AC-12
+ * plan's Recommendations §1 was declined ("Default: as requested"): AC-36
  * only asks for a listing entry and a page badge, not a doc reaching the
  * seeded run's prompt, so this file is written and listed but deliberately
  * left OUT of `specsRead`/`prompt_assembly.specs` below.

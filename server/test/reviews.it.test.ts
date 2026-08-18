@@ -359,8 +359,8 @@ d('A2 reviews + agents (Testcontainers pg)', () => {
     }
   });
 
-  it('L05/SPEC-02: a document matched only by configured NAME (outside every root) still reaches the prompt (AC-8)', async () => {
-    // AC-8 — the reason string a name-only match would have been skipped
+  it('L05/SPEC-01: a document matched only by configured NAME (outside every root) still reaches the prompt (AC-33)', async () => {
+    // AC-33 — the reason string a name-only match would have been skipped
     // with before this branch ("outside the configured context roots") must
     // NOT appear: `resolveForRun` → `classifyAndRead` now also accepts a
     // name match, so an `INSIGHTS.md` sitting at the clone root (no
@@ -401,7 +401,7 @@ d('A2 reviews + agents (Testcontainers pg)', () => {
       const trace = (await app.inject({ method: 'GET', url: `/runs/${runId}/trace` })).json();
       expect(trace.specs_read).toEqual(['INSIGHTS.md']);
       expect(trace.prompt_assembly.specs).toContain('Only attach documented, load-bearing findings.');
-      // The old skip reason (pre-SPEC-02) must not show up in the Live Log.
+      // The old skip reason (pre-name-rule) must not show up in the Live Log.
       const skipLines = (trace.log as { msg: string }[]).filter((l) =>
         l.msg.startsWith('Project context: skipped'),
       );
@@ -413,11 +413,11 @@ d('A2 reviews + agents (Testcontainers pg)', () => {
     }
   });
 
-  it('L05/SPEC-02: a document over the new 40,000-byte limit is skipped whole, with a Live Log line (AC-13)', async () => {
+  it('L05/SPEC-01: a document over the 40,000-byte limit is skipped whole, with a Live Log line (AC-19)', async () => {
     const clonePath = await mkdtemp(join(tmpdir(), 'devdigest-reviews-context-oversize-'));
     try {
       await mkdir(join(clonePath, 'specs'), { recursive: true });
-      // 41,000 bytes — over MAX_CONTEXT_DOC_BYTES (40_000, SPEC-02 AC-13's
+      // 41,000 bytes — over MAX_CONTEXT_DOC_BYTES (40_000, SPEC-01 AC-19's
       // raised ceiling). Also over the OLD 20_000 limit, so this value alone
       // does not distinguish "skipped under the raised ceiling" from "would
       // have been skipped under the old one too" — it only proves the skip

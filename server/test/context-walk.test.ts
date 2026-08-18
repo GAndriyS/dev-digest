@@ -5,7 +5,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { classifyAndRead, walkContextFiles } from '../src/modules/context/service.js';
 
 /**
- * L05/SPEC-02 — the walk + single-document guarded read, covering BOTH
+ * L05/SPEC-01 (name rule, formerly SPEC-02) — the walk + single-document guarded read, covering BOTH
  * selection rules (configured root, configured file name). Real filesystem
  * (temp dirs), no Postgres — this is the "unit … symlink-guard, no
  * container" line from the plan's Constraints, not the DB-backed
@@ -113,10 +113,10 @@ describe('walkContextFiles', () => {
   });
 
   /**
-   * SPEC-02 AC-1 — the name rule finds a configured file name at the clone
+   * SPEC-01 AC-26 — the name rule finds a configured file name at the clone
    * root AND nested, independent of any configured root.
    */
-  it('finds a file matching a configured NAME at the clone root and nested, badged by the name (SPEC-02 AC-1)', async () => {
+  it('finds a file matching a configured NAME at the clone root and nested, badged by the name (SPEC-01 AC-26)', async () => {
     const root = await tmp('devdigest-context-walk-');
     await writeFile(join(root, 'INSIGHTS.md'), '# root insights');
     await mkdir(join(root, 'packages', 'api'), { recursive: true });
@@ -130,10 +130,10 @@ describe('walkContextFiles', () => {
   });
 
   /**
-   * SPEC-02 AC-3 — a file under BOTH a configured root and matching a
+   * SPEC-01 AC-28 — a file under BOTH a configured root and matching a
    * configured name must appear exactly once, badged by the root.
    */
-  it('lists a file matching both a configured root and a configured name exactly once, badged by the root (AC-3)', async () => {
+  it('lists a file matching both a configured root and a configured name exactly once, badged by the root (AC-28)', async () => {
     const root = await tmp('devdigest-context-walk-');
     await mkdir(join(root, 'docs'), { recursive: true });
     await writeFile(join(root, 'docs', 'INSIGHTS.md'), '# under docs AND matches the name rule');
@@ -145,10 +145,10 @@ describe('walkContextFiles', () => {
   });
 
   /**
-   * SPEC-02 AC-6 — the name rule does not reach into a skipped directory,
+   * SPEC-01 AC-31 — the name rule does not reach into a skipped directory,
    * same guard the root rule already has.
    */
-  it('never matches a configured name inside SKIP_DIR_NAMES (AC-6)', async () => {
+  it('never matches a configured name inside SKIP_DIR_NAMES (AC-31)', async () => {
     const root = await tmp('devdigest-context-walk-');
     await mkdir(join(root, 'node_modules', 'pkg'), { recursive: true });
     await writeFile(join(root, 'node_modules', 'pkg', 'INSIGHTS.md'), '# vendored, must not match');
@@ -208,7 +208,7 @@ describe('classifyAndRead', () => {
     expect(result).toMatchObject({ content: '# hello' });
   });
 
-  it('reads a document matched only by configured NAME (SPEC-02 AC-7/AC-8 gate)', async () => {
+  it('reads a document matched only by configured NAME (SPEC-01 AC-32/AC-33 gate)', async () => {
     const root = await tmp('devdigest-context-read-');
     await writeFile(join(root, 'INSIGHTS.md'), '# name-matched');
     const result = await classifyAndRead(root, 'INSIGHTS.md', 20_000, [], ['INSIGHTS.md']);
@@ -293,11 +293,11 @@ describe('classifyAndRead', () => {
   });
 
   /**
-   * SPEC-02 AC-6 — the name rule must not weaken the `node_modules` guard: a
+   * SPEC-01 AC-31 — the name rule must not weaken the `node_modules` guard: a
    * configured-name file sitting inside a skipped directory is refused, even
    * though its NAME alone would otherwise match.
    */
-  it('rejects a configured-name file sitting inside a skipped directory (AC-6)', async () => {
+  it('rejects a configured-name file sitting inside a skipped directory (AC-31)', async () => {
     const root = await tmp('devdigest-context-read-');
     await mkdir(join(root, 'node_modules', 'pkg'), { recursive: true });
     await writeFile(join(root, 'node_modules', 'pkg', 'INSIGHTS.md'), '# vendored, name matches');

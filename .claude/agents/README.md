@@ -74,7 +74,7 @@ spec-creator (opus)
    ├─ design supplied? → critical read: uncovered states, corner cases, cross-module gaps, UX proposals
    ├─ two readings → two different specs? → "## Interview required" → main session asks you → re-delegate with answers
    ├─ a fact it cannot grep decides an AC? → "## Research required" → main session fans out researcher ×N in parallel → re-delegate with reports
-   └─ specs/SPEC-NN-<slug>.md · <package>/specs/SPEC-NN-<slug>.md  (Status: draft) → ⛔ YOU APPROVE IT ← a spec nobody read is a guess with ids
+   └─ specs/SPEC-NN-<slug>-DD-MM-YYYY.md · <package>/specs/SPEC-NN-<slug>-DD-MM-YYYY.md  (Status: draft) → ⛔ YOU APPROVE IT ← a spec nobody read is a guess with ids
    ↓
 implementation-planner (opus)
    ├─ requirements review → ambiguous / untestable / conflicting? + "multi-agent or single-agent?"

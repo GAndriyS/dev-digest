@@ -33,11 +33,11 @@ const EnvSchema = z.object({
   // walk descends into anywhere in a clone's tree (e.g. "specs,docs,insights").
   // Empty/unset falls back to the spec's default triplet below.
   PROJECT_CONTEXT_ROOTS: z.string().optional(),
-  // Project Context — SPEC-02: comma-separated document FILE NAMES (not
+  // Project Context — SPEC-01 AC-29 (name rule): comma-separated document FILE NAMES (not
   // directories) matched anywhere in a clone's tree, on any depth including
   // the clone root (e.g. "INSIGHTS.md"). Empty/unset falls back to the
   // default below. An entry that doesn't end in `.md` or contains a path
-  // separator (`/` or `\`) is dropped (AC-5) rather than rejected — one bad
+  // separator (`/` or `\`) is dropped (AC-30) rather than rejected — one bad
   // entry must not take down every other configured name.
   PROJECT_CONTEXT_FILES: z.string().optional(),
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -82,11 +82,11 @@ export type AppConfig = {
    * `INSIGHTS.md` and `packages/x/INSIGHTS.md` both match, matched
    * case-insensitively against the file's on-disk name. A file that matches
    * both a configured root AND a configured name is listed once, badged by
-   * the root (SPEC-02 AC-3). Default is `['INSIGHTS.md']` (SPEC-02 AC-4).
+   * the root (SPEC-01 AC-28). Default is `['INSIGHTS.md']` (SPEC-01 AC-29).
    */
   contextFiles: string[];
   /**
-   * Entries `PROJECT_CONTEXT_FILES` supplied that AC-5 dropped (not a bare
+   * Entries `PROJECT_CONTEXT_FILES` supplied that AC-30 dropped (not a bare
    * `.md` name, or containing a path separator) — surfaced so a boot-time
    * warning can report a typo instead of silently landing on `contextFiles`'
    * default. Empty when every supplied entry survived, including when the
@@ -98,11 +98,11 @@ export type AppConfig = {
 /** Mirrors SPEC-01's Open-questions default when `PROJECT_CONTEXT_ROOTS` is unset. */
 const DEFAULT_CONTEXT_ROOTS = ['specs', 'docs', 'insights'];
 
-/** SPEC-02 AC-4's default when `PROJECT_CONTEXT_FILES` is unset or empty. */
+/** SPEC-01 AC-29's default when `PROJECT_CONTEXT_FILES` is unset or empty. */
 const DEFAULT_CONTEXT_FILES = ['INSIGHTS.md'];
 
 /**
- * AC-5: an entry survives only if it ends in `.md` (case-insensitive) and
+ * AC-30: an entry survives only if it ends in `.md` (case-insensitive) and
  * carries no path separator — either slash counts, since a path (not a bare
  * file name) is what `ContextDocPath` already forbids on the wire
  * (`platform.ts`'s `.refine((p) => !p.includes('\\'), …)` and the leading-`/`

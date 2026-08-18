@@ -46,7 +46,7 @@ describe('context helpers', () => {
       expect(badgeFor('README.md', ['specs', 'docs'], ['INSIGHTS.md'])).toBeNull();
     });
 
-    it('badges a file matched by CONFIGURED NAME, on any depth including the clone root (SPEC-02 AC-1)', () => {
+    it('badges a file matched by CONFIGURED NAME, on any depth including the clone root (SPEC-01 AC-26)', () => {
       expect(badgeFor('INSIGHTS.md', [], ['INSIGHTS.md'])).toBe('insights');
       expect(badgeFor('packages/api/INSIGHTS.md', [], ['INSIGHTS.md'])).toBe('insights');
     });
@@ -57,11 +57,11 @@ describe('context helpers', () => {
       expect(badgeFor('Insights.md', [], ['INSIGHTS.md'])).toBe('insights');
     });
 
-    it('root wins when a file matches both a configured root and a configured name (AC-3) — one badge, not two', () => {
+    it('root wins when a file matches both a configured root and a configured name (AC-28) — one badge, not two', () => {
       expect(badgeFor('docs/INSIGHTS.md', ['docs'], ['INSIGHTS.md'])).toBe('docs');
     });
 
-    it('refuses a name match through a SKIP_DIR_NAMES segment, same as the root rule (AC-6)', () => {
+    it('refuses a name match through a SKIP_DIR_NAMES segment, same as the root rule (AC-31)', () => {
       expect(badgeFor('node_modules/pkg/INSIGHTS.md', [], ['INSIGHTS.md'])).toBeNull();
     });
 
@@ -188,13 +188,13 @@ describe('context helpers', () => {
     });
 
     /**
-     * SPEC-02 AC-14 raises the block budget from SPEC-01's 32_000 chars to
+     * SPEC-01 AC-20 raises the block budget from SPEC-01's 32_000 chars to
      * 80_000. The two chunk sizes below are the plan's own measured numbers
      * (root `INSIGHTS.md` + `server/INSIGHTS.md`, Decisions taken §2) — real,
      * not synthetic round numbers — and their sum (37_234) fits comfortably
      * under the new budget but would have overflowed the OLD one.
      */
-    it('packs two SPEC-02-sized real docs (19,335 B + 17,899 B) under the new 80,000-char budget; a third that would overflow it is skipped whole (AC-14)', () => {
+    it('packs two INSIGHTS.md-sized real docs (19,335 B + 17,899 B) under the new 80,000-char budget; a third that would overflow it is skipped whole (AC-20)', () => {
       // Imported, not hardcoded (code-review, fix pass 1, item 4) — reverting
       // MAX_CONTEXT_BLOCK_CHARS to SPEC-01's 32_000 must fail this exact test,
       // not silently pass because the assertion carries its own frozen number.

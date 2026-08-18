@@ -14,7 +14,8 @@
  *
  * Checks (all sourced from specs/README.md — keep the two in step):
  *   - `Spec ID: SPEC-NN` present, unique across every folder, and matching
- *     the file name prefix
+ *     the file name prefix; file name ends in a `-DD-MM-YYYY` creation date
+ *     (`SPEC-NN-<slug>-DD-MM-YYYY.md`)
  *   - `Status:` is one of draft | approved | implemented
  *   - `Source:` and `Supersedes:` lines present
  *   - every template heading present, in order
@@ -71,6 +72,14 @@ for (const file of files) {
     if (!basename(file).startsWith(`${id}-`)) say(`file name does not start with ${id}-`);
     if (seenIds.has(id)) say(`Spec ID ${id} already used by ${seenIds.get(id)}`);
     else seenIds.set(id, rel);
+  }
+
+  const dated = basename(file).match(/-(\d{2})-(\d{2})-(\d{4})\.md$/);
+  if (!dated) say('file name does not end in a `-DD-MM-YYYY.md` creation date (SPEC-NN-<slug>-DD-MM-YYYY.md)');
+  else {
+    const [, dd, mm] = dated;
+    if (Number(dd) < 1 || Number(dd) > 31 || Number(mm) < 1 || Number(mm) > 12)
+      say(`creation date ${dd}-${mm}-${dated[3]} is not day-month-year`);
   }
 
   const status = text.match(/^Status: (\S+)/m);

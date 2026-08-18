@@ -243,8 +243,13 @@ repeated in the report for the caller, who is the one who can act on them.
 
 Path, id, superseding and the status lifecycle follow `specs/README.md`
 (**Naming**, **Status lifecycle**, **Where a spec lives**) — take the next
-free `SPEC-NN` from `rg -o 'Spec ID: SPEC-\d+' specs */specs`, then place the
-file by **package count**, not by where most of the code lands:
+free `SPEC-NN` from `rg -o 'Spec ID: SPEC-\d+' specs */specs`, name the file
+`SPEC-NN-<slug>-DD-MM-YYYY.md` (the creation date, day-month-year, dashes —
+today's date, never changed later; `check-specs.mjs` rejects a file without
+it), then place the file by **package count**, not by where most of the code
+lands. A follow-up that only adds detail to a feature that already has a spec
+is an edit of that spec (new or amended `AC-N`), not a new `SPEC-NN` — one
+feature, one spec:
 
 - **One package** touched → `<package>/specs/` (creating the folder with the
   first spec is legal).
@@ -364,7 +369,7 @@ The spec is the artifact; the report is a pointer to it plus what only you saw.
 ```markdown
 ## Spec report: <feature>
 
-**File:** `specs/SPEC-NN-<slug>.md` · **Spec ID:** SPEC-NN · **Status:** draft · **Source:** <lesson item | issue | request> · **Supersedes:** <id | none>
+**File:** `specs/SPEC-NN-<slug>-DD-MM-YYYY.md` · **Spec ID:** SPEC-NN · **Status:** draft · **Source:** <lesson item | issue | request> · **Supersedes:** <id | none>
 **Lint:** `node scripts/check-specs.mjs` → clean | <n> finding(s) left, listed below
 **Self-check:** 10/10 pass | <which failed and what you did about it>
 

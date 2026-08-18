@@ -11,11 +11,11 @@ export function estimateTokens(bytes: number): number {
 }
 
 /**
- * The badge for a document matched by CONFIGURED NAME (SPEC-02 AC-2) rather
+ * The badge for a document matched by CONFIGURED NAME (SPEC-01 AC-27) rather
  * than by root — the lowercased stem (extension stripped) of the CONFIGURED
  * name that matched, never the on-disk file's own casing. `Insights.md` on
  * disk matching a configured `INSIGHTS.md` badges `insights`, derived from
- * the config entry, not from what happens to be on disk (SPEC-02 edge case
+ * the config entry, not from what happens to be on disk (SPEC-01 edge case
  * "Файл на диску названий `Insights.md`, а в конфізі `INSIGHTS.md`").
  */
 export function nameBadgeFor(fileName: string): string {
@@ -29,7 +29,7 @@ export function nameBadgeFor(fileName: string): string {
  * `walkContextFiles`'s OWN two rules rather than a looser "root name
  * anywhere in the path" test, so this stays a genuine bound and not just a
  * path-segment substring check (fix pass 2, item 1; the same discipline now
- * extends to the name rule added by SPEC-02).
+ * extends to the name rule, SPEC-01 AC-26).
  *
  * The walk's rules, restated purely (no filesystem access, so this can run
  * on a stored path with no clone on disk):
@@ -45,12 +45,12 @@ export function nameBadgeFor(fileName: string): string {
  *    A non-`.md` file under an active root (`specs/notes.txt`) matches
  *    NEITHER rule and must badge `null`, not the root — that gap is exactly
  *    what this function failed to mirror before this fix.
- * 2. Name rule (SPEC-02 AC-1): independent of any root, the final segment
+ * 2. Name rule (SPEC-01 AC-26): independent of any root, the final segment
  *    (the file name) matched case-insensitively against a configured file
  *    name badges the file — `nameBadgeFor` of the CONFIGURED name that
  *    matched, on any depth including the clone root.
- * 3. Root wins when both apply on the same file (SPEC-02 AC-3) — one entry,
- *    never two. Because a configured file name always ends in `.md` (AC-5
+ * 3. Root wins when both apply on the same file (SPEC-01 AC-28) — one entry,
+ *    never two. Because a configured file name always ends in `.md` (AC-30
  *    strips anything else at config load), a file that matches the name rule
  *    while a root is active always also satisfies rule 1's extension check,
  *    so root badges it precisely when the walk would have too.
@@ -93,7 +93,7 @@ export function badgeFor(
   const matchesRoot = activeRoot !== null && fileName.toLowerCase().endsWith('.md');
   const nameBadge = nameBadgeByLowerName.get(fileName.toLowerCase()) ?? null;
   if (!matchesRoot && nameBadge === null) return null;
-  return activeRoot ?? nameBadge!; // root wins when both match (AC-3)
+  return activeRoot ?? nameBadge!; // root wins when both match (AC-28)
 }
 
 /**

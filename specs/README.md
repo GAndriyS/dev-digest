@@ -41,8 +41,20 @@ and blows its line budget.
 
 - **Spec ID** is global across every specs folder: `SPEC-NN`, next free number
   (`rg -o 'Spec ID: SPEC-\d+' specs */specs`). Ids are never reused.
-- **File name** is `SPEC-NN-<topic-slug>.md`. The `L0N-*.md` files below predate
+- **File name** is `SPEC-NN-<topic-slug>-DD-MM-YYYY.md`, where the suffix is
+  the spec's **creation date** in European day-month-year order — e.g.
+  `SPEC-01-project-context-18-08-2026.md` for a spec created 18/08/2026. The
+  natural form is `DD/MM/YYYY`; `/` is a path separator, so in the file name
+  the date is written with `-`. The date never changes afterwards (a status
+  flip, an edit or a merge keeps the original date — it records when the spec
+  was born, not when it was last touched). The `L0N-*.md` files below predate
   the id scheme and keep their names.
+- **One feature — one spec.** A follow-up that only adds detail to a shipped
+  feature (a second rule, a raised limit, a new wire field) is folded into
+  the existing spec as new `AC-N` lines or amended ones, not written as a
+  second `SPEC-NN`; the merged spec keeps a mapping table for the ids the
+  plans and journals already cite. A new spec is for a change of decision
+  (`Supersedes:`) or a different feature.
 - **Acceptance criteria** carry stable ids `AC-1`, `AC-2`… — a retired AC keeps
   its number, because plans, `plan-verifier` and PRs cite them.
 - A change of decision is a **new** spec with `Supersedes:` pointing at the old
@@ -179,7 +191,7 @@ files — cite them, do not paraphrase from memory.
 
 `node scripts/check-specs.mjs` checks every `SPEC-NN-*.md` under `specs/` and
 `*/specs/` (the `L0N-*.md` files are exempt): unique Spec IDs, file name matches
-the id, every template heading present, `AC-N` ids unique and ascending with a
+the id and ends in a `-DD-MM-YYYY` creation date, every template heading present, `AC-N` ids unique and ascending with a
 `(← …)` tag and a `· verify:` hint on each, a `Status` value from the
 lifecycle, and a row in the Backlog below. It runs in
 `.github/workflows/pr-gate.yml`; run it locally before delegating to
@@ -195,7 +207,7 @@ The starter deliberately omits these; each lesson adds one back.
 | L02 | Skills in the product · conventions extractor | [L02-skills-lab.md](L02-skills-lab.md) (skills only) |
 | L03 | Intent layer · Smart Diff | — |
 | L04 | `devdigest-mcp` server · Blast Radius | [L04-devdigest-mcp.md](L04-devdigest-mcp.md) (MCP server only) |
-| L05 | Project Context Folder · onboarding generator · PR Brief | [SPEC-01-project-context.md](SPEC-01-project-context.md) (Project Context only) · [SPEC-02-project-context-insights.md](SPEC-02-project-context-insights.md) (file-name matching, e.g. `INSIGHTS.md`) |
+| L05 | Project Context Folder · onboarding generator · PR Brief | [SPEC-01-project-context-18-08-2026.md](SPEC-01-project-context-18-08-2026.md) (Project Context only — roots + file-name matching, e.g. `INSIGHTS.md`) |
 | L06 | Eval pipeline · secret/phantom gates · plan verifier · export to CI | — |
 | L07 | Multi-agent review · run trace / live log · persistent memory | — |
 | L08 | Plugin export/import · agent performance dashboard · weekly digest | — |
