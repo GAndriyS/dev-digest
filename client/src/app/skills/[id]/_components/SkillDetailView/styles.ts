@@ -1,12 +1,13 @@
 import type { CSSProperties } from "react";
 
-/** Co-located styles for the SkillDetailView shell (header + editor). */
+/** Co-located styles for the SkillDetailView shell (header + editor).
+ *  No fixed height here — SkillsLabShell's detail column is the one
+ *  scrollable box (L05); this just stacks in document order inside it. */
 export const s = {
   wrap: {
     display: "flex",
     flexDirection: "column",
-    height: "calc(100vh - 52px)",
-    minHeight: 0,
+    minHeight: "100%",
   } satisfies CSSProperties,
   header: {
     display: "flex",

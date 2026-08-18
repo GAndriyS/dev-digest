@@ -17,10 +17,6 @@ vi.mock("next/navigation", () => ({
 
 const mutation = { mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false, error: null };
 
-vi.mock("@/components/app-shell", () => ({
-  AppShell: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-}));
-
 vi.mock("@/lib/hooks/skills", () => ({
   useSkill: () => ({
     data: state.skill ?? undefined,

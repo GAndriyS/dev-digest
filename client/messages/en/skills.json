@@ -24,8 +24,10 @@
     },
     "selectPrompt": {
       "title": "Select a skill",
-      "body": "Pick a skill on the left to preview its body."
-    }
+      "body": "Pick a skill from the list on the left to open its editor."
+    },
+    "backToList": "← All skills",
+    "listLabel": "Skills"
   },
   "detail": {
     "crumbSkill": "Skill",
@@ -37,7 +39,8 @@
     },
     "delete": "Delete skill",
     "deleteConfirm": "Delete the skill \"{name}\"? Its versions and eval cases go with it.",
-    "deleted": "Deleted \"{name}\"."
+    "deleted": "Deleted \"{name}\".",
+    "runEvals": "Run on evals"
   },
   "drawer": {
     "title": "Add a skill",
@@ -139,15 +142,21 @@
     "version": "v{version}",
     "renderedTitle": "Rendered body",
     "renderedHint": "Rendered as the reviewing agent receives it — the text below is injected into the review prompt as data.",
-    "emptyBody": "This skill has an empty body.",
-    "openInEditor": "Open in the editor"
+    "emptyBody": "This skill has an empty body."
   },
   "tabs": {
     "config": "Config",
+    "context": "Context",
     "preview": "Preview",
     "evals": "Evals",
     "stats": "Stats",
     "versions": "Versions"
+  },
+  "contextTab": {
+    "noRepo": {
+      "title": "No repository selected",
+      "body": "Pick a repository to browse and attach its context documents."
+    }
   },
   "config": {
     "title": "Configuration",
@@ -157,7 +166,8 @@
     "typeLabel": "Type",
     "unsaved": "Unsaved changes",
     "saving": "Saving…",
-    "savedToast": "Saved — this skill is now v{version}."
+    "savedToast": "Saved — this skill is now v{version}.",
+    "bodyTokens": "≈ {count} tokens"
   },
   "evals": {
     "title": "Eval cases",
@@ -216,7 +226,10 @@
     "agentDisabled": "disabled",
     "categoryTitle": "Findings by category (30d)",
     "categoryEmpty": "No findings recorded in the last 30 days.",
-    "attributionNote": "Attribution is run-level: these are findings from runs that included this skill, not findings traced to it."
+    "attributionNote": "Attribution is run-level: these are findings from runs that included this skill, not findings traced to it.",
+    "openAgent": "Open",
+    "pullFrequency": "PULL FREQUENCY",
+    "percent": "{value}%"
   },
   "versions": {
     "title": "Version history",
