@@ -39,8 +39,15 @@ and blows its line budget.
 
 ## Naming
 
-- **Spec ID** is global across every specs folder: `SPEC-NN`, next free number
-  (`rg -o 'Spec ID: SPEC-\d+' specs */specs`). Ids are never reused.
+- **Spec ID** is global across every specs folder: `SPEC-NN`, the **next free
+  number** — always computed at write time from the files that exist
+  (`rg -o 'Spec ID: SPEC-\d+' specs */specs`), never taken from memory, a
+  chat, or "the last one I saw". An id in use is never reassigned; but an id
+  whose spec was **merged into another** (see *One feature — one spec*) is
+  free again — the merged spec's mapping table is what keeps the old
+  citations readable, not the number staying vacant. Example: SPEC-02
+  (name-matched context docs) was folded into SPEC-01 on 18/08/2026, so the
+  next spec written after that took SPEC-02.
 - **File name** is `SPEC-NN-<topic-slug>-DD-MM-YYYY.md`, where the suffix is
   the spec's **creation date** in European day-month-year order — e.g.
   `SPEC-01-project-context-18-08-2026.md` for a spec created 18/08/2026. The
@@ -204,7 +211,7 @@ The starter deliberately omits these; each lesson adds one back.
 | Lesson | Feature | Spec |
 |--------|---------|------|
 | L01 | Run cost badge · severity filter on findings | [L01-run-cost-badge.md](L01-run-cost-badge.md) (cost only) |
-| L02 | Skills in the product · conventions extractor | [L02-skills-lab.md](L02-skills-lab.md) (skills only) |
+| L02 | Skills in the product · conventions extractor | [L02-skills-lab.md](L02-skills-lab.md) (skills only) · [SPEC-02-skills-lab-redesign-18-08-2026.md](SPEC-02-skills-lab-redesign-18-08-2026.md) (redesign: one-screen list+editor, `Context` tab) |
 | L03 | Intent layer · Smart Diff | — |
 | L04 | `devdigest-mcp` server · Blast Radius | [L04-devdigest-mcp.md](L04-devdigest-mcp.md) (MCP server only) |
 | L05 | Project Context Folder · onboarding generator · PR Brief | [SPEC-01-project-context-18-08-2026.md](SPEC-01-project-context-18-08-2026.md) (Project Context only — roots + file-name matching, e.g. `INSIGHTS.md`) |

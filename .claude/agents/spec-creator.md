@@ -243,7 +243,11 @@ repeated in the report for the caller, who is the one who can act on them.
 
 Path, id, superseding and the status lifecycle follow `specs/README.md`
 (**Naming**, **Status lifecycle**, **Where a spec lives**) — take the next
-free `SPEC-NN` from `rg -o 'Spec ID: SPEC-\d+' specs */specs`, name the file
+free `SPEC-NN` from `rg -o 'Spec ID: SPEC-\d+' specs */specs` — run that
+command in every run and take the smallest number not in its output; never
+pick the id from memory, from the delegation prompt, or from an id you saw
+retired earlier (a merged-away id is free again, per `specs/README.md`
+→ **Naming**) — name the file
 `SPEC-NN-<slug>-DD-MM-YYYY.md` (the creation date, day-month-year, dashes —
 today's date, never changed later; `check-specs.mjs` rejects a file without
 it), then place the file by **package count**, not by where most of the code
