@@ -78,6 +78,9 @@ flowchart TB
   subgraph Intel["Repo intelligence"]
     repoIntel["repo-intel<br/>/repos/:id/index-state · /resync"]
   end
+  subgraph Context["Project Context (L05)"]
+    context["context<br/>/repos/:id/context · /repos/:id/context/doc<br/>/agents/:id/context · /skills/:id/context"]
+  end
   subgraph Platform["Platform"]
     settings["settings<br/>/settings · /providers"]
     workspace["workspace<br/>/workspace"]
@@ -92,6 +95,19 @@ response's own `finding_lines` field goes unread. Rationale (server
 findings-join rule, classification, client fallback, that client-side join)
 is in [`../docs/smart-diff.md`](../docs/smart-diff.md).
 
+`context` (`modules/context/`) is a bounded, read-only walk of a cloned repo's
+working tree: `GET /repos/:id/context` lists every `.md` file found under the
+configured ROOT NAMES (`PROJECT_CONTEXT_ROOTS`, see **Environment** below),
+capped at 2,000 files with `total`/`truncated` carrying the rest; `GET
+/repos/:id/context/doc?path=` previews one. `GET|POST /agents/:id/context` and
+`GET|POST /skills/:id/context` set-write which of those paths an agent or a
+skill has attached (whole-set replace, deduped, ordered). The walk and every
+read re-check the path against the clone root and the configured roots even
+though the wire contract already validates its shape — a stored path is never
+by itself a reason to open a file (same guarded reader as `modules/_shared/
+clone-fs.ts` uses elsewhere). What an attachment does at run time is covered
+in **Review context (non-obvious)** below.
+
 ## Environment
 
 `server/.env` (copied from `.env.example`):
@@ -105,6 +121,7 @@ is in [`../docs/smart-diff.md`](../docs/smart-diff.md).
 | `EMBEDDINGS_ENABLED` | `false` | memory/RAG embeddings (OpenAI); off → **zero** OpenAI calls |
 | `REPO_INTEL_ENABLED` | `true` | repo skeleton + callers in the prompt; `false` → ripgrep-only |
 | `DEVDIGEST_CLONE_DIR` | `./clones` | imported-repo checkouts (git-ignored) |
+| `PROJECT_CONTEXT_ROOTS` | `specs,docs,insights` | comma-separated directory NAMES the Project Context walk descends into anywhere in a clone's tree (`specs/foo.md` and `packages/x/docs/bar.md` both match) |
 | `LOG_LEVEL` | `info` (`silent` in test) | pino level |
 | `NODE_ENV` | `development` | `test` → silent logs + global rate-limit disabled |
 
@@ -139,6 +156,20 @@ What the reviewer actually sends to the model is assembled in
 - **Grounding is mandatory.** Every finding must cite a line that exists in the
   diff or it is dropped (`groundFindings`), and the score is recomputed from the
   surviving findings — the model's self-reported score is ignored.
+- **Project Context (L05) is injected, not re-implemented in the prompt engine.**
+  `run-executor.ts` resolves an agent's own attached docs plus everything
+  inherited from its **enabled** linked skills (same kill-switch rule as
+  `## Skills / rules`), in "own docs first, then skills in link order"
+  order, deduplicated on first occurrence and packed under a 32,000-character
+  block budget via `container.projectContext.resolveForRun`. The packed chunks
+  are passed into `reviewPullRequest` under reviewer-core's existing `specs`
+  slot — unchanged, already rendering `## Project context` with each document
+  wrapped `<untrusted source="spec-N">` — and are omitted entirely when empty,
+  same as `skills`. The exact paths that made it into the prompt, in prompt
+  order, are recorded to `RunTrace.specs_read`; the Configuration card's
+  "Specs read" and the Prompt assembly section's `Project context — attached
+  specs (untrusted)` block render this trace verbatim, including on a
+  failed/cancelled run.
 
 ## Testing
 

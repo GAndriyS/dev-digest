@@ -27,13 +27,15 @@ flowchart TD
   ONB["/onboarding<br/>add repo"] -->|"POST /repos"| API[("Fastify API")]
   PULLS --> PR["/pulls/:number<br/>review detail<br/>(overview · diff · findings)"]
 
-  AGENTS["/agents"] --> AGENT["/agents/:id<br/>editor (config)"]
+  AGENTS["/agents"] --> AGENT["/agents/:id<br/>editor (config · Context tab)"]
   SETTINGS["/settings/:section<br/>API keys · models"]
+  ROOT -.->|"sidebar nav g x"| CONTEXT["/repos/:repoId/context<br/>Project Context (read-only)"]
 
   PULLS -->|"GET /repos/:id/pulls · /repos/:id/index-state"| API
   PR -->|"GET /pulls/:id · /reviews · /pulls/:id/comments · /pulls/:id/smart-diff<br/>POST /pulls/:id/review · /findings/:id/(accept|dismiss)"| API
   AGENTS -->|"/agents · /agents/:id"| API
   SETTINGS -->|"/settings · /providers"| API
+  CONTEXT -->|"GET /repos/:id/context · /repos/:id/context/doc"| API
 ```
 
 Cross-cutting chrome lives in `src/components/app-shell` (nav, breadcrumbs,
@@ -46,6 +48,19 @@ as a chip on its diff line (clicking one jumps to that finding's card in the
 Agent runs tab), and falls back to the plain diff-viewer on any fetch error.
 A header toggle swaps to `Original order`, the unranked plain diff with no
 annotations — see [`../docs/smart-diff.md`](../docs/smart-diff.md).
+
+`/repos/:repoId/context` (`ProjectContextView`) is a read-only list + search +
+markdown preview of the active repo's docs (`GET /repos/:id/context`) — no
+`Edit`/`Save`/`+`/upload. Attaching docs to an agent or a skill goes through
+the shared `src/components/context-doc-picker/`, mounted in the agent editor's
+**Context** tab (`?tab=context`, `GET|POST /agents/:id/context`) and the skill
+editor's **Project context to use** section (`GET|POST /skills/:id/context`);
+both set-write the whole ordered path list, optimistically, with a rollback to
+the server's order on failure. A skill's attached docs are inherited by every
+agent that has that skill enabled — see server's [Review context
+(non-obvious)](../server/README.md#review-context-non-obvious). The run
+trace's Prompt assembly section renders the resulting block under the caption
+`Project context — attached specs (untrusted)`.
 
 ## Testing
 
