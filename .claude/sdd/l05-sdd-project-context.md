@@ -3,7 +3,10 @@ Plan: .claude/plans/l05-sdd-project-context.md · Spec: specs/SPEC-01-project-co
 
 | Stage | Result | Agent tokens | Note |
 |---|---|---|---|
-| 1 read plan | 3 waves · 2 lanes at widest | — | DAG stated in plan |
+| 1 read plan | 3 waves · 2 lanes at widest | — | DAG stated in plan; human: run as shown |
+| 2 implement · wave 1 | 2/2 (steps 1, 2) | 78k | commit 13dd7b3 |
+| 2 implement · wave 2 | A 3/3 (steps 3–5) ∥ B 3/4 (steps 6, 7, 9) | 293k ∥ 251k | commit 8c8893c. Step 8 blocked by settings deny on vendor/ui — human applied the file by hand (`copy`), then committed e01ebdb. Lane A deviation: seed fixture clone falls back to `~/.devdigest/context-fixtures/` because `DEVDIGEST_CLONE_DIR=./clones` == `server/clones`; stray files under `server/clones/acme` removed by the human |
+| 2 implement · wave 3 | pending (steps 11, 10) | | |
 
 ## Execution brief — l05-sdd-project-context
 Mode: multi-agent · Spec: specs/SPEC-01-project-context.md (approved) · Slices: contracts, backend, frontend, e2e, meta · Steps this run: 11 of 13 (row 12: doc-writer · row 13: main session)

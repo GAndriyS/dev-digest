@@ -102,3 +102,4 @@ a CI artifact by `.github/workflows/e2e-web.yml`).
 | `07-settings` | `/settings/api-keys` + `/settings/models` → section titles render |
 | `08-skills` | `/skills` lists the seeded skills → Preview renders a body; agent editor Skills tab shows the linked count |
 | `09-pr-smart-diff` | PR #482 → Files changed tab → Smart Diff groups by role ("Core logic"), seeded core file renders in its group, Smart/Original order toggle renders |
+| `10-project-context` | Sidebar → `/repos/:repoId/context` → seeded fixture docs listed + Markdown preview → PR #482 Agent runs tab → seeded run's trace drawer shows "Specs read" and the `Project context — attached specs (untrusted)` prompt block |

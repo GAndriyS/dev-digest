@@ -1,3 +1,6 @@
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { startPg, dockerAvailable, type PgFixture } from './helpers/pg.js';
 import { waitForPrRuns } from './helpers/runs.js';
@@ -77,11 +80,21 @@ const INTENT_FIXTURE: Intent = {
 };
 
 let repoSeq = 0;
-async function setupRepoAndPr(db: PgFixture['handle']['db'], workspaceId: string) {
+async function setupRepoAndPr(
+  db: PgFixture['handle']['db'],
+  workspaceId: string,
+  opts: { clonePath?: string } = {},
+) {
   const name = `payments-api-${repoSeq++}`;
   const [repo] = await db
     .insert(t.repos)
-    .values({ workspaceId, owner: 'acme', name, fullName: `acme/${name}` })
+    .values({
+      workspaceId,
+      owner: 'acme',
+      name,
+      fullName: `acme/${name}`,
+      ...(opts.clonePath ? { clonePath: opts.clonePath } : {}),
+    })
     .returning();
   const [pr] = await db
     .insert(t.pullRequests)
@@ -227,6 +240,87 @@ d('A2 reviews + agents (Testcontainers pg)', () => {
     expect(run!.status).toBe('done');
     expect(run!.findingsCount).toBe(1);
     expect(run!.grounding).toBe('1/2 passed');
+
+    await app.close();
+  });
+
+  it('L05: a document attached to the agent reaches the prompt and is recorded in the trace', async () => {
+    // Step 11 seam check — Lane B reported the wire shapes match what Lane A's
+    // routes serve; this proves the harder claim the plan's step 11 asks for:
+    // an attached path actually reaches `reviewPullRequest`'s prompt and comes
+    // back out through `RunTrace.specs_read` / `prompt_assembly.specs`, over a
+    // real container (`container.projectContext` is NOT overridden here), not
+    // a hermetic stub like `skills-run-path.test.ts` uses.
+    const clonePath = await mkdtemp(join(tmpdir(), 'devdigest-reviews-context-'));
+    try {
+      await mkdir(join(clonePath, 'specs'), { recursive: true });
+      await writeFile(
+        join(clonePath, 'specs', 'security.md'),
+        '# Security baseline\n\nAlways read secrets from the environment.',
+        'utf8',
+      );
+
+      const app = await appWith(REVIEW_FIXTURE);
+      const { pr } = await setupRepoAndPr(pg.handle.db, workspaceId, { clonePath });
+
+      const agent = (
+        await app.inject({
+          method: 'POST',
+          url: '/agents',
+          payload: { name: 'Context Reviewer', provider: 'openai', model: 'gpt-4.1', system_prompt: 'sec' },
+        })
+      ).json();
+
+      const attach = await app.inject({
+        method: 'POST',
+        url: `/agents/${agent.id}/context`,
+        payload: { paths: ['specs/security.md'] },
+      });
+      expect(attach.statusCode).toBe(200);
+
+      const body = (
+        await app.inject({ method: 'POST', url: `/pulls/${pr.id}/review`, payload: { agentId: agent.id } })
+      ).json();
+      const runId = body.runs[0].run_id;
+      await waitForPrRuns(pg.handle.db, pr.id, { expected: 1 });
+
+      const trace = (await app.inject({ method: 'GET', url: `/runs/${runId}/trace` })).json();
+      // Exactly the attached path, in prompt order (AC-22).
+      expect(trace.specs_read).toEqual(['specs/security.md']);
+      // The literal text sent to the model (AC-23/AC-24) — reviewer-core wraps
+      // each packed doc in `<untrusted source="spec-N">`, itself nested under
+      // the `## Project context` heading it renders around the WHOLE
+      // `prompt_assembly.specs` block, not inside it.
+      expect(trace.prompt_assembly.specs).toContain('Always read secrets from the environment.');
+      expect(trace.prompt_assembly.specs).toContain('<untrusted source="spec-0">');
+      expect(trace.prompt_assembly.specs).toContain('specs/security.md');
+
+      await app.close();
+    } finally {
+      await rm(clonePath, { recursive: true, force: true });
+    }
+  });
+
+  it('L05: an agent with no attachments gets a null specs slot — no section, no cost', async () => {
+    const app = await appWith(REVIEW_FIXTURE);
+    const { pr } = await setupRepoAndPr(pg.handle.db, workspaceId);
+    const agent = (
+      await app.inject({
+        method: 'POST',
+        url: '/agents',
+        payload: { name: 'No Context', provider: 'openai', model: 'gpt-4.1', system_prompt: 's' },
+      })
+    ).json();
+
+    const body = (
+      await app.inject({ method: 'POST', url: `/pulls/${pr.id}/review`, payload: { agentId: agent.id } })
+    ).json();
+    const runId = body.runs[0].run_id;
+    await waitForPrRuns(pg.handle.db, pr.id, { expected: 1 });
+
+    const trace = (await app.inject({ method: 'GET', url: `/runs/${runId}/trace` })).json();
+    expect(trace.specs_read).toEqual([]);
+    expect(trace.prompt_assembly.specs).toBeNull();
 
     await app.close();
   });
