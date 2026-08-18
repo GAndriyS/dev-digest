@@ -29,6 +29,10 @@ const EnvSchema = z.object({
   API_PORT: z.coerce.number().int().default(3001),
   WEB_PORT: z.coerce.number().int().default(3000),
   DEVDIGEST_CLONE_DIR: z.string().optional(),
+  // Project Context (L05): comma-separated directory names the listing/scan
+  // walk descends into anywhere in a clone's tree (e.g. "specs,docs,insights").
+  // Empty/unset falls back to the spec's default triplet below.
+  PROJECT_CONTEXT_ROOTS: z.string().optional(),
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   // `.env` (and .env.example) ship `LOG_LEVEL=` empty; an empty string is not a
   // valid enum member, so coerce '' → undefined to fall through to the default.
@@ -59,13 +63,25 @@ export type AppConfig = {
    * EXACTLY like the ripgrep-only baseline.
    */
   repoIntelEnabled: boolean;
+  /**
+   * Directory names (not paths) the Project Context walk enters anywhere in a
+   * clone's tree — `specs/foo.md` and `packages/x/docs/bar.md` both match.
+   * Default mirrors SPEC-01's Open questions default (`specs,docs,insights`).
+   */
+  contextRoots: string[];
 };
+
+/** Mirrors SPEC-01's Open-questions default when `PROJECT_CONTEXT_ROOTS` is unset. */
+const DEFAULT_CONTEXT_ROOTS = ['specs', 'docs', 'insights'];
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const parsed = EnvSchema.parse(env);
   const cloneDirRaw =
     parsed.DEVDIGEST_CLONE_DIR ?? join(homedir(), '.devdigest', 'workspace');
   const cloneDir = isAbsolute(cloneDirRaw) ? cloneDirRaw : resolve(process.cwd(), cloneDirRaw);
+  const contextRoots = parsed.PROJECT_CONTEXT_ROOTS
+    ? parsed.PROJECT_CONTEXT_ROOTS.split(',').map((s) => s.trim()).filter(Boolean)
+    : DEFAULT_CONTEXT_ROOTS;
   return {
     databaseUrl: parsed.DATABASE_URL,
     apiPort: parsed.API_PORT,
@@ -77,5 +93,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     webOrigin: `http://localhost:${parsed.WEB_PORT}`,
     embeddingsEnabled: parsed.EMBEDDINGS_ENABLED === 'true',
     repoIntelEnabled: parsed.REPO_INTEL_ENABLED !== 'false',
+    contextRoots: contextRoots.length > 0 ? contextRoots : DEFAULT_CONTEXT_ROOTS,
   };
 }

@@ -3,6 +3,7 @@ import { render, screen, cleanup } from "@testing-library/react";
 import { NextIntlClientProvider } from "next-intl";
 import type { Skill } from "@devdigest/shared";
 import messages from "../../../../../../messages/en/skills.json";
+import contextMessages from "../../../../../../messages/en/context.json";
 import { ToastProvider } from "@/lib/toast";
 import { ApiError } from "@/lib/api";
 
@@ -32,6 +33,16 @@ vi.mock("@/lib/hooks/skills", () => ({
   useUpdateSkill: () => mutation,
 }));
 
+// ConfigTab's "Project context to use" section (AC-15) mounts the shared
+// ContextDocPicker, which needs these — stub them so this view's tests stay
+// free of a real QueryClientProvider.
+vi.mock("@/lib/hooks/core", () => ({
+  useContextFiles: () => ({ data: { files: [], total: 0, truncated: false, roots: [], scanned_at: "" }, isLoading: false, isError: false }),
+  useOwnerContext: () => ({ data: { paths: [] }, isLoading: false, isError: false }),
+  useSetOwnerContext: () => mutation,
+  useContextDoc: () => ({ data: undefined, isLoading: false, isError: false }),
+}));
+
 import { SkillDetailView } from "./SkillDetailView";
 
 const SKILL: Skill = {
@@ -47,7 +58,7 @@ const SKILL: Skill = {
 
 function renderView() {
   return render(
-    <NextIntlClientProvider locale="en" messages={{ skills: messages }}>
+    <NextIntlClientProvider locale="en" messages={{ skills: messages, context: contextMessages }}>
       <ToastProvider>
         <SkillDetailView />
       </ToastProvider>

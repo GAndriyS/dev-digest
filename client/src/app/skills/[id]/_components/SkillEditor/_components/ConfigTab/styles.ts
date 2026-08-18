@@ -15,4 +15,5 @@ export const s = {
   } satisfies CSSProperties,
   actions: { display: "flex", alignItems: "center", gap: 12, marginTop: 10 } satisfies CSSProperties,
   dirtyNote: { fontSize: 13, color: "var(--warn)", fontWeight: 600 } satisfies CSSProperties,
+  contextSection: { marginTop: 32, paddingTop: 24, borderTop: "1px solid var(--border)" } satisfies CSSProperties,
 } as const;

@@ -28,6 +28,8 @@ import { ReviewRepository } from '../modules/reviews/repository.js';
 import { SkillsRepository } from '../modules/skills/repository.js';
 import type { RepoIntel } from '../modules/repo-intel/types.js';
 import { RepoIntelService } from '../modules/repo-intel/service.js';
+import type { ProjectContext } from '../modules/context/types.js';
+import { ContextService } from '../modules/context/service.js';
 import { type DepGraph, DepCruiseGraph } from '../adapters/depgraph/index.js';
 import { type Tokenizer, TiktokenTokenizer } from '../adapters/tokenizer/index.js';
 
@@ -49,6 +51,8 @@ export interface ContainerOverrides {
   llm?: Partial<Record<'openai' | 'anthropic' | 'openrouter', LLMProvider>>;
   /** repo-intel facade (T1.1+) — tests inject mock RepoIntel implementations. */
   repoIntel?: RepoIntel;
+  /** Project Context facade (L05) — tests inject a mock ProjectContext. */
+  projectContext?: ProjectContext;
   /** repo-intel T3 adapters — only the indexer pipeline reads these. */
   depgraph?: DepGraph;
   tokenizer?: Tokenizer;
@@ -75,6 +79,7 @@ export class Container {
   private _reviewRepo?: ReviewRepository;
   private _skillsRepo?: SkillsRepository;
   private _repoIntel?: RepoIntel;
+  private _projectContext?: ProjectContext;
   private _depgraph?: DepGraph;
   private _tokenizer?: Tokenizer;
   private _priceBook?: PriceBook;
@@ -127,6 +132,18 @@ export class Container {
     if (this.overrides.repoIntel) return this.overrides.repoIntel;
     this._repoIntel ??= new RepoIntelService(this);
     return this._repoIntel;
+  }
+
+  /**
+   * Project Context facade (L05). `modules/reviews/run-executor.ts` reads
+   * through this rather than importing `modules/context/service.ts` —
+   * `no-cross-module-internals` forbids the latter. Tests inject a mock via
+   * `ContainerOverrides.projectContext`.
+   */
+  get projectContext(): ProjectContext {
+    if (this.overrides.projectContext) return this.overrides.projectContext;
+    this._projectContext ??= new ContextService(this);
+    return this._projectContext;
   }
 
   /** Import-graph builder (dependency-cruiser). T3 indexer pipeline only. */

@@ -1,8 +1,12 @@
 import 'dotenv/config';
-import { pathToFileURL } from 'node:url';
+import { pathToFileURL, fileURLToPath } from 'node:url';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import { dirname, join, resolve, sep } from 'node:path';
 import { createDb, type Db } from './client.js';
 import * as t from './schema.js';
 import { eq, and } from 'drizzle-orm';
+import { loadConfig } from '../platform/config.js';
 import {
   GENERAL_REVIEWER_PROMPT,
   SECURITY_REVIEWER_PROMPT,
@@ -30,6 +34,79 @@ import {
  * It has never been a live key. Do not "fix" this by inlining it.
  */
 const FIXTURE_STRIPE_KEY = ['sk', 'live', '51H8xQ2eZvKYlo2CkqPmNbVwX'].join('_');
+
+/**
+ * L05 — Project Context fixture docs. Written to disk under the demo repo's
+ * fixture "clone" (see `writeContextFixture` below) so `GET /repos/:id/context`
+ * and the seeded trace below have real content — no GitHub, no real clone.
+ * Two files, one per configured root (`specs`, `docs`), matches interview
+ * decision Q1 ("extend the seed — full e2e flow").
+ */
+const CONTEXT_FIXTURE_FILES: ReadonlyArray<{ relPath: string; content: string }> = [
+  {
+    relPath: 'specs/overview.md',
+    content: [
+      '# Payments API — Overview',
+      '',
+      'Handles payment intents, webhooks, and the public rate-limited endpoints',
+      'for the acme storefront. See `docs/architecture.md` for the request path.',
+      '',
+    ].join('\n'),
+  },
+  {
+    relPath: 'docs/architecture.md',
+    content: [
+      '# Architecture',
+      '',
+      '`src/middleware/ratelimit.ts` wraps every route under `src/api/public/**`',
+      'with a token-bucket limiter before the request reaches its handler.',
+      '',
+    ].join('\n'),
+  },
+];
+
+/**
+ * Write the fixture docs to `root` (idempotent: always the same content, so a
+ * repeated `pnpm db:seed` overwrites in place rather than accumulating).
+ */
+async function writeContextFixture(root: string): Promise<void> {
+  for (const f of CONTEXT_FIXTURE_FILES) {
+    const abs = join(root, ...f.relPath.split('/'));
+    await mkdir(dirname(abs), { recursive: true });
+    await writeFile(abs, f.content, 'utf8');
+  }
+}
+
+/**
+ * This repo's OWN runtime clone directory — never touched, no matter how
+ * `DEVDIGEST_CLONE_DIR` is configured. The checked-in `.env`/`.env.example`
+ * sets it to the RELATIVE `./clones`, which resolves to exactly this
+ * directory when a CLI runs with cwd `server/` (`pnpm db:seed`'s normal
+ * case) — so `AppConfig.cloneDir` can legitimately BE `server/clones`, and
+ * the fixture below must fall back rather than follow it there.
+ */
+const REPO_OWN_CLONES_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', 'clones');
+
+function isInsideOrEqual(candidate: string, root: string): boolean {
+  const real = resolve(candidate);
+  return real === root || real.startsWith(root + sep);
+}
+
+/**
+ * Where the Project Context fixture clone goes: `<configuredCloneDir>/<owner>/<repo>`
+ * — the same layout `SimpleGitClient` uses for a real clone — UNLESS that
+ * would land inside `server/clones/**`, which is do-not-touch runtime data
+ * regardless of why `AppConfig.cloneDir` resolved there. In that case fall
+ * back to a dedicated directory under the user's home, matching the spec's
+ * documented default (`~/.devdigest/workspace`) in spirit without depending
+ * on `DEVDIGEST_CLONE_DIR` being unset.
+ */
+function contextFixtureRootFor(configuredCloneDir: string, owner: string, name: string): string {
+  if (isInsideOrEqual(configuredCloneDir, REPO_OWN_CLONES_DIR)) {
+    return join(homedir(), '.devdigest', 'context-fixtures', owner, name);
+  }
+  return join(configuredCloneDir, owner, name);
+}
 
 /** Default provider/model for the built-in reviewer agents. */
 const DEFAULT_PROVIDER = 'openrouter' as const;
@@ -186,6 +263,21 @@ export async function seed(db: Db): Promise<{ workspaceId: string; userId: strin
       .returning();
   }
   const repoId = repo!.id;
+
+  // ---- L05: Project Context fixture clone ----
+  // Normally `<cloneDir>/<owner>/<repo>` — exactly where `SimpleGitClient`
+  // would put a REAL clone of this repo, so the fixture looks identical to
+  // "actually cloned" to every reader (`GET /repos/:id/context`, the run
+  // path's guarded reader) — UNLESS that resolves inside `server/clones/**`
+  // (see `contextFixtureRootFor`), which stays untouched. `clonePath` is only
+  // set when still null so a real clone (or a hand-set test path) is never
+  // clobbered by a later `pnpm db:seed`.
+  const contextFixtureRoot = contextFixtureRootFor(loadConfig().cloneDir, repo!.owner, repo!.name);
+  await writeContextFixture(contextFixtureRoot);
+  if (!repo!.clonePath) {
+    await db.update(t.repos).set({ clonePath: contextFixtureRoot }).where(eq(t.repos.id, repoId));
+    repo!.clonePath = contextFixtureRoot;
+  }
 
   // ---- PR #482 (rate limiting) ----
   let [pr] = await db
@@ -392,6 +484,99 @@ export async function seed(db: Db): Promise<{ workspaceId: string; userId: strin
       .from(t.agents)
       .where(and(eq(t.agents.workspaceId, workspaceId), eq(t.agents.name, a.name)));
     if (!existing) await db.insert(t.agents).values(a);
+  }
+
+  // ---- L05: seeded run + trace with a non-empty specs_read (Project Context
+  // e2e reachability, interview decision Q1) ----
+  // Without this row `AC-22`/`AC-23` (the Configuration card's "Specs read"
+  // and the Prompt assembly "Project context" section) have nothing to open
+  // in e2e — the demo repo's hand-seeded review above has no `agent_runs` row
+  // at all. Matched on (pr, agent, source) so a repeated `pnpm db:seed` finds
+  // its own fixture run instead of inserting a second one.
+  const [generalReviewer] = await db
+    .select()
+    .from(t.agents)
+    .where(and(eq(t.agents.workspaceId, workspaceId), eq(t.agents.name, 'General Reviewer')));
+  if (generalReviewer && pr) {
+    let [fixtureRun] = await db
+      .select()
+      .from(t.agentRuns)
+      .where(
+        and(
+          eq(t.agentRuns.prId, pr.id),
+          eq(t.agentRuns.agentId, generalReviewer.id),
+          eq(t.agentRuns.source, 'local'),
+        ),
+      );
+    if (!fixtureRun) {
+      [fixtureRun] = await db
+        .insert(t.agentRuns)
+        .values({
+          workspaceId,
+          agentId: generalReviewer.id,
+          prId: pr.id,
+          provider: generalReviewer.provider,
+          model: generalReviewer.model,
+          durationMs: 4200,
+          tokensIn: 1840,
+          tokensOut: 410,
+          status: 'done',
+          source: 'local',
+          findingsCount: 2,
+          grounding: '2/2 passed',
+          score: 61,
+          blockers: 1,
+          costUsd: 0.004,
+        })
+        .returning();
+    }
+    if (fixtureRun) {
+      const specsRead = CONTEXT_FIXTURE_FILES.map((f) => f.relPath);
+      const specsBlock = CONTEXT_FIXTURE_FILES.map((f) => `### ${f.relPath}\n\n${f.content}`).join(
+        '\n\n',
+      );
+      await db
+        .insert(t.runTraces)
+        .values({
+          runId: fixtureRun.id,
+          trace: {
+            config: {
+              agent: generalReviewer.name,
+              version: String(generalReviewer.version),
+              provider: generalReviewer.provider,
+              model: generalReviewer.model,
+              pr: pr.number,
+              source: 'local',
+            },
+            stats: {
+              duration_ms: 4200,
+              tokens_in: 1840,
+              tokens_out: 410,
+              cost_usd: 0.004,
+              findings: 2,
+              grounding: '2/2 passed',
+            },
+            prompt_assembly: {
+              system: GENERAL_REVIEWER_PROMPT,
+              skills: null,
+              memory: null,
+              specs: specsBlock,
+              user: `Review PR #${pr.number} — ${pr.title}`,
+            },
+            tool_calls: [{ tool: 'review_file', args: 'all files', meta: 'single-pass', ms: 4200 }],
+            raw_output: 'Solid middleware approach; see findings for details.',
+            memory_pulled: [],
+            specs_read: specsRead,
+            log: [
+              { t: '00.00', kind: 'info', msg: `Starting review with agent "${generalReviewer.name}"` },
+              { t: '00.01', kind: 'info', msg: `Project context: attached ${specsRead[0]} (~46 tokens)` },
+              { t: '00.01', kind: 'info', msg: `Project context: attached ${specsRead[1]} (~44 tokens)` },
+              { t: '04.20', kind: 'result', msg: `Citation grounding: 2/2 passed` },
+            ],
+          },
+        })
+        .onConflictDoNothing();
+    }
   }
 
   // ---- built-in skills ----

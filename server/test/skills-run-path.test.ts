@@ -90,6 +90,14 @@ function harness(
         recorded.push({ runId, entries });
       },
     },
+    // L05 — every pre-work facade the run touches must be mocked, or the run
+    // fails BEFORE the model call and every llm.calls[] assertion below reads
+    // as "undefined" for the wrong reason (`server/INSIGHTS.md`, 2026-08-11).
+    // This suite is about skills, not Project Context, so an always-empty
+    // resolution is the correct stand-in.
+    projectContext: {
+      resolveForRun: async () => ({ specs: [], specsRead: [], skipped: [] }),
+    },
   } as unknown as Container;
 
   const repo = {

@@ -3,6 +3,7 @@ import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import { NextIntlClientProvider } from "next-intl";
 import type { Skill } from "@devdigest/shared";
 import messages from "../../../../../../messages/en/skills.json";
+import contextMessages from "../../../../../../messages/en/context.json";
 import { ToastProvider } from "@/lib/toast";
 
 const replace = vi.fn();
@@ -35,6 +36,26 @@ vi.mock("@/lib/hooks/skills", () => ({
   useRunAllEvals: () => mutation,
 }));
 
+// ConfigTab's "Project context to use" section (AC-15) mounts the shared
+// ContextDocPicker, which needs these — stub them so the tab shell tests stay
+// free of a real QueryClientProvider.
+vi.mock("@/lib/hooks/core", () => ({
+  useContextFiles: () => ({
+    data: {
+      files: [{ path: "specs/SPEC-01.md", root: "specs", tokens_est: 50 }],
+      total: 1,
+      truncated: false,
+      roots: ["specs"],
+      scanned_at: "2026-08-18T00:00:00Z",
+    },
+    isLoading: false,
+    isError: false,
+  }),
+  useOwnerContext: () => ({ data: { paths: [] }, isLoading: false, isError: false }),
+  useSetOwnerContext: () => mutation,
+  useContextDoc: () => idle,
+}));
+
 import { SkillEditor } from "./SkillEditor";
 
 afterEach(() => {
@@ -55,7 +76,7 @@ const SKILL: Skill = {
 
 function renderEditor() {
   return render(
-    <NextIntlClientProvider locale="en" messages={{ skills: messages }}>
+    <NextIntlClientProvider locale="en" messages={{ skills: messages, context: contextMessages }}>
       <ToastProvider>
         <SkillEditor skill={SKILL} />
       </ToastProvider>
@@ -116,5 +137,10 @@ describe("SkillEditor › ConfigTab", () => {
     expect(
       screen.getByText("Saving a changed body creates a new immutable version."),
     ).toBeInTheDocument();
+  });
+
+  it("adds a Project context to use section (AC-15)", () => {
+    renderEditor();
+    expect(screen.getByText("Project context to use")).toBeInTheDocument();
   });
 });

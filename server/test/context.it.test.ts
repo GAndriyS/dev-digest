@@ -1,0 +1,249 @@
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, dirname } from 'node:path';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { startPg, dockerAvailable, type PgFixture } from './helpers/pg.js';
+import { buildApp } from '../src/app.js';
+import { loadConfig } from '../src/platform/config.js';
+import { seed } from '../src/db/seed.js';
+import * as t from '../src/db/schema.js';
+
+const hasDocker = await dockerAvailable();
+const d = hasDocker ? describe : describe.skip;
+
+if (!hasDocker) {
+  // eslint-disable-next-line no-console
+  console.warn('[context] Docker not available — skipping integration tests.');
+}
+
+/**
+ * L05 — Project Context over a real Postgres and a real (temp) clone. Covers
+ * the wire shapes (`ContextListing`, `ContextPaths`), the набірний
+ * (set-write) attachment endpoints, and the edge that only a real HTTP round
+ * trip can prove: bad wire input 422s BEFORE the handler runs.
+ */
+d('context module', () => {
+  let pg: PgFixture;
+  let clonePath: string;
+  let workspaceId: string;
+
+  beforeAll(async () => {
+    pg = await startPg();
+    ({ workspaceId } = await seed(pg.handle.db));
+
+    clonePath = await mkdtemp(join(tmpdir(), 'devdigest-context-'));
+    for (const [rel, body] of [
+      ['specs/overview.md', '# Overview\n\nThe payments API.'],
+      ['docs/architecture.md', '# Architecture\n\nSome details.'],
+      ['README.md', '# not under a configured root'],
+    ] as const) {
+      await mkdir(dirname(join(clonePath, rel)), { recursive: true });
+      await writeFile(join(clonePath, rel), body, 'utf8');
+    }
+  }, 300_000);
+
+  afterAll(async () => {
+    await pg?.stop();
+    if (clonePath) await rm(clonePath, { recursive: true, force: true });
+  });
+
+  let seq = 0;
+  async function freshRepo(opts: { cloned?: boolean } = {}): Promise<string> {
+    const name = `context-fixture-${seq++}`;
+    const [repo] = await pg.handle.db
+      .insert(t.repos)
+      .values({
+        workspaceId,
+        owner: 'acme',
+        name,
+        fullName: `acme/${name}`,
+        ...(opts.cloned === false ? {} : { clonePath }),
+      })
+      .returning();
+    return repo!.id;
+  }
+
+  function makeApp() {
+    const config = loadConfig({ ...process.env, NODE_ENV: 'test' } as NodeJS.ProcessEnv);
+    return buildApp({ config, db: pg.handle.db });
+  }
+
+  it('lists the .md files under the configured roots, badged and estimated', async () => {
+    const app = await makeApp();
+    const repoId = await freshRepo();
+
+    const res = await app.inject({ method: 'GET', url: `/repos/${repoId}/context` });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+
+    const paths = body.files.map((f: { path: string }) => f.path).sort();
+    expect(paths).toEqual(['docs/architecture.md', 'specs/overview.md']);
+    expect(body.total).toBe(2);
+    expect(body.truncated).toBe(false);
+    expect(body.roots).toEqual(['specs', 'docs', 'insights']);
+
+    const overview = body.files.find((f: { path: string }) => f.path === 'specs/overview.md');
+    expect(overview.root).toBe('specs');
+    expect(overview.tokens_est).toBeGreaterThan(0);
+    expect(overview.content).toBeNull(); // listing never reads content
+    expect(overview.used_by_agents).toBe(0);
+
+    await app.close();
+  });
+
+  it('previews one document with content', async () => {
+    const app = await makeApp();
+    const repoId = await freshRepo();
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/repos/${repoId}/context/doc?path=specs/overview.md`,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({
+      path: 'specs/overview.md',
+      content: '# Overview\n\nThe payments API.',
+      root: 'specs',
+    });
+
+    await app.close();
+  });
+
+  it('answers 409 when the repo has never been cloned', async () => {
+    const app = await makeApp();
+    const bareId = await freshRepo({ cloned: false });
+
+    const res = await app.inject({ method: 'GET', url: `/repos/${bareId}/context` });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error.code).toBe('repo_not_cloned');
+
+    await app.close();
+  });
+
+  it('attaches, reorders, and reflects the set on an agent', async () => {
+    const app = await makeApp();
+
+    const agent = (
+      await app.inject({
+        method: 'POST',
+        url: '/agents',
+        payload: { name: 'Context Agent', provider: 'openai', model: 'gpt-4.1', system_prompt: 's' },
+      })
+    ).json();
+
+    const empty = await app.inject({ method: 'GET', url: `/agents/${agent.id}/context` });
+    expect(empty.json()).toEqual({ paths: [] });
+
+    const set = await app.inject({
+      method: 'POST',
+      url: `/agents/${agent.id}/context`,
+      payload: { paths: ['docs/architecture.md', 'specs/overview.md'] },
+    });
+    expect(set.statusCode).toBe(200);
+    expect(set.json()).toEqual({ paths: ['docs/architecture.md', 'specs/overview.md'] });
+
+    // Reorder — the whole set is replaced, not merged.
+    const reordered = await app.inject({
+      method: 'POST',
+      url: `/agents/${agent.id}/context`,
+      payload: { paths: ['specs/overview.md'] },
+    });
+    expect(reordered.json()).toEqual({ paths: ['specs/overview.md'] });
+
+    const get = await app.inject({ method: 'GET', url: `/agents/${agent.id}/context` });
+    expect(get.json()).toEqual({ paths: ['specs/overview.md'] });
+
+    // "Used by N agents" on the repo listing reflects the attachment.
+    const repoId = await freshRepo();
+    const listing = (
+      await app.inject({ method: 'GET', url: `/repos/${repoId}/context` })
+    ).json();
+    const overview = listing.files.find((f: { path: string }) => f.path === 'specs/overview.md');
+    expect(overview.used_by_agents).toBe(1);
+
+    await app.close();
+  });
+
+  it('attaches to a skill through the same wire shape', async () => {
+    const app = await makeApp();
+    const skill = (
+      await app.inject({
+        method: 'POST',
+        url: '/skills',
+        payload: { name: 'ctx-skill', description: 'd', type: 'custom', source: 'manual', body: 'b' },
+      })
+    ).json();
+
+    const set = await app.inject({
+      method: 'POST',
+      url: `/skills/${skill.id}/context`,
+      payload: { paths: ['docs/architecture.md'] },
+    });
+    expect(set.statusCode).toBe(200);
+    expect(set.json()).toEqual({ paths: ['docs/architecture.md'] });
+
+    const get = await app.inject({ method: 'GET', url: `/skills/${skill.id}/context` });
+    expect(get.json()).toEqual({ paths: ['docs/architecture.md'] });
+
+    await app.close();
+  });
+
+  it('404s an attachment write for an unknown agent/skill', async () => {
+    const app = await makeApp();
+    const unknownAgent = await app.inject({
+      method: 'POST',
+      url: '/agents/00000000-0000-0000-0000-000000000000/context',
+      payload: { paths: [] },
+    });
+    expect(unknownAgent.statusCode).toBe(404);
+
+    const unknownSkill = await app.inject({
+      method: 'GET',
+      url: '/skills/00000000-0000-0000-0000-000000000000/context',
+    });
+    expect(unknownSkill.statusCode).toBe(404);
+
+    await app.close();
+  });
+
+  it('422s a wire-invalid path before the handler runs', async () => {
+    const app = await makeApp();
+    const agent = (
+      await app.inject({
+        method: 'POST',
+        url: '/agents',
+        payload: { name: 'Bad Path Agent', provider: 'openai', model: 'gpt-4.1', system_prompt: 's' },
+      })
+    ).json();
+
+    const traversal = await app.inject({
+      method: 'POST',
+      url: `/agents/${agent.id}/context`,
+      payload: { paths: ['../secrets.md'] },
+    });
+    expect(traversal.statusCode).toBe(422);
+
+    const leadingSlash = await app.inject({
+      method: 'POST',
+      url: `/agents/${agent.id}/context`,
+      payload: { paths: ['/etc/passwd.md'] },
+    });
+    expect(leadingSlash.statusCode).toBe(422);
+
+    const notMarkdown = await app.inject({
+      method: 'POST',
+      url: `/agents/${agent.id}/context`,
+      payload: { paths: ['specs/overview.txt'] },
+    });
+    expect(notMarkdown.statusCode).toBe(422);
+
+    const repoId = await freshRepo();
+    const badQuery = await app.inject({
+      method: 'GET',
+      url: `/repos/${repoId}/context/doc?path=${encodeURIComponent('../escape.md')}`,
+    });
+    expect(badQuery.statusCode).toBe(422);
+
+    await app.close();
+  });
+});

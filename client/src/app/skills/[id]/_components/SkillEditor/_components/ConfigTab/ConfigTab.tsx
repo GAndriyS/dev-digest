@@ -9,12 +9,19 @@ import { Badge, Button, FormField, SelectInput, TextInput, Textarea, Toggle } fr
 import type { Skill, SkillType } from "@devdigest/shared";
 import { useUpdateSkill } from "@/lib/hooks/skills";
 import { useToast } from "@/lib/toast";
+import { useActiveRepo } from "@/lib/repo-context";
+import { ContextDocPicker } from "@/components/context-doc-picker";
 import { SKILL_TYPE_VALUES } from "../../../../../constants";
 import { BODY_ROWS } from "./constants";
 import { s } from "./styles";
 
 export function ConfigTab({ skill }: { skill: Skill }) {
   const t = useTranslations("skills");
+  // Not repo-scoped, so the document catalog to attach from is the active repo
+  // (Q3: `useActiveRepo()`, no switcher) — same convention as the Agent editor's
+  // Context tab.
+  const tContext = useTranslations("context");
+  const { repoId } = useActiveRepo();
   const toast = useToast();
   const update = useUpdateSkill();
 
@@ -93,6 +100,19 @@ export function ConfigTab({ skill }: { skill: Skill }) {
           {update.isPending ? t("config.saving") : t("preview.save")}
         </Button>
         {dirty && <span style={s.dirtyNote}>{t("config.unsaved")}</span>}
+      </div>
+
+      {/* AC-15: any agent that links this skill inherits these documents — the
+          set-write and its optimistic UI are identical to the Agent editor's
+          Context tab, only the owner differs. */}
+      <div style={s.contextSection}>
+        <ContextDocPicker
+          repoId={repoId}
+          ownerType="skill"
+          ownerId={skill.id}
+          title={tContext("picker.skillTitle")}
+          hint={tContext("picker.skillHint")}
+        />
       </div>
     </div>
   );
