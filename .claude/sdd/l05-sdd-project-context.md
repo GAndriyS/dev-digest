@@ -11,7 +11,9 @@ Plan: .claude/plans/l05-sdd-project-context.md · Spec: specs/SPEC-01-project-co
 | 3b review loop · pass 1 | 4/4 fixed | 130k | commit a210398. Verified by main session: 8/8 gates (385 unit · 70 it · 310 RTL). e2e re-run blocked — port 5433 held by an unrelated container |
 | 3b re-review | PASS after 1 loop | 39k | scoped to b5740ae..a210398; 0 findings, no WARNING left standing → no human gate |
 | 4 verify | INCOMPLETE (1 PARTIAL: gap 4b) → fix bdada09 → re-verify: gap closed, 0 unrequested changes | 174k + 144k + 97k | Re-verify's 2 NOT MET are rows 12 (doc-writer) and 13 (spec flip + PR) — downstream stages, graded because the delegation said "Stage: final"; verifier itself calls row 12 "expected at this point in the chain, not a regression" and row 13 gated on its own COMPLETE. Flake on `trace.specs_read` reported once by the implementer did not reproduce: integration ran 3× by main session + 2× by verifier, 73/73 each |
-| 5 docs | in progress (step 12) | | |
+| 5 docs | server/client README + .env.example (698d982) | 104k | no docs/ page — the two README paragraphs carry it |
+| 6 pr | [#9](https://github.com/GAndriyS/dev-digest/pull/9) | 125k + 167k + 121k + 115k + 114k | `/pr-self-review` PASS (0 CRITICAL, 9/9 gates); `/security-review` clean; convention subagents ×2 → 18 findings, 4 substantive fixed in 2677dcd, 14 recorded in the PR body. Spec → implemented (508c77f). `gh` needed `--repo GAndriyS/dev-digest` — its default repo points elsewhere |
+| 7 wrap-up | 5 insights recorded (f8329bf) | — | server ×3, e2e ×1, root ×1. `setSkills` sibling bug spun off as a background task |
 
 ## Execution brief — l05-sdd-project-context
 Mode: multi-agent · Spec: specs/SPEC-01-project-context.md (approved) · Slices: contracts, backend, frontend, e2e, meta · Steps this run: 11 of 13 (row 12: doc-writer · row 13: main session)
