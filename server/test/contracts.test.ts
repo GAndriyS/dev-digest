@@ -18,6 +18,11 @@ import {
   SkillInput,
   SkillPatch,
   MAX_SKILL_BODY_CHARS,
+  SpecFile,
+  ContextListing,
+  ContextPaths,
+  MAX_CONTEXT_PATH_LEN,
+  MAX_CONTEXT_PATHS,
 } from '@devdigest/shared';
 import { API_CONTRACT_GATE_SKILL } from '../src/db/seed-prompts.js';
 
@@ -272,5 +277,92 @@ describe('SkillInput bounds the body', () => {
     // Guards the constant itself: a cap tightened below the seeded skills would
     // make the app's own content unsaveable.
     expect(MAX_SKILL_BODY_CHARS).toBeGreaterThan(API_CONTRACT_GATE_SKILL.length * 2);
+  });
+});
+
+describe('ContextListing wraps SpecFile with directory metadata', () => {
+  it('parses a listing with badge fields on each file', () => {
+    expect(() =>
+      ContextListing.parse({
+        files: [
+          {
+            path: 'specs/SPEC-01-project-context.md',
+            root: 'specs',
+            size: 4096,
+            updated_at: '2026-08-01T00:00:00.000Z',
+            tokens_est: 1024,
+            used_by_agents: 2,
+          },
+        ],
+        total: 1,
+        truncated: false,
+        roots: ['specs', 'docs', 'insights'],
+        scanned_at: '2026-08-18T00:00:00.000Z',
+      }),
+    ).not.toThrow();
+  });
+
+  it('accepts an empty listing (no .md under the configured roots)', () => {
+    expect(() =>
+      ContextListing.parse({
+        files: [],
+        total: 0,
+        truncated: false,
+        roots: ['specs', 'docs', 'insights'],
+        scanned_at: '2026-08-18T00:00:00.000Z',
+      }),
+    ).not.toThrow();
+  });
+
+  it('SpecFile still parses without the new badge fields (single-doc read)', () => {
+    expect(() =>
+      SpecFile.parse({
+        path: 'docs/README.md',
+        content: '# hi',
+      }),
+    ).not.toThrow();
+  });
+});
+
+describe('ContextPaths bounds and shapes the attachment set', () => {
+  const validPath = 'specs/SPEC-01-project-context.md';
+
+  it('accepts a well-formed repo-relative .md path', () => {
+    expect(() => ContextPaths.parse({ paths: [validPath] })).not.toThrow();
+  });
+
+  it('accepts an empty set (detach everything)', () => {
+    expect(() => ContextPaths.parse({ paths: [] })).not.toThrow();
+  });
+
+  it('rejects a leading slash', () => {
+    expect(() => ContextPaths.parse({ paths: ['/specs/a.md'] })).toThrow();
+  });
+
+  it('rejects .. traversal', () => {
+    expect(() => ContextPaths.parse({ paths: ['specs/../../etc/passwd.md'] })).toThrow();
+  });
+
+  it('rejects a backslash (not POSIX)', () => {
+    expect(() => ContextPaths.parse({ paths: ['specs\\a.md'] })).toThrow();
+  });
+
+  it('rejects a non-.md extension', () => {
+    expect(() => ContextPaths.parse({ paths: ['specs/a.txt'] })).toThrow();
+  });
+
+  it('rejects a path past MAX_CONTEXT_PATH_LEN', () => {
+    const long = 'specs/' + 'a'.repeat(MAX_CONTEXT_PATH_LEN) + '.md';
+    expect(() => ContextPaths.parse({ paths: [long] })).toThrow();
+  });
+
+  it('rejects more paths than MAX_CONTEXT_PATHS', () => {
+    const paths = Array.from({ length: MAX_CONTEXT_PATHS + 1 }, (_, i) => `specs/f${i}.md`);
+    expect(() => ContextPaths.parse({ paths })).toThrow();
+  });
+
+  it('accepts exactly MAX_CONTEXT_PATHS entries', () => {
+    const paths = Array.from({ length: MAX_CONTEXT_PATHS }, (_, i) => `specs/f${i}.md`);
+    expect(() => ContextPaths.parse({ paths })).not.toThrow();
   });
 });
