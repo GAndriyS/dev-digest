@@ -52,6 +52,19 @@ live in `<package>/INSIGHTS.md`. Maintained by the `engineering-insights` skill.
 
 ## Codebase Patterns
 
+- **2026-08-18** — `.claude/settings.json`'s `deny` on `Edit(./**/src/vendor/ui/**)`
+  has no carve-out for this repo's own **declared vendor update** pattern, so a
+  plan step that assigns a `nav.ts` row to `implementer` cannot be executed: the
+  agent is refused at the tool layer, and so is the main session (the deny is
+  not overridable from chat, and routing around it via `Bash` is the bypass the
+  rule exists to prevent). This has now cost a stage in the L05 run — the human
+  had to `copy` the file in by hand. Plan a `**/src/vendor/ui/**` row as
+  **human/main-session, out of the agent chain**, or add a scoped exception to
+  `settings.json` first; `.claude/skills/pr-self-review/routing.md` documents
+  the `Vendor-update:` declaration but says nothing about who may perform the
+  edit. Note the block is wider than the file documents: `Bash rm -rf` under
+  `server/clones/**` is also hard-denied, `dangerouslyDisableSandbox` included.
+
 - **2026-08-13** — Any `file:line` derived from repo-intel resolves against
   `repo_index_state.last_indexed_sha`, **never** the PR's `head_sha` — the index
   is built per repo at whatever commit was last synced, not per PR. Rendering

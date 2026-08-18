@@ -6,6 +6,18 @@ promotion rules → root `INSIGHTS.md`.
 
 ## What Works
 
+- **2026-08-18** — A genuinely cancelled run can be driven from an integration
+  test with no `vi.mock` and no container override: `container.runBus` is the
+  process-wide singleton exported by `platform/sse.ts`, so the test calls the
+  same `runBus.cancel(runId)` the `POST /runs/:id/cancel` route calls, using
+  the runId the review POST returns. Pair it with `strategy: 'map-reduce'` and
+  a **2-file** diff — `selectMode` (`reviewer-core/src/review/run.ts`) only
+  multi-chunks when `diff.files.length > 1` — so there is a second
+  `checkCancelled` checkpoint to abort on. Recipe in
+  `test/reviews.it.test.ts` (`CancelOnSecondChunkProvider`). Caveat: arm the
+  cancel from the provider's first call, not after the POST returns —
+  `ReviewsService.runReview` starts the executor before responding.
+
 - **2026-08-01** — The PR list syncs from GitHub on every read and is polled
   once a minute per open tab, so a repo GitHub 404s for (deleted, renamed,
   private to the token, or fixture data like the seeded `acme/payments-api`)
@@ -32,6 +44,19 @@ promotion rules → root `INSIGHTS.md`.
   treatment, because "empty" and "broken" are indistinguishable at the call site.
 
 ## Codebase Patterns
+
+- **2026-08-18** — `AppConfig.cloneDir` can BE the do-not-touch path. The
+  checked-in `server/.env` and `.env.example` set `DEVDIGEST_CLONE_DIR=./clones`,
+  which is relative, so `loadConfig()` resolves it against `process.cwd()` —
+  and every `pnpm db:*` script runs with cwd `server/`, making it exactly
+  `server/clones`, the runtime-clone directory root `AGENTS.md` forbids
+  touching. The L05 seed derived its fixture location from `config.cloneDir`
+  and silently wrote two `.md` files in there. Anything that WRITES fixture or
+  demo data must key its location on stable identity under a fixed root
+  (`~/.devdigest/context-fixtures/<owner>/<repo>` is the L05 answer,
+  `db/seed.ts`), never on a runtime-configurable path a real clone also uses —
+  otherwise one config change either loses track of the output or clobbers a
+  genuine checkout.
 
 - **2026-08-13** — `[repo-intel]` `extractEndpoints` scanned line by line, so
   it only ever matched single-line route registrations — and every Fastify
@@ -169,6 +194,19 @@ promotion rules → root `INSIGHTS.md`.
   `.split(sep).join('/')`, the same normalisation `walk.ts:119` applies.
 
 ## Recurring Errors & Fixes
+
+- **2026-08-18** — An integration test that does `waitForPrRuns(...)` and then
+  `GET /runs/:id/trace` is load-sensitive and will flake: `run-executor.ts`
+  calls `completeAgentRun(runId, { status: 'done' })` (~`:357`) several lines
+  BEFORE `saveRunTrace(runId, trace)` (~`:405`), and `waitForPrRuns` polls only
+  `agent_runs.status`, so it can return inside the window where the run is done
+  and the `run_traces` row does not exist yet. The tell is an assertion on a
+  trace field reading `undefined` (seen twice on `trace.specs_read`, once per
+  ~6 full-suite runs, never reproducible in isolation) — not a 404, because the
+  route returns a row-shaped default. Do not "fix" it by retrying the
+  assertion: either wait for the `run_traces` row explicitly, or move the trace
+  write ahead of the status update. Every sibling test using that pattern
+  carries the same latent race.
 
 - **2026-08-11** — Any server-side pre-work that resolves its provider via
   `resolveFeatureModel(container, workspaceId, '<feature>')` (L03's intent

@@ -11,6 +11,17 @@ skill, append-only. Entry format and promotion rules → root `INSIGHTS.md`.
 
 ## Tool & Library Notes
 
+- **2026-08-18** — `find text <text> click` can report `✓ Done` and change
+  nothing when the target sits UNDER a stacked sibling at the click point — the
+  default headless viewport here is 1264×569, short enough that
+  `RunTraceDrawer`'s fixed footer covers the "Prompt assembly" section header
+  once scrolled into view, so three consecutive CLI clicks toggled nothing
+  while a raw `element.click()` toggled it instantly. Confirm with
+  `document.elementFromPoint` at the reported coordinate. The fix is
+  `set viewport <w> <h>` as the flow's first step (1280×900 in
+  `10-project-context.flow.json`), **not** a `scrollintoview` retry — scrolling
+  does not correct for an overlay that is fixed.
+
 - **2026-08-04** — On Windows the runner dies with `spawn agent-browser ENOENT`
   on every step even when `agent-browser --version` works in the shell. `run.ts`
   uses `execFile`, which goes through CreateProcess and cannot execute the npm
