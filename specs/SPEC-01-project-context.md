@@ -1,6 +1,6 @@
 # Spec: Project Context — прикріплення markdown-документів репозиторію до агентів і скілів
 Spec ID: SPEC-01
-Status: approved
+Status: implemented
 Source: L05 · Project Context Folder (lesson brief + запит користувача)
 Supersedes: none
 
