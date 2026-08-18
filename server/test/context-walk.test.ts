@@ -106,7 +106,7 @@ describe('walkContextFiles', () => {
 
     // The single-document guarded read must ALSO refuse the escaped path,
     // even though it never showed up in the listing above.
-    const read = await classifyAndRead(root, 'specs/escape/secret.md', 20_000);
+    const read = await classifyAndRead(root, 'specs/escape/secret.md', 20_000, ['specs']);
     expect('reason' in read).toBe(true);
   });
 });
@@ -124,22 +124,40 @@ describe('classifyAndRead', () => {
 
   it('reads a document inside the root', async () => {
     const root = await tmp('devdigest-context-read-');
-    await writeFile(join(root, 'a.md'), '# hello');
-    const result = await classifyAndRead(root, 'a.md', 20_000);
+    await mkdir(join(root, 'specs'), { recursive: true });
+    await writeFile(join(root, 'specs', 'a.md'), '# hello');
+    const result = await classifyAndRead(root, 'specs/a.md', 20_000, ['specs']);
     expect(result).toMatchObject({ content: '# hello' });
   });
 
   it('reports a missing document with a reason', async () => {
     const root = await tmp('devdigest-context-read-');
-    const result = await classifyAndRead(root, 'missing.md', 20_000);
+    const result = await classifyAndRead(root, 'specs/missing.md', 20_000, ['specs']);
     expect('reason' in result).toBe(true);
   });
 
   it('reports an over-limit document with a reason, without reading it', async () => {
     const root = await tmp('devdigest-context-read-');
-    await writeFile(join(root, 'big.md'), 'x'.repeat(100));
-    const result = await classifyAndRead(root, 'big.md', 10);
+    await mkdir(join(root, 'specs'), { recursive: true });
+    await writeFile(join(root, 'specs', 'big.md'), 'x'.repeat(100));
+    const result = await classifyAndRead(root, 'specs/big.md', 10, ['specs']);
     expect('reason' in result).toBe(true);
     if ('reason' in result) expect(result.reason).toMatch(/limit/);
+  });
+
+  /**
+   * Fix pass 1, item 4: being inside the clone and ending in `.md` (the wire
+   * contract's own checks) is not enough — a document genuinely inside the
+   * clone but outside every CONFIGURED root must still be refused, or
+   * `GET /repos/:id/context/doc?path=` reads files the listing never offered
+   * (e.g. `node_modules/**`, skipped by the walk but not by a direct path).
+   */
+  it('rejects a document that is genuinely inside the clone but outside every configured root', async () => {
+    const root = await tmp('devdigest-context-read-');
+    await mkdir(join(root, 'node_modules', 'pkg'), { recursive: true });
+    await writeFile(join(root, 'node_modules', 'pkg', 'README.md'), '# vendored');
+    const result = await classifyAndRead(root, 'node_modules/pkg/README.md', 20_000, ['specs', 'docs']);
+    expect('reason' in result).toBe(true);
+    if ('reason' in result) expect(result.reason).toMatch(/root/);
   });
 });

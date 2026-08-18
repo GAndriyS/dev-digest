@@ -36,6 +36,10 @@ d('context module', () => {
       ['specs/overview.md', '# Overview\n\nThe payments API.'],
       ['docs/architecture.md', '# Architecture\n\nSome details.'],
       ['README.md', '# not under a configured root'],
+      // Genuinely inside the clone AND `.md` — the two checks `classifyAndRead`
+      // had before fix pass 1, item 4. Never offered by the listing (skipped
+      // by `SKIP_DIR_NAMES`), so a direct read must be refused too.
+      ['node_modules/pkg/README.md', '# vendored'],
     ] as const) {
       await mkdir(dirname(join(clonePath, rel)), { recursive: true });
       await writeFile(join(clonePath, rel), body, 'utf8');
@@ -202,6 +206,93 @@ d('context module', () => {
       url: '/skills/00000000-0000-0000-0000-000000000000/context',
     });
     expect(unknownSkill.statusCode).toBe(404);
+
+    await app.close();
+  });
+
+  it('dedupes a duplicate path in the set-write body instead of 500ing on the PK (fix pass 1, item 1)', async () => {
+    const app = await makeApp();
+    const agent = (
+      await app.inject({
+        method: 'POST',
+        url: '/agents',
+        payload: {
+          name: 'Duplicate Path Agent',
+          provider: 'openai',
+          model: 'gpt-4.1',
+          system_prompt: 's',
+        },
+      })
+    ).json();
+
+    const set = await app.inject({
+      method: 'POST',
+      url: `/agents/${agent.id}/context`,
+      payload: { paths: ['specs/overview.md', 'docs/architecture.md', 'specs/overview.md'] },
+    });
+    // Before the fix: DELETE committed, then INSERT hit PK (agent_id, path)
+    // on the repeated path and rolled back nothing — a generic 500 that also
+    // lost the agent's prior attachment set.
+    expect(set.statusCode).toBe(200);
+    expect(set.json()).toEqual({ paths: ['specs/overview.md', 'docs/architecture.md'] }); // keep-first
+
+    const get = await app.inject({ method: 'GET', url: `/agents/${agent.id}/context` });
+    expect(get.json()).toEqual({ paths: ['specs/overview.md', 'docs/architecture.md'] });
+
+    await app.close();
+  });
+
+  it('scopes "used by N agents" to the caller\'s workspace (fix pass 1, item 3)', async () => {
+    const app = await makeApp();
+    const repoId = await freshRepo();
+
+    // Baseline before this test's own workspace-scoped attachment — other
+    // `it` blocks in this file share the same seeded default workspace and
+    // may already have `specs/overview.md` attached, so the assertion below
+    // is a delta, not an absolute count.
+    const before = (await app.inject({ method: 'GET', url: `/repos/${repoId}/context` })).json();
+    const baseline = before.files.find((f: { path: string }) => f.path === 'specs/overview.md')
+      .used_by_agents as number;
+
+    // A second workspace with its OWN agent attached to the same path. The
+    // no-auth app's HTTP surface always resolves to the default workspace, so
+    // this is wired directly against the DB.
+    const [otherWs] = await pg.handle.db
+      .insert(t.workspaces)
+      .values({ name: `other-workspace-${seq++}` })
+      .returning();
+    const [otherAgent] = await pg.handle.db
+      .insert(t.agents)
+      .values({
+        workspaceId: otherWs!.id,
+        name: 'Other Workspace Agent',
+        provider: 'openai',
+        model: 'gpt-4.1',
+        systemPrompt: 's',
+      })
+      .returning();
+    await pg.handle.db
+      .insert(t.agentContextDocs)
+      .values({ agentId: otherAgent!.id, path: 'specs/overview.md', position: 0 });
+
+    const after = (await app.inject({ method: 'GET', url: `/repos/${repoId}/context` })).json();
+    const overview = after.files.find((f: { path: string }) => f.path === 'specs/overview.md');
+    // Before the fix: the ungrouped count included the other workspace's
+    // agent, so this would read `baseline + 1`.
+    expect(overview.used_by_agents).toBe(baseline);
+
+    await app.close();
+  });
+
+  it('404s a doc read outside every configured root, even though it is genuinely inside the clone (fix pass 1, item 4)', async () => {
+    const app = await makeApp();
+    const repoId = await freshRepo();
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/repos/${repoId}/context/doc?path=${encodeURIComponent('node_modules/pkg/README.md')}`,
+    });
+    expect(res.statusCode).toBe(404);
 
     await app.close();
   });

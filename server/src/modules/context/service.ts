@@ -113,12 +113,26 @@ type ClassifiedRead = { content: string } | { reason: string };
  * reason attached for the Live Log / preview 404 — the shared guard collapses
  * every failure to `null`, which is right for "can I open this file" but not
  * for "why didn't this doc make it into the run".
+ *
+ * `roots` adds a bound the shared guard never had: being inside the clone and
+ * ending in `.md` is not enough — the wire contract (`ContextDocPath`) already
+ * enforces both of those and a path can still satisfy them from OUTSIDE every
+ * configured root (`node_modules/pkg/README.md` is genuinely inside the clone
+ * and genuinely `.md`). Without this check that path is readable via
+ * `GET /repos/:id/context/doc?path=` even though the listing never offered
+ * it, and the same stored path is silently attach-able to an agent/skill.
+ * Checked first (`rootBadgeFor` is pure — no I/O) so a path outside every root
+ * never reaches the filesystem at all.
  */
 export async function classifyAndRead(
   root: string,
   relPath: string,
   maxBytes: number,
+  roots: readonly string[],
 ): Promise<ClassifiedRead> {
+  if (rootBadgeFor(relPath, roots) === null) {
+    return { reason: 'outside the configured context roots' };
+  }
   const real = await realpath(resolve(root, relPath)).catch(() => null);
   if (real === null) return { reason: 'not found in the clone' };
   if (!isInsideRoot(root, real)) return { reason: 'escapes the clone root (symlink)' };
@@ -144,7 +158,10 @@ export class ContextService implements ProjectContext {
     const roots = this.container.config.contextRoots;
 
     const walked = await walkContextFiles(root, roots, MAX_CONTEXT_FILES);
-    const counts = await this.repo.usedByAgentCounts(walked.files.map((f) => f.relPath));
+    const counts = await this.repo.usedByAgentCounts(
+      workspaceId,
+      walked.files.map((f) => f.relPath),
+    );
 
     const files: SpecFile[] = walked.files
       .map((f) => ({
@@ -170,7 +187,7 @@ export class ContextService implements ProjectContext {
   async readDoc(workspaceId: string, repoId: string, path: string): Promise<SpecFile> {
     const root = await this.realpathClone(workspaceId, repoId);
 
-    const read = await classifyAndRead(root, path, MAX_CONTEXT_DOC_BYTES);
+    const read = await classifyAndRead(root, path, MAX_CONTEXT_DOC_BYTES, this.container.config.contextRoots);
     if ('reason' in read) throw new NotFoundError(`Document not found (${read.reason})`);
 
     const bytes = Buffer.byteLength(read.content, 'utf8');
@@ -256,7 +273,12 @@ export class ContextService implements ProjectContext {
     const readOk: { path: string; content: string }[] = [];
     const skippedIO: SkippedContextDoc[] = [];
     for (const path of merged) {
-      const result = await classifyAndRead(root, path, MAX_CONTEXT_DOC_BYTES);
+      const result = await classifyAndRead(
+        root,
+        path,
+        MAX_CONTEXT_DOC_BYTES,
+        this.container.config.contextRoots,
+      );
       if ('reason' in result) skippedIO.push({ path, reason: result.reason });
       else readOk.push({ path, content: result.content });
     }

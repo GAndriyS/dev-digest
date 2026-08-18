@@ -1,12 +1,11 @@
 import 'dotenv/config';
-import { pathToFileURL, fileURLToPath } from 'node:url';
+import { pathToFileURL } from 'node:url';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { dirname, join, resolve, sep } from 'node:path';
+import { dirname, join } from 'node:path';
 import { createDb, type Db } from './client.js';
 import * as t from './schema.js';
 import { eq, and } from 'drizzle-orm';
-import { loadConfig } from '../platform/config.js';
 import {
   GENERAL_REVIEWER_PROMPT,
   SECURITY_REVIEWER_PROMPT,
@@ -78,34 +77,30 @@ async function writeContextFixture(root: string): Promise<void> {
 }
 
 /**
- * This repo's OWN runtime clone directory — never touched, no matter how
- * `DEVDIGEST_CLONE_DIR` is configured. The checked-in `.env`/`.env.example`
- * sets it to the RELATIVE `./clones`, which resolves to exactly this
- * directory when a CLI runs with cwd `server/` (`pnpm db:seed`'s normal
- * case) — so `AppConfig.cloneDir` can legitimately BE `server/clones`, and
- * the fixture below must fall back rather than follow it there.
+ * Where the Project Context fixture clone goes — a directory the seed itself
+ * exclusively owns, independent of `AppConfig.cloneDir`/`DEVDIGEST_CLONE_DIR`.
+ *
+ * Fix pass 1 (l05-sdd-project-context), item 2: the original version derived
+ * this from `loadConfig().cloneDir` (falling back only when that landed
+ * inside `server/clones/**`) and called `writeContextFixture` unconditionally
+ * every `pnpm db:seed`. That broke two ways: (a) once `DEVDIGEST_CLONE_DIR`
+ * changed between seed runs, the fixture was written to the NEW path while
+ * `repos.clonePath` — set only once, when it was still null — kept pointing
+ * at the OLD one, so `GET /repos/:id/context` read an empty/missing
+ * directory; (b) when the computed path happened to already be a genuine
+ * checkout (`SimpleGitClient` uses this exact `<cloneDir>/<owner>/<repo>`
+ * layout for a real clone), every reseed overwrote real working-tree files
+ * with fixture content.
+ *
+ * Pinning this to a fixed, config-independent location under the user's home
+ * removes both failure modes: no real clone is ever placed here (a real
+ * clone always goes through `cloneDir`), so the only way `repos.clonePath`
+ * can equal this path is if a PRIOR seed run set it — see the call site
+ * below, which only ever writes when it is also deciding (or has already
+ * decided) that this is the repo's clone path.
  */
-const REPO_OWN_CLONES_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', 'clones');
-
-function isInsideOrEqual(candidate: string, root: string): boolean {
-  const real = resolve(candidate);
-  return real === root || real.startsWith(root + sep);
-}
-
-/**
- * Where the Project Context fixture clone goes: `<configuredCloneDir>/<owner>/<repo>`
- * — the same layout `SimpleGitClient` uses for a real clone — UNLESS that
- * would land inside `server/clones/**`, which is do-not-touch runtime data
- * regardless of why `AppConfig.cloneDir` resolved there. In that case fall
- * back to a dedicated directory under the user's home, matching the spec's
- * documented default (`~/.devdigest/workspace`) in spirit without depending
- * on `DEVDIGEST_CLONE_DIR` being unset.
- */
-function contextFixtureRootFor(configuredCloneDir: string, owner: string, name: string): string {
-  if (isInsideOrEqual(configuredCloneDir, REPO_OWN_CLONES_DIR)) {
-    return join(homedir(), '.devdigest', 'context-fixtures', owner, name);
-  }
-  return join(configuredCloneDir, owner, name);
+function contextFixtureRootFor(owner: string, name: string): string {
+  return join(homedir(), '.devdigest', 'context-fixtures', owner, name);
 }
 
 /** Default provider/model for the built-in reviewer agents. */
@@ -265,19 +260,22 @@ export async function seed(db: Db): Promise<{ workspaceId: string; userId: strin
   const repoId = repo!.id;
 
   // ---- L05: Project Context fixture clone ----
-  // Normally `<cloneDir>/<owner>/<repo>` — exactly where `SimpleGitClient`
-  // would put a REAL clone of this repo, so the fixture looks identical to
-  // "actually cloned" to every reader (`GET /repos/:id/context`, the run
-  // path's guarded reader) — UNLESS that resolves inside `server/clones/**`
-  // (see `contextFixtureRootFor`), which stays untouched. `clonePath` is only
-  // set when still null so a real clone (or a hand-set test path) is never
-  // clobbered by a later `pnpm db:seed`.
-  const contextFixtureRoot = contextFixtureRootFor(loadConfig().cloneDir, repo!.owner, repo!.name);
-  await writeContextFixture(contextFixtureRoot);
+  // A directory this seed owns outright (see `contextFixtureRootFor`),
+  // written ONLY when it is also becoming — or has already become — this
+  // repo's `clonePath`, so the DB pointer and the written location can never
+  // drift apart, and a reseed never clobbers a genuine checkout that happens
+  // to live somewhere else.
+  const contextFixtureRoot = contextFixtureRootFor(repo!.owner, repo!.name);
   if (!repo!.clonePath) {
+    await writeContextFixture(contextFixtureRoot);
     await db.update(t.repos).set({ clonePath: contextFixtureRoot }).where(eq(t.repos.id, repoId));
     repo!.clonePath = contextFixtureRoot;
+  } else if (repo!.clonePath === contextFixtureRoot) {
+    // Already pointing at our own fixture dir from a prior seed run — refresh
+    // idempotently (`writeContextFixture` always writes the same content).
+    await writeContextFixture(contextFixtureRoot);
   }
+  // else: `clonePath` points somewhere else (a real clone) — never touched.
 
   // ---- PR #482 (rate limiting) ----
   let [pr] = await db

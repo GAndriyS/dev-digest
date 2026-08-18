@@ -1,6 +1,7 @@
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import type { Db } from '../../db/client.js';
 import * as t from '../../db/schema.js';
+import { dedupeKeepFirst } from './helpers.js';
 
 /**
  * L05 — Project Context data-access. The only place that touches
@@ -41,13 +42,26 @@ export class ContextRepository {
     return rows.map((r) => r.path);
   }
 
-  /** Replace the whole ordered set for an agent — mirrors `AgentsRepository.setSkills`. */
+  /**
+   * Replace the whole ordered set for an agent — mirrors
+   * `AgentsRepository.setSkills`, with two fixes that method doesn't need:
+   * the delete + insert run inside ONE transaction (a bare sequence commits
+   * the delete even if the insert then fails, losing the owner's entire
+   * attachment set), and `paths` is deduped (keep-first, same rule
+   * `resolveForRun`'s agent+skill merge already uses) before the insert — a
+   * duplicate in the wire body would otherwise violate PK `(agent_id, path)`
+   * AFTER the delete already committed, surfacing as a generic 500
+   * (`server/src/app.ts`) instead of a clean replace.
+   */
   async setAgentDocPaths(agentId: string, paths: string[]): Promise<void> {
-    await this.db.delete(t.agentContextDocs).where(eq(t.agentContextDocs.agentId, agentId));
-    if (paths.length === 0) return;
-    await this.db
-      .insert(t.agentContextDocs)
-      .values(paths.map((path, i) => ({ agentId, path, position: i })));
+    const deduped = dedupeKeepFirst(paths);
+    await this.db.transaction(async (tx) => {
+      await tx.delete(t.agentContextDocs).where(eq(t.agentContextDocs.agentId, agentId));
+      if (deduped.length === 0) return;
+      await tx
+        .insert(t.agentContextDocs)
+        .values(deduped.map((path, i) => ({ agentId, path, position: i })));
+    });
   }
 
   // ---- skill_context_docs ----------------------------------------------------
@@ -62,26 +76,34 @@ export class ContextRepository {
     return rows.map((r) => r.path);
   }
 
-  /** Replace the whole ordered set for a skill. */
+  /** Replace the whole ordered set for a skill — same transaction + dedupe fix as `setAgentDocPaths`. */
   async setSkillDocPaths(skillId: string, paths: string[]): Promise<void> {
-    await this.db.delete(t.skillContextDocs).where(eq(t.skillContextDocs.skillId, skillId));
-    if (paths.length === 0) return;
-    await this.db
-      .insert(t.skillContextDocs)
-      .values(paths.map((path, i) => ({ skillId, path, position: i })));
+    const deduped = dedupeKeepFirst(paths);
+    await this.db.transaction(async (tx) => {
+      await tx.delete(t.skillContextDocs).where(eq(t.skillContextDocs.skillId, skillId));
+      if (deduped.length === 0) return;
+      await tx
+        .insert(t.skillContextDocs)
+        .values(deduped.map((path, i) => ({ skillId, path, position: i })));
+    });
   }
 
   /**
    * How many agents currently have each of `paths` attached — the "Used by N
    * agents" badge (AC-9). Agents only (Open questions default): AC-9 names
    * "agents" and the badge is not asked for skills.
+   *
+   * Joined to `agents` and scoped to `workspaceId` — without the join this
+   * grouped every workspace's agents together, so the badge leaked another
+   * workspace's attachment counts into this one's listing.
    */
-  async usedByAgentCounts(paths: string[]): Promise<Map<string, number>> {
+  async usedByAgentCounts(workspaceId: string, paths: string[]): Promise<Map<string, number>> {
     if (paths.length === 0) return new Map();
     const rows = await this.db
       .select({ path: t.agentContextDocs.path, n: sql<number>`count(*)::int` })
       .from(t.agentContextDocs)
-      .where(inArray(t.agentContextDocs.path, paths))
+      .innerJoin(t.agents, eq(t.agents.id, t.agentContextDocs.agentId))
+      .where(and(eq(t.agents.workspaceId, workspaceId), inArray(t.agentContextDocs.path, paths)))
       .groupBy(t.agentContextDocs.path);
     return new Map(rows.map((r) => [r.path, r.n]));
   }
