@@ -359,6 +359,107 @@ d('A2 reviews + agents (Testcontainers pg)', () => {
     }
   });
 
+  it('L05/SPEC-02: a document matched only by configured NAME (outside every root) still reaches the prompt (AC-8)', async () => {
+    // AC-8 — the reason string a name-only match would have been skipped
+    // with before this branch ("outside the configured context roots") must
+    // NOT appear: `resolveForRun` → `classifyAndRead` now also accepts a
+    // name match, so an `INSIGHTS.md` sitting at the clone root (no
+    // configured root above it) must be read and packed exactly like a
+    // root-matched doc.
+    const clonePath = await mkdtemp(join(tmpdir(), 'devdigest-reviews-context-name-'));
+    try {
+      await writeFile(
+        join(clonePath, 'INSIGHTS.md'),
+        '# Insights\n\nOnly attach documented, load-bearing findings.',
+        'utf8',
+      );
+
+      const app = await appWith(REVIEW_FIXTURE);
+      const { pr } = await setupRepoAndPr(pg.handle.db, workspaceId, { clonePath });
+
+      const agent = (
+        await app.inject({
+          method: 'POST',
+          url: '/agents',
+          payload: { name: 'Name-Match Reviewer', provider: 'openai', model: 'gpt-4.1', system_prompt: 'sec' },
+        })
+      ).json();
+
+      const attach = await app.inject({
+        method: 'POST',
+        url: `/agents/${agent.id}/context`,
+        payload: { paths: ['INSIGHTS.md'] },
+      });
+      expect(attach.statusCode).toBe(200);
+
+      const body = (
+        await app.inject({ method: 'POST', url: `/pulls/${pr.id}/review`, payload: { agentId: agent.id } })
+      ).json();
+      const runId = body.runs[0].run_id;
+      await waitForPrRuns(pg.handle.db, pr.id, { expected: 1 });
+
+      const trace = (await app.inject({ method: 'GET', url: `/runs/${runId}/trace` })).json();
+      expect(trace.specs_read).toEqual(['INSIGHTS.md']);
+      expect(trace.prompt_assembly.specs).toContain('Only attach documented, load-bearing findings.');
+      // The old skip reason (pre-SPEC-02) must not show up in the Live Log.
+      const skipLines = (trace.log as { msg: string }[]).filter((l) =>
+        l.msg.startsWith('Project context: skipped'),
+      );
+      expect(skipLines).toEqual([]);
+
+      await app.close();
+    } finally {
+      await rm(clonePath, { recursive: true, force: true });
+    }
+  });
+
+  it('L05/SPEC-02: a document over the new 40,000-byte limit is skipped whole, with a Live Log line (AC-13)', async () => {
+    const clonePath = await mkdtemp(join(tmpdir(), 'devdigest-reviews-context-oversize-'));
+    try {
+      await mkdir(join(clonePath, 'specs'), { recursive: true });
+      // 41,000 bytes — over MAX_CONTEXT_DOC_BYTES (40_000) but well under the
+      // OLD 20_000 limit's ~2x headroom, so this only proves something under
+      // the RAISED ceiling, not a value that would have failed either way.
+      await writeFile(join(clonePath, 'specs', 'huge.md'), 'x'.repeat(41_000), 'utf8');
+
+      const app = await appWith(REVIEW_FIXTURE);
+      const { pr } = await setupRepoAndPr(pg.handle.db, workspaceId, { clonePath });
+
+      const agent = (
+        await app.inject({
+          method: 'POST',
+          url: '/agents',
+          payload: { name: 'Oversize Reviewer', provider: 'openai', model: 'gpt-4.1', system_prompt: 'sec' },
+        })
+      ).json();
+
+      const attach = await app.inject({
+        method: 'POST',
+        url: `/agents/${agent.id}/context`,
+        payload: { paths: ['specs/huge.md'] },
+      });
+      expect(attach.statusCode).toBe(200);
+
+      const body = (
+        await app.inject({ method: 'POST', url: `/pulls/${pr.id}/review`, payload: { agentId: agent.id } })
+      ).json();
+      const runId = body.runs[0].run_id;
+      await waitForPrRuns(pg.handle.db, pr.id, { expected: 1 });
+
+      const trace = (await app.inject({ method: 'GET', url: `/runs/${runId}/trace` })).json();
+      expect(trace.specs_read).toEqual([]); // skipped whole, never partially read
+      expect(trace.prompt_assembly.specs).toBeNull();
+      const skipLine = (trace.log as { msg: string }[]).find((l) =>
+        l.msg.includes('specs/huge.md'),
+      );
+      expect(skipLine?.msg).toContain('over the 40000-byte document limit');
+
+      await app.close();
+    } finally {
+      await rm(clonePath, { recursive: true, force: true });
+    }
+  });
+
   it('L05: an agent with no attachments gets a null specs slot — no section, no cost', async () => {
     const app = await appWith(REVIEW_FIXTURE);
     const { pr } = await setupRepoAndPr(pg.handle.db, workspaceId);

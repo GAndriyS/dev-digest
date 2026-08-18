@@ -6,7 +6,7 @@ import { AppError, NotFoundError } from '../../platform/errors.js';
 import { isInsideRoot, readInsideClone } from '../_shared/clone-fs.js';
 import { ContextRepository } from './repository.js';
 import { MAX_CONTEXT_BLOCK_CHARS, MAX_CONTEXT_DOC_BYTES, MAX_CONTEXT_FILES, REPO_NOT_CLONED_CODE, SKIP_DIR_NAMES } from './constants.js';
-import { dedupeKeepFirst, estimateTokens, packDocs, rootBadgeFor } from './helpers.js';
+import { badgeFor, dedupeKeepFirst, estimateTokens, nameBadgeFor, packDocs } from './helpers.js';
 import type { ProjectContext, ResolvedContextDocs, SkippedContextDoc } from './types.js';
 
 /**
@@ -33,7 +33,11 @@ export class RepoNotClonedError extends AppError {
 export interface WalkedContextFile {
   /** Repo-relative POSIX path (matches `ContextDocPath`'s wire shape). */
   relPath: string;
-  /** Configured root name this file was found under — doubles as its badge. */
+  /**
+   * The file's badge — either the configured ROOT name it was found under
+   * (SPEC-01), or the lowercased stem of the configured file NAME it matched
+   * (SPEC-02 AC-1/AC-2). Root wins when both apply (AC-3) — see `badgeFor`.
+   */
   root: string;
   size: number;
   mtimeMs: number;
@@ -47,9 +51,20 @@ export interface ContextWalkResult {
 }
 
 /**
- * Recursively find `.md` files under any of `roots` (a directory NAME, not a
- * path — matched anywhere in the tree, e.g. both `specs/` and
- * `packages/x/docs/`), skipping `SKIP_DIR_NAMES` and every symlink.
+ * Recursively find every file matching EITHER of two independent rules,
+ * skipping `SKIP_DIR_NAMES` and every symlink:
+ *
+ * 1. Root rule (SPEC-01): a `.md` file under any of `roots` (a directory
+ *    NAME, not a path — matched anywhere in the tree, e.g. both `specs/` and
+ *    `packages/x/docs/`).
+ * 2. Name rule (SPEC-02 AC-1): a file whose NAME matches one of `fileNames`
+ *    case-insensitively, on ANY depth — including the clone root itself —
+ *    regardless of whether it is under a configured root.
+ *
+ * A file matching both is collected exactly once, badged by the root
+ * (SPEC-02 AC-3) — `badgeFor` (`helpers.ts`) is the pure restatement of both
+ * rules together and MUST stay in lockstep with this function; see its doc
+ * comment.
  *
  * Never follows or lists a symlink (file or directory) — that is the walk's
  * OWN escape guard (AC-2/AC-3): a committed `specs/escape -> /etc` symlink
@@ -58,15 +73,19 @@ export interface ContextWalkResult {
  * candidate during the walk; `classifyAndRead` below still re-checks with
  * `isInsideRoot` on the READ path, which is the one that actually opens a file.
  *
- * One `stat` per matched file, never file content (NFR Performance): this is
- * the perf-relevant half of the walk.
+ * One `stat` per MATCHED file, never file content (NFR Performance): this is
+ * the perf-relevant half of the walk. The name rule adds no new filesystem
+ * call of its own — it only widens which already-`readdir`'d entries qualify.
  */
 export async function walkContextFiles(
   clonePath: string,
   roots: readonly string[],
+  fileNames: readonly string[],
   limit: number,
 ): Promise<ContextWalkResult> {
   const rootSet = new Set(roots);
+  const nameBadgeByLowerName = new Map<string, string>();
+  for (const name of fileNames) nameBadgeByLowerName.set(name.toLowerCase(), nameBadgeFor(name));
   const files: WalkedContextFile[] = [];
   let total = 0;
 
@@ -86,8 +105,11 @@ export async function walkContextFiles(
       }
 
       if (!entry.isFile()) continue;
-      if (activeRoot === null) continue;
-      if (!entry.name.toLowerCase().endsWith('.md')) continue;
+
+      const matchesRoot = activeRoot !== null && entry.name.toLowerCase().endsWith('.md');
+      const nameBadge = nameBadgeByLowerName.get(entry.name.toLowerCase()) ?? null;
+      if (!matchesRoot && nameBadge === null) continue;
+      const badge = activeRoot ?? nameBadge!; // root wins when both match (AC-3)
 
       total += 1;
       if (files.length >= limit) continue; // keep counting `total`; stop collecting metadata
@@ -97,7 +119,7 @@ export async function walkContextFiles(
         total -= 1; // vanished between readdir and stat — was never really "found"
         continue;
       }
-      files.push({ relPath: rel, root: activeRoot, size: info.size, mtimeMs: info.mtimeMs });
+      files.push({ relPath: rel, root: badge, size: info.size, mtimeMs: info.mtimeMs });
     }
   }
 
@@ -114,24 +136,26 @@ type ClassifiedRead = { content: string } | { reason: string };
  * every failure to `null`, which is right for "can I open this file" but not
  * for "why didn't this doc make it into the run".
  *
- * `roots` adds a bound the shared guard never had: being inside the clone and
- * ending in `.md` is not enough — the wire contract (`ContextDocPath`) already
- * enforces both of those and a path can still satisfy them from OUTSIDE every
- * configured root (`node_modules/pkg/README.md` is genuinely inside the clone
- * and genuinely `.md`). Without this check that path is readable via
+ * `roots`/`fileNames` add a bound the shared guard never had: being inside
+ * the clone and ending in `.md` is not enough — the wire contract
+ * (`ContextDocPath`) already enforces both of those and a path can still
+ * satisfy them from OUTSIDE every configured root AND every configured name
+ * (`node_modules/pkg/README.md` is genuinely inside the clone and genuinely
+ * `.md`). Without this check that path is readable via
  * `GET /repos/:id/context/doc?path=` even though the listing never offered
  * it, and the same stored path is silently attach-able to an agent/skill.
- * Checked first (`rootBadgeFor` is pure — no I/O) so a path outside every root
- * never reaches the filesystem at all.
+ * Checked first (`badgeFor` is pure — no I/O) so a path outside every root
+ * and every name never reaches the filesystem at all.
  */
 export async function classifyAndRead(
   root: string,
   relPath: string,
   maxBytes: number,
   roots: readonly string[],
+  fileNames: readonly string[],
 ): Promise<ClassifiedRead> {
-  if (rootBadgeFor(relPath, roots) === null) {
-    return { reason: 'outside the configured context roots' };
+  if (badgeFor(relPath, roots, fileNames) === null) {
+    return { reason: 'outside the configured context roots and file names' };
   }
   const real = await realpath(resolve(root, relPath)).catch(() => null);
   if (real === null) return { reason: 'not found in the clone' };
@@ -156,8 +180,9 @@ export class ContextService implements ProjectContext {
   async listContext(workspaceId: string, repoId: string): Promise<ContextListing> {
     const root = await this.realpathClone(workspaceId, repoId);
     const roots = this.container.config.contextRoots;
+    const fileNames = this.container.config.contextFiles;
 
-    const walked = await walkContextFiles(root, roots, MAX_CONTEXT_FILES);
+    const walked = await walkContextFiles(root, roots, fileNames, MAX_CONTEXT_FILES);
     const counts = await this.repo.usedByAgentCounts(
       workspaceId,
       walked.files.map((f) => f.relPath),
@@ -180,6 +205,7 @@ export class ContextService implements ProjectContext {
       total: walked.total,
       truncated: walked.truncated,
       roots: [...roots],
+      file_names: [...fileNames],
       scanned_at: new Date().toISOString(),
     };
   }
@@ -187,7 +213,13 @@ export class ContextService implements ProjectContext {
   async readDoc(workspaceId: string, repoId: string, path: string): Promise<SpecFile> {
     const root = await this.realpathClone(workspaceId, repoId);
 
-    const read = await classifyAndRead(root, path, MAX_CONTEXT_DOC_BYTES, this.container.config.contextRoots);
+    const read = await classifyAndRead(
+      root,
+      path,
+      MAX_CONTEXT_DOC_BYTES,
+      this.container.config.contextRoots,
+      this.container.config.contextFiles,
+    );
     if ('reason' in read) throw new NotFoundError(`Document not found (${read.reason})`);
 
     const bytes = Buffer.byteLength(read.content, 'utf8');
@@ -203,7 +235,7 @@ export class ContextService implements ProjectContext {
       content: read.content,
       size: bytes,
       updated_at: info ? new Date(info.mtimeMs).toISOString() : null,
-      root: rootBadgeFor(path, this.container.config.contextRoots),
+      root: badgeFor(path, this.container.config.contextRoots, this.container.config.contextFiles),
       tokens_est: estimateTokens(bytes),
       used_by_agents: null, // listing-only field — see SpecFile's contract comment
     };
@@ -304,6 +336,7 @@ export class ContextService implements ProjectContext {
         path,
         MAX_CONTEXT_DOC_BYTES,
         this.container.config.contextRoots,
+        this.container.config.contextFiles,
       );
       if ('reason' in result) skippedIO.push({ path, reason: result.reason });
       else readOk.push({ path, content: result.content });

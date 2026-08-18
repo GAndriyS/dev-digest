@@ -76,7 +76,10 @@ export function ProjectContextView() {
           <EmptyState
             icon="Folder"
             title={t("page.empty.title")}
-            body={t("page.empty.body", { roots: (listing?.roots ?? []).join(", ") })}
+            body={t("page.empty.body", {
+              roots: (listing?.roots ?? []).join(", "),
+              file_names: (listing?.file_names ?? []).join(", "),
+            })}
           />
         ) : (
           <>

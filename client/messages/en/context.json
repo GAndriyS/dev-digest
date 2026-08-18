@@ -31,7 +31,7 @@
     "previewLoadError": "Couldn’t load this document",
     "empty": {
       "title": "No documents found",
-      "body": "Add markdown files under {roots} in this repo. Every agent and skill can attach them as context."
+      "body": "Add markdown files under {roots}, or files named {file_names}, in this repo. Every agent and skill can attach them as context."
     }
   },
   "picker": {
@@ -46,7 +46,7 @@
     "noMatches": "No documents match “{query}”.",
     "loadError": "Couldn’t load project context.",
     "emptyTitle": "No documents to attach",
-    "emptyBody": "Add markdown files under specs/, docs/ or insights/ in this repo, then attach them here.",
+    "emptyBody": "Add markdown files under {roots}, or files named {file_names}, in this repo, then attach them here.",
     "missing": "missing — deleted from the repo",
     "moveUp": "Move {path} earlier in the prompt",
     "moveDown": "Move {path} later in the prompt",

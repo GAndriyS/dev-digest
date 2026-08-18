@@ -6,7 +6,14 @@ import messages from "../../../messages/en/context.json";
 
 const setPathsMutate = vi.fn();
 const state = {
-  listing: { files: [] as SpecFile[], total: 0, truncated: false, roots: ["specs", "docs", "insights"], scanned_at: "" } as ContextListing,
+  listing: {
+    files: [] as SpecFile[],
+    total: 0,
+    truncated: false,
+    roots: ["specs", "docs", "insights"],
+    file_names: ["INSIGHTS.md"],
+    scanned_at: "",
+  } as ContextListing,
   links: { paths: [] as string[] } as ContextPaths,
 };
 
@@ -38,7 +45,14 @@ function renderPicker() {
 
 beforeEach(() => {
   setPathsMutate.mockClear();
-  state.listing = { files: CATALOG, total: 3, truncated: false, roots: ["specs", "docs", "insights"], scanned_at: "2026-08-18T00:00:00Z" };
+  state.listing = {
+    files: CATALOG,
+    total: 3,
+    truncated: false,
+    roots: ["specs", "docs", "insights"],
+    file_names: ["INSIGHTS.md"],
+    scanned_at: "2026-08-18T00:00:00Z",
+  };
   state.links = { paths: ["specs/SPEC-01.md", "docs/README.md"] };
 });
 afterEach(cleanup);
@@ -131,10 +145,28 @@ describe("ContextDocPicker", () => {
     expect(screen.getByText("≈ 240 tokens")).toBeInTheDocument();
   });
 
-  it("explains an empty catalog instead of rendering an empty list", () => {
-    state.listing = { files: [], total: 0, truncated: false, roots: ["specs"], scanned_at: "" };
+  it("explains an empty catalog by naming both the configured roots and file names, not a hardcoded list", () => {
+    state.listing = { files: [], total: 0, truncated: false, roots: ["specs"], file_names: ["INSIGHTS.md"], scanned_at: "" };
     state.links = { paths: [] };
     renderPicker();
     expect(screen.getByText("No documents to attach")).toBeInTheDocument();
+    expect(screen.getByText(/specs/)).toBeInTheDocument();
+    expect(screen.getByText(/INSIGHTS\.md/)).toBeInTheDocument();
+    expect(screen.queryByText(/docs\/, insights\//)).not.toBeInTheDocument();
+  });
+
+  it("renders the insights badge for a row matched by file name", () => {
+    state.listing = {
+      files: [doc("INSIGHTS.md", { root: "insights" })],
+      total: 1,
+      truncated: false,
+      roots: ["specs", "docs", "insights"],
+      file_names: ["INSIGHTS.md"],
+      scanned_at: "2026-08-18T00:00:00Z",
+    };
+    state.links = { paths: [] };
+    renderPicker();
+    expect(screen.getByText("INSIGHTS.md")).toBeInTheDocument();
+    expect(screen.getByText("insights")).toBeInTheDocument();
   });
 });

@@ -134,7 +134,16 @@ export function ContextDocPicker({ repoId, ownerType, ownerId, title, hint }: Co
 
   const files = filesQuery.data?.files ?? [];
   if (files.length === 0 && attachedPaths.length === 0) {
-    return <EmptyState icon="FileText" title={t("picker.emptyTitle")} body={t("picker.emptyBody")} />;
+    return (
+      <EmptyState
+        icon="FileText"
+        title={t("picker.emptyTitle")}
+        body={t("picker.emptyBody", {
+          roots: (filesQuery.data?.roots ?? []).join(", "),
+          file_names: (filesQuery.data?.file_names ?? []).join(", "),
+        })}
+      />
+    );
   }
 
   const { attached, available } = partitionFiles(files, attachedPaths);

@@ -14,11 +14,18 @@ export const MAX_CONTEXT_FILES = 2000;
  * Bytes read per attached document — both the single-doc preview
  * (`GET /repos/:id/context/doc`) and the run path. A document over this limit
  * reads as "missing" from the caller's point of view (never partially read).
+ * SPEC-02 AC-13 raises this from SPEC-01 AC-19's 20_000 — measured against a
+ * real `INSIGHTS.md` (19_335 B) landing right at the old ceiling.
  */
-export const MAX_CONTEXT_DOC_BYTES = 20_000;
+export const MAX_CONTEXT_DOC_BYTES = 40_000;
 
-/** Total characters across every doc packed into the `## Project context` prompt block. */
-export const MAX_CONTEXT_BLOCK_CHARS = 32_000;
+/**
+ * Total characters across every doc packed into the `## Project context`
+ * prompt block. SPEC-02 AC-14 raises this from SPEC-01 AC-20's 32_000 —
+ * measured against root + `server/INSIGHTS.md` together (37_234 B) exceeding
+ * the old budget.
+ */
+export const MAX_CONTEXT_BLOCK_CHARS = 80_000;
 
 /**
  * Directories the walk never enters, anywhere in the tree. Without this a

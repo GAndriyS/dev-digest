@@ -40,8 +40,21 @@ const FIXTURE_STRIPE_KEY = ['sk', 'live', '51H8xQ2eZvKYlo2CkqPmNbVwX'].join('_')
  * and the seeded trace below have real content — no GitHub, no real clone.
  * Two files, one per configured root (`specs`, `docs`), matches interview
  * decision Q1 ("extend the seed — full e2e flow").
+ *
+ * SPEC-02 AC-12 adds a third: `INSIGHTS.md` at the fixture clone's ROOT (not
+ * under an `insights/` directory — the spec's own default), matched by the
+ * NEW file-name rule rather than by root, so the listing shows a badge that
+ * comes from a name match, not a root. `attachedToDemoRun: false` — the
+ * plan's Recommendations §1 was declined ("Default: as requested"): AC-12
+ * only asks for a listing entry and a page badge, not a doc reaching the
+ * seeded run's prompt, so this file is written and listed but deliberately
+ * left OUT of `specsRead`/`prompt_assembly.specs` below.
  */
-const CONTEXT_FIXTURE_FILES: ReadonlyArray<{ relPath: string; content: string }> = [
+const CONTEXT_FIXTURE_FILES: ReadonlyArray<{
+  relPath: string;
+  content: string;
+  attachedToDemoRun: boolean;
+}> = [
   {
     relPath: 'specs/overview.md',
     content: [
@@ -51,6 +64,7 @@ const CONTEXT_FIXTURE_FILES: ReadonlyArray<{ relPath: string; content: string }>
       'for the acme storefront. See `docs/architecture.md` for the request path.',
       '',
     ].join('\n'),
+    attachedToDemoRun: true,
   },
   {
     relPath: 'docs/architecture.md',
@@ -61,6 +75,18 @@ const CONTEXT_FIXTURE_FILES: ReadonlyArray<{ relPath: string; content: string }>
       'with a token-bucket limiter before the request reaches its handler.',
       '',
     ].join('\n'),
+    attachedToDemoRun: true,
+  },
+  {
+    relPath: 'INSIGHTS.md',
+    content: [
+      '# Payments API — Insights',
+      '',
+      'Rate limiting only guards `src/api/public/**` — internal routes still have',
+      'no per-IP budget. Revisit before opening any of them up externally.',
+      '',
+    ].join('\n'),
+    attachedToDemoRun: false,
   },
 ];
 
@@ -529,10 +555,11 @@ export async function seed(db: Db): Promise<{ workspaceId: string; userId: strin
         .returning();
     }
     if (fixtureRun) {
-      const specsRead = CONTEXT_FIXTURE_FILES.map((f) => f.relPath);
-      const specsBlock = CONTEXT_FIXTURE_FILES.map((f) => `### ${f.relPath}\n\n${f.content}`).join(
-        '\n\n',
-      );
+      // Only the SPEC-01 pair reaches the demo run's prompt — see
+      // `attachedToDemoRun`'s doc comment above `CONTEXT_FIXTURE_FILES`.
+      const demoRunFiles = CONTEXT_FIXTURE_FILES.filter((f) => f.attachedToDemoRun);
+      const specsRead = demoRunFiles.map((f) => f.relPath);
+      const specsBlock = demoRunFiles.map((f) => `### ${f.relPath}\n\n${f.content}`).join('\n\n');
       await db
         .insert(t.runTraces)
         .values({

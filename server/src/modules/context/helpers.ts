@@ -11,32 +11,66 @@ export function estimateTokens(bytes: number): number {
 }
 
 /**
- * The configured root name a listed path was found under — re-derives
- * `walkContextFiles`'s OWN rule rather than a looser "root name anywhere in
- * the path" test, so this stays a genuine bound and not just a path-segment
- * substring check (fix pass 2, item 1).
+ * The badge for a document matched by CONFIGURED NAME (SPEC-02 AC-2) rather
+ * than by root — the lowercased stem (extension stripped) of the CONFIGURED
+ * name that matched, never the on-disk file's own casing. `Insights.md` on
+ * disk matching a configured `INSIGHTS.md` badges `insights`, derived from
+ * the config entry, not from what happens to be on disk (SPEC-02 edge case
+ * "Файл на диску названий `Insights.md`, а в конфізі `INSIGHTS.md`").
+ */
+export function nameBadgeFor(fileName: string): string {
+  const lower = fileName.toLowerCase();
+  const dot = lower.lastIndexOf('.');
+  return dot === -1 ? lower : lower.slice(0, dot);
+}
+
+/**
+ * The badge a listed/attached path would carry — re-derives
+ * `walkContextFiles`'s OWN two rules rather than a looser "root name
+ * anywhere in the path" test, so this stays a genuine bound and not just a
+ * path-segment substring check (fix pass 2, item 1; the same discipline now
+ * extends to the name rule added by SPEC-02).
  *
- * The walk's rule, restated purely (no filesystem access, so it can run on a
- * stored path with no clone on disk): scan the path's DIRECTORY segments
- * (every segment except the final file name) left to right. The first
- * directory segment that names a configured root activates that root for
- * every segment after it — matching `nextRoot = activeRoot ?? (rootSet.has(...)
- * ? ... : null)` in the walk. But the walk also never DESCENDS into a
- * `SKIP_DIR_NAMES` directory at all (`if (SKIP_DIR_NAMES.has(entry.name))
- * continue`), checked on every directory regardless of whether a root is
- * already active — so a `SKIP_DIR_NAMES` segment anywhere among the
- * directory segments means the walk would never have reached this file, and
- * this function must refuse it too, even if a configured root appears
- * earlier in the path (e.g. `specs/node_modules/pkg/README.md`) or never
- * appears at all (e.g. `node_modules/pkg/docs/README.md`).
+ * The walk's rules, restated purely (no filesystem access, so this can run
+ * on a stored path with no clone on disk):
  *
- * Returns `null` for a path that isn't under any configured root, or that
- * passes through a skipped directory — callers treat that as "no badge, not
+ * 1. Root rule (SPEC-01): scan the path's DIRECTORY segments (every segment
+ *    except the final file name) left to right. The first directory segment
+ *    that names a configured root activates that root for every segment
+ *    after it — matching `nextRoot = activeRoot ?? (rootSet.has(...) ? ... :
+ *    null)` in the walk.
+ * 2. Name rule (SPEC-02 AC-1): independent of any root, the final segment
+ *    (the file name) matched case-insensitively against a configured file
+ *    name badges the file — `nameBadgeFor` of the CONFIGURED name that
+ *    matched, on any depth including the clone root.
+ * 3. Root wins when both apply on the same file (SPEC-02 AC-3) — one entry,
+ *    never two.
+ *
+ * The walk also never DESCENDS into a `SKIP_DIR_NAMES` directory at all
+ * (`if (SKIP_DIR_NAMES.has(entry.name)) continue`), checked on every
+ * directory regardless of whether a root is already active or a name would
+ * otherwise match — so a `SKIP_DIR_NAMES` segment anywhere among the
+ * directory segments means the walk would never have reached this file
+ * under EITHER rule, and this function must refuse it too, even if a
+ * configured root appears earlier in the path
+ * (e.g. `specs/node_modules/pkg/README.md`), or the file name would
+ * otherwise match a configured name (e.g. `node_modules/INSIGHTS.md`).
+ *
+ * Returns `null` for a path that matches neither rule, or that passes
+ * through a skipped directory — callers treat that as "no badge, not
  * readable, not attachable", not an error.
  */
-export function rootBadgeFor(relPath: string, roots: readonly string[]): string | null {
+export function badgeFor(
+  relPath: string,
+  roots: readonly string[],
+  fileNames: readonly string[],
+): string | null {
   const rootSet = new Set(roots);
+  const nameBadgeByLowerName = new Map<string, string>();
+  for (const name of fileNames) nameBadgeByLowerName.set(name.toLowerCase(), nameBadgeFor(name));
+
   const segments = relPath.split('/');
+  const fileName = segments[segments.length - 1]!;
   let activeRoot: string | null = null;
   // Last segment is the file name — only directory segments gate root/skip.
   for (let i = 0; i < segments.length - 1; i += 1) {
@@ -44,7 +78,8 @@ export function rootBadgeFor(relPath: string, roots: readonly string[]): string 
     if (SKIP_DIR_NAMES.has(segment)) return null;
     if (activeRoot === null && rootSet.has(segment)) activeRoot = segment;
   }
-  return activeRoot;
+  if (activeRoot !== null) return activeRoot; // root wins (AC-3)
+  return nameBadgeByLowerName.get(fileName.toLowerCase()) ?? null;
 }
 
 /**

@@ -54,7 +54,15 @@ const file = (path: string, opts: Partial<SpecFile> = {}): SpecFile => ({
 });
 
 function listing(files: SpecFile[], opts: Partial<ContextListing> = {}): ContextListing {
-  return { files, total: files.length, truncated: false, roots: ["specs", "docs", "insights"], scanned_at: "2026-08-18T09:00:00Z", ...opts };
+  return {
+    files,
+    total: files.length,
+    truncated: false,
+    roots: ["specs", "docs", "insights"],
+    file_names: ["INSIGHTS.md"],
+    scanned_at: "2026-08-18T09:00:00Z",
+    ...opts,
+  };
 }
 
 function renderView() {
@@ -108,11 +116,19 @@ describe("ProjectContextView", () => {
     expect(refetch).toHaveBeenCalledOnce();
   });
 
-  it("explains an empty listing by naming the configured roots", () => {
-    state.listing = listing([]);
+  it("explains an empty listing by naming both the configured roots and file names", () => {
+    state.listing = listing([], { roots: ["specs", "docs", "insights"], file_names: ["INSIGHTS.md"] });
     renderView();
     expect(screen.getByText("No documents found")).toBeInTheDocument();
     expect(screen.getByText(/specs, docs, insights/)).toBeInTheDocument();
+    expect(screen.getByText(/INSIGHTS\.md/)).toBeInTheDocument();
+  });
+
+  it("renders the insights badge for a document matched by file name", () => {
+    state.listing = listing([file("INSIGHTS.md", { root: "insights" })]);
+    renderView();
+    expect(screen.getByText("INSIGHTS.md")).toBeInTheDocument();
+    expect(screen.getByText("insights")).toBeInTheDocument();
   });
 
   it("banners a truncated listing", () => {

@@ -47,6 +47,11 @@ d('context module', () => {
       // A real root followed by a SKIP_DIR_NAMES segment: the walk never
       // descends into `node_modules` even from inside a configured root.
       ['docs/node_modules/pkg/README.md', '# vendored, nested under a real root'],
+      // SPEC-02 — the name rule: matched at the clone root regardless of any
+      // configured root (AC-1), and refused when it sits inside a skipped
+      // directory, same as the root rule (AC-6).
+      ['INSIGHTS.md', '# Root-level insights\n\nMatched by name, not by root.'],
+      ['node_modules/pkg/INSIGHTS.md', '# vendored, name matches but must still be refused'],
     ] as const) {
       await mkdir(dirname(join(clonePath, rel)), { recursive: true });
       await writeFile(join(clonePath, rel), body, 'utf8');
@@ -79,7 +84,7 @@ d('context module', () => {
     return buildApp({ config, db: pg.handle.db });
   }
 
-  it('lists the .md files under the configured roots, badged and estimated', async () => {
+  it('lists the .md files under the configured roots AND by configured name, badged and estimated', async () => {
     const app = await makeApp();
     const repoId = await freshRepo();
 
@@ -87,9 +92,14 @@ d('context module', () => {
     expect(res.statusCode).toBe(200);
     const body = res.json();
 
+    // AC-10: the response body carries the configured file names alongside `roots`.
+    expect(body.file_names).toEqual(['INSIGHTS.md']);
+
     const paths = body.files.map((f: { path: string }) => f.path).sort();
-    expect(paths).toEqual(['docs/architecture.md', 'specs/overview.md']);
-    expect(body.total).toBe(2);
+    // `INSIGHTS.md` at the clone root is matched by NAME (AC-1); the same-named
+    // file under `node_modules/pkg/` is refused, same as the root rule (AC-6).
+    expect(paths).toEqual(['INSIGHTS.md', 'docs/architecture.md', 'specs/overview.md']);
+    expect(body.total).toBe(3);
     expect(body.truncated).toBe(false);
     expect(body.roots).toEqual(['specs', 'docs', 'insights']);
 
@@ -98,6 +108,36 @@ d('context module', () => {
     expect(overview.tokens_est).toBeGreaterThan(0);
     expect(overview.content).toBeNull(); // listing never reads content
     expect(overview.used_by_agents).toBe(0);
+
+    const insights = body.files.find((f: { path: string }) => f.path === 'INSIGHTS.md');
+    expect(insights.root).toBe('insights'); // badge = lowercased stem of the CONFIGURED name
+
+    await app.close();
+  });
+
+  it('honors a custom PROJECT_CONTEXT_FILES for the same clone (AC-4)', async () => {
+    // The same fixture clone also has a `docs/architecture.md` — reuse it as
+    // the "custom name" to prove the config seam (not a fixture coincidence)
+    // is what drives the extra match.
+    const config = loadConfig({
+      ...process.env,
+      NODE_ENV: 'test',
+      PROJECT_CONTEXT_FILES: 'architecture.md',
+    } as NodeJS.ProcessEnv);
+    const app = await buildApp({ config, db: pg.handle.db });
+    const repoId = await freshRepo();
+
+    const res = await app.inject({ method: 'GET', url: `/repos/${repoId}/context` });
+    const body = res.json();
+    expect(body.file_names).toEqual(['architecture.md']);
+    // `docs/architecture.md` is still listed once, badged by the ROOT (AC-3) —
+    // it matches both the default root rule and this custom name rule.
+    const architecture = body.files.find((f: { path: string }) => f.path === 'docs/architecture.md');
+    expect(architecture.root).toBe('docs');
+    expect(body.files.filter((f: { path: string }) => f.path === 'docs/architecture.md')).toHaveLength(1);
+    // `INSIGHTS.md` at the root no longer matches anything (no configured
+    // root, and the name rule now points at `architecture.md` instead).
+    expect(body.files.some((f: { path: string }) => f.path === 'INSIGHTS.md')).toBe(false);
 
     await app.close();
   });
@@ -116,6 +156,37 @@ d('context module', () => {
       content: '# Overview\n\nThe payments API.',
       root: 'specs',
     });
+
+    await app.close();
+  });
+
+  it('previews a document matched only by configured NAME, at the clone root (AC-7)', async () => {
+    const app = await makeApp();
+    const repoId = await freshRepo();
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/repos/${repoId}/context/doc?path=INSIGHTS.md`,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({
+      path: 'INSIGHTS.md',
+      content: '# Root-level insights\n\nMatched by name, not by root.',
+      root: 'insights',
+    });
+
+    await app.close();
+  });
+
+  it('404s a doc whose NAME matches a configured file name but sits inside a skipped directory (AC-6/AC-7)', async () => {
+    const app = await makeApp();
+    const repoId = await freshRepo();
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/repos/${repoId}/context/doc?path=${encodeURIComponent('node_modules/pkg/INSIGHTS.md')}`,
+    });
+    expect(res.statusCode).toBe(404);
 
     await app.close();
   });
