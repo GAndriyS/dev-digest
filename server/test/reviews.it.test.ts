@@ -417,9 +417,13 @@ d('A2 reviews + agents (Testcontainers pg)', () => {
     const clonePath = await mkdtemp(join(tmpdir(), 'devdigest-reviews-context-oversize-'));
     try {
       await mkdir(join(clonePath, 'specs'), { recursive: true });
-      // 41,000 bytes — over MAX_CONTEXT_DOC_BYTES (40_000) but well under the
-      // OLD 20_000 limit's ~2x headroom, so this only proves something under
-      // the RAISED ceiling, not a value that would have failed either way.
+      // 41,000 bytes — over MAX_CONTEXT_DOC_BYTES (40_000, SPEC-02 AC-13's
+      // raised ceiling). Also over the OLD 20_000 limit, so this value alone
+      // does not distinguish "skipped under the raised ceiling" from "would
+      // have been skipped under the old one too" — it only proves the skip
+      // path fires at the CURRENT limit (corrected: code-review, fix pass 1,
+      // item 4 — the old comment claimed this was under the old limit's ~2x
+      // headroom, which is false; 41_000 > 20_000).
       await writeFile(join(clonePath, 'specs', 'huge.md'), 'x'.repeat(41_000), 'utf8');
 
       const app = await appWith(REVIEW_FIXTURE);

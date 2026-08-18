@@ -1,4 +1,7 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   Review,
   Finding,
@@ -338,7 +341,7 @@ describe('ContextListing wraps SpecFile with directory metadata', () => {
     ).not.toThrow();
   });
 
-  it('rejects a listing missing file_names — proves the field is required in both @devdigest/shared copies', () => {
+  it('rejects a listing missing file_names — proves the field is required on the resolved schema', () => {
     const withoutFileNames = {
       files: [],
       total: 0,
@@ -347,6 +350,28 @@ describe('ContextListing wraps SpecFile with directory metadata', () => {
       scanned_at: '2026-08-18T00:00:00.000Z',
     };
     expect(() => ContextListing.parse(withoutFileNames)).toThrow();
+  });
+
+  it('carries file_names as a required field in BOTH @devdigest/shared copies on disk (code-review, fix pass 1, item 3)', () => {
+    // `@devdigest/shared` resolves to `./src/vendor/shared` in this package's
+    // tsconfig/vitest alias (server/tsconfig.json, server/vitest.config.ts) —
+    // every `ContextListing.parse(...)` test above exercises the SERVER copy
+    // only, never the client mirror. A rebase that drops the client mirror
+    // hunk would leave those tests green while the copies diverge, so this
+    // reads both files' source directly (no module resolution, no alias) and
+    // requires the same required, non-optional field declaration in each.
+    const requiredFileNamesField = /file_names:\s*z\.array\(z\.string\(\)\)\s*,/;
+    const testDir = dirname(fileURLToPath(import.meta.url));
+    const serverSrc = readFileSync(
+      resolve(testDir, '../src/vendor/shared/contracts/platform.ts'),
+      'utf8',
+    );
+    const clientSrc = readFileSync(
+      resolve(testDir, '../../client/src/vendor/shared/contracts/platform.ts'),
+      'utf8',
+    );
+    expect(serverSrc).toMatch(requiredFileNamesField);
+    expect(clientSrc).toMatch(requiredFileNamesField);
   });
 });
 

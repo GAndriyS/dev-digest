@@ -10,7 +10,7 @@ import {
   nameBadgeFor,
   packDocs,
 } from '../src/modules/context/helpers.js';
-import { BYTES_PER_TOKEN_EST } from '../src/modules/context/constants.js';
+import { BYTES_PER_TOKEN_EST, MAX_CONTEXT_BLOCK_CHARS } from '../src/modules/context/constants.js';
 import { walkContextFiles } from '../src/modules/context/service.js';
 
 /**
@@ -103,6 +103,12 @@ describe('context helpers', () => {
         'node_modules/pkg/INSIGHTS.md': '# skipped dir, name match — must be rejected',
         'specs/node_modules/pkg/README.md': '# skipped dir under a real root — must be rejected',
         'random/x.md': '# neither root nor name — must be rejected',
+        // Under an active root but NOT `.md` and not a configured name — the
+        // walk's `matchesRoot` requires the extension check even once a root
+        // is active, so this must be rejected too. `badgeFor`'s root branch
+        // once skipped this check and returned the root as soon as a
+        // directory segment matched, regardless of the file's own name.
+        'specs/notes.txt': '# under a root, wrong extension — must be rejected',
       };
       for (const [rel, content] of Object.entries(layout)) {
         const abs = join(root, ...rel.split('/'));
@@ -189,7 +195,10 @@ describe('context helpers', () => {
      * under the new budget but would have overflowed the OLD one.
      */
     it('packs two SPEC-02-sized real docs (19,335 B + 17,899 B) under the new 80,000-char budget; a third that would overflow it is skipped whole (AC-14)', () => {
-      const budget = 80_000;
+      // Imported, not hardcoded (code-review, fix pass 1, item 4) — reverting
+      // MAX_CONTEXT_BLOCK_CHARS to SPEC-01's 32_000 must fail this exact test,
+      // not silently pass because the assertion carries its own frozen number.
+      const budget = MAX_CONTEXT_BLOCK_CHARS;
       const chunkContentFor = (path: string, targetChunkLen: number) =>
         'x'.repeat(targetChunkLen - formatContextChunk(path, '').length);
 
@@ -206,7 +215,7 @@ describe('context helpers', () => {
       expect(result.specsRead).toEqual(['root/INSIGHTS.md', 'server/INSIGHTS.md']);
       expect(result.skipped).toHaveLength(1);
       expect(result.skipped[0]).toMatchObject({ path: 'third.md' });
-      expect(result.skipped[0]!.reason).toMatch(/80000/);
+      expect(result.skipped[0]!.reason).toMatch(new RegExp(String(budget)));
     });
   });
 });

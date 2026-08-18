@@ -38,13 +38,22 @@ export function nameBadgeFor(fileName: string): string {
  *    except the final file name) left to right. The first directory segment
  *    that names a configured root activates that root for every segment
  *    after it — matching `nextRoot = activeRoot ?? (rootSet.has(...) ? ... :
- *    null)` in the walk.
+ *    null)` in the walk. Activating a root is NOT by itself enough for the
+ *    file to qualify under this rule — the walk also requires the file name
+ *    to end in `.md` (case-insensitive) once a root is active
+ *    (`matchesRoot = activeRoot !== null && entry.name…endsWith('.md')`).
+ *    A non-`.md` file under an active root (`specs/notes.txt`) matches
+ *    NEITHER rule and must badge `null`, not the root — that gap is exactly
+ *    what this function failed to mirror before this fix.
  * 2. Name rule (SPEC-02 AC-1): independent of any root, the final segment
  *    (the file name) matched case-insensitively against a configured file
  *    name badges the file — `nameBadgeFor` of the CONFIGURED name that
  *    matched, on any depth including the clone root.
  * 3. Root wins when both apply on the same file (SPEC-02 AC-3) — one entry,
- *    never two.
+ *    never two. Because a configured file name always ends in `.md` (AC-5
+ *    strips anything else at config load), a file that matches the name rule
+ *    while a root is active always also satisfies rule 1's extension check,
+ *    so root badges it precisely when the walk would have too.
  *
  * The walk also never DESCENDS into a `SKIP_DIR_NAMES` directory at all
  * (`if (SKIP_DIR_NAMES.has(entry.name)) continue`), checked on every
@@ -78,8 +87,13 @@ export function badgeFor(
     if (SKIP_DIR_NAMES.has(segment)) return null;
     if (activeRoot === null && rootSet.has(segment)) activeRoot = segment;
   }
-  if (activeRoot !== null) return activeRoot; // root wins (AC-3)
-  return nameBadgeByLowerName.get(fileName.toLowerCase()) ?? null;
+  // Mirrors the walk's own acceptance test exactly (`service.ts`'s
+  // `matchesRoot`/`nameBadge`/`badge` trio): an active root alone does not
+  // qualify a non-`.md` file — `specs/notes.txt` matches neither rule.
+  const matchesRoot = activeRoot !== null && fileName.toLowerCase().endsWith('.md');
+  const nameBadge = nameBadgeByLowerName.get(fileName.toLowerCase()) ?? null;
+  if (!matchesRoot && nameBadge === null) return null;
+  return activeRoot ?? nameBadge!; // root wins when both match (AC-3)
 }
 
 /**

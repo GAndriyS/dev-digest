@@ -85,6 +85,14 @@ export type AppConfig = {
    * the root (SPEC-02 AC-3). Default is `['INSIGHTS.md']` (SPEC-02 AC-4).
    */
   contextFiles: string[];
+  /**
+   * Entries `PROJECT_CONTEXT_FILES` supplied that AC-5 dropped (not a bare
+   * `.md` name, or containing a path separator) — surfaced so a boot-time
+   * warning can report a typo instead of silently landing on `contextFiles`'
+   * default. Empty when every supplied entry survived, including when the
+   * variable itself is unset (nothing to drop).
+   */
+  contextFilesDropped: string[];
 };
 
 /** Mirrors SPEC-01's Open-questions default when `PROJECT_CONTEXT_ROOTS` is unset. */
@@ -130,12 +138,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const contextRoots = parsed.PROJECT_CONTEXT_ROOTS
     ? parsed.PROJECT_CONTEXT_ROOTS.split(',').map((s) => s.trim()).filter(Boolean)
     : DEFAULT_CONTEXT_ROOTS;
+  const contextFilesEntries = parsed.PROJECT_CONTEXT_FILES
+    ? parsed.PROJECT_CONTEXT_FILES.split(',').map((s) => s.trim()).filter(Boolean)
+    : [];
+  const contextFilesDropped = contextFilesEntries.filter((e) => !isValidContextFileEntry(e));
   const contextFilesRaw = parsed.PROJECT_CONTEXT_FILES
-    ? parsed.PROJECT_CONTEXT_FILES
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean)
-        .filter(isValidContextFileEntry)
+    ? contextFilesEntries.filter(isValidContextFileEntry)
     : DEFAULT_CONTEXT_FILES;
   const contextFiles = dedupeCaseInsensitive(
     contextFilesRaw.length > 0 ? contextFilesRaw : DEFAULT_CONTEXT_FILES,
@@ -153,5 +161,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     repoIntelEnabled: parsed.REPO_INTEL_ENABLED !== 'false',
     contextRoots: contextRoots.length > 0 ? contextRoots : DEFAULT_CONTEXT_ROOTS,
     contextFiles,
+    contextFilesDropped,
   };
 }

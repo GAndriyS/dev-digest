@@ -25,6 +25,25 @@ describe('loadConfig — PROJECT_CONTEXT_FILES', () => {
     expect(config.contextFiles).toEqual(['INSIGHTS.md']);
   });
 
+  it('reports every AC-5-dropped entry on `contextFilesDropped`, even when the drop falls all the way back to the default (code-review, fix pass 1, item 2)', () => {
+    const config = loadConfig({
+      NODE_ENV: 'test',
+      PROJECT_CONTEXT_FILES: 'Makefile,docs/X.md',
+    } as NodeJS.ProcessEnv);
+    expect(config.contextFilesDropped).toEqual(['Makefile', 'docs/X.md']);
+  });
+
+  it('leaves `contextFilesDropped` empty when every supplied entry survives, and when the variable is unset', () => {
+    const withValid = loadConfig({
+      NODE_ENV: 'test',
+      PROJECT_CONTEXT_FILES: 'INSIGHTS.md,NOTES.md',
+    } as NodeJS.ProcessEnv);
+    expect(withValid.contextFilesDropped).toEqual([]);
+
+    const withUnset = loadConfig({ NODE_ENV: 'test' } as NodeJS.ProcessEnv);
+    expect(withUnset.contextFilesDropped).toEqual([]);
+  });
+
   it('accepts multiple distinct .md names, trims whitespace, preserves given casing', () => {
     const config = loadConfig({
       NODE_ENV: 'test',
