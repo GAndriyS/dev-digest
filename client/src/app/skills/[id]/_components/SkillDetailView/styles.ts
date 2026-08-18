@@ -19,7 +19,12 @@ export const s = {
   } satisfies CSSProperties,
   icon: { color: "var(--accent)" } satisfies CSSProperties,
   h1: { fontSize: 18, fontWeight: 700, letterSpacing: "-0.02em" } satisfies CSSProperties,
-  spacer: { marginLeft: "auto" } satisfies CSSProperties,
+  spacer: {
+    marginLeft: "auto",
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+  } satisfies CSSProperties,
   notice: {
     margin: "14px 28px 0",
     padding: "10px 12px",

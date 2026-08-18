@@ -1,4 +1,5 @@
 import type { SkillStats } from "@devdigest/shared";
+import { pullFrequency } from "../../../../helpers";
 
 /**
  * Values for the `listItem.stats` line: "N agents · X% pull · Y% accept".
@@ -16,8 +17,7 @@ export type SkillStatsLine = {
 export function statsLine(stats: SkillStats, noValue: string): SkillStatsLine {
   return {
     agents: stats.used_by.length,
-    // runs_total is the denominator: a skill "pulled" into 3 of 4 runs is 75%.
-    pull: stats.runs_total > 0 ? Math.round((stats.pull_count_30d / stats.runs_total) * 100) : 0,
+    pull: pullFrequency(stats),
     accept: stats.accept_rate == null ? noValue : Math.round(stats.accept_rate * 100),
   };
 }

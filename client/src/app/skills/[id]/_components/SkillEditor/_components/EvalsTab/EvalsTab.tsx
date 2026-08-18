@@ -1,66 +1,34 @@
 /* EvalsTab — regression tests for a skill: a diff in, an expected finding count
-   out. Run results are view state, not server state: a run is an event, so it
-   lives here for the session rather than in the query cache. */
+   out. Run state (results by case_id, running, noProviderKey) is NOT owned
+   here any more: it lives in the SkillEvalRun seam above both this tab and
+   the detail header's "Run on evals" button (L05 step 5), so a header-
+   triggered run and this tab's own "Run"/"Run all" buttons show the same
+   results. See SkillEvalRun.tsx for the merge-not-replace reasoning that used
+   to live in this file next to the state it now travels with. */
 "use client";
 
 import React from "react";
 import { useTranslations } from "next-intl";
 import { Badge, Button, EmptyState, ErrorState, IconBtn, Skeleton } from "@devdigest/ui";
-import type { EvalCase, EvalRun, Skill } from "@devdigest/shared";
-import {
-  useDeleteEvalCase,
-  useRunAllEvals,
-  useRunEvalCase,
-  useSkillEvalCases,
-} from "@/lib/hooks/skills";
+import type { EvalCase, Skill } from "@devdigest/shared";
+import { useDeleteEvalCase } from "@/lib/hooks/skills";
+import { useSkillEvalRun } from "../../../SkillEvalRun";
 import { EvalCaseModal } from "./_components/EvalCaseModal";
 import { OUTCOME_COLORS } from "./constants";
-import {
-  actualFindings,
-  caseOutcome,
-  countPassing,
-  indexRunsByCase,
-  isNoProviderKey,
-  readExpected,
-} from "./helpers";
+import { actualFindings, caseOutcome, countPassing, readExpected } from "./helpers";
 import { s } from "./styles";
 
 export function EvalsTab({ skill }: { skill: Skill }) {
   const t = useTranslations("skills");
-  const { data: cases, isLoading, isError, refetch } = useSkillEvalCases(skill.id);
-  const runOne = useRunEvalCase();
-  const runAll = useRunAllEvals();
+  const { cases, isLoading, isError, refetch, results, running, noProviderKey, runOne, runAll } =
+    useSkillEvalRun();
   const del = useDeleteEvalCase();
 
-  const [results, setResults] = React.useState<Record<string, EvalRun>>({});
   /** undefined = modal closed, null = creating, EvalCase = editing. */
   const [editing, setEditing] = React.useState<EvalCase | null | undefined>(undefined);
 
-  const list = cases ?? [];
-  // Once the API has said "no key", every further run would 409 too — disable
-  // the buttons and explain instead of firing requests that cannot succeed.
-  const noProviderKey = isNoProviderKey(runOne.error) || isNoProviderKey(runAll.error);
-  const running = runOne.isPending || runAll.isPending;
+  const list = cases;
   const passed = countPassing(list, results);
-
-  const onRunOne = (id: string) =>
-    runOne.mutate(
-      { skillId: skill.id, id },
-      { onSuccess: (run) => setResults((prev) => ({ ...prev, [id]: run })) },
-    );
-
-  // Merge, never replace. Replacing the map made this callback's result depend
-  // on `list` as captured when the click happened: a case added or removed by a
-  // refetch in flight would drop every result keyed off the old list, and a
-  // single run that landed in between would be discarded. Merging keeps both —
-  // the run-all entries win for the cases it actually ran, and nothing else is
-  // touched. (The buttons are also disabled while any run is pending, so the
-  // overlap is narrow; this makes the state update correct rather than merely
-  // unlikely to be wrong.)
-  const onRunAll = () =>
-    runAll.mutate(skill.id, {
-      onSuccess: (runs) => setResults((prev) => ({ ...prev, ...indexRunsByCase(list, runs) })),
-    });
 
   const onDelete = (c: EvalCase) => {
     if (!window.confirm(t("evals.deleteConfirm", { name: c.name }))) return;
@@ -92,10 +60,10 @@ export function EvalsTab({ skill }: { skill: Skill }) {
             kind="secondary"
             size="sm"
             icon="Play"
-            onClick={onRunAll}
+            onClick={runAll}
             disabled={noProviderKey || running || list.length === 0}
           >
-            {runAll.isPending ? t("evals.running") : t("evals.runAll")}
+            {running ? t("evals.running") : t("evals.runAll")}
           </Button>
           <Button kind="primary" size="sm" icon="Plus" onClick={() => setEditing(null)}>
             {t("evals.add")}
@@ -146,7 +114,7 @@ export function EvalsTab({ skill }: { skill: Skill }) {
                     kind="secondary"
                     size="sm"
                     icon="Play"
-                    onClick={() => onRunOne(c.id)}
+                    onClick={() => runOne(c.id)}
                     disabled={noProviderKey || running}
                   >
                     {t("evals.run")}

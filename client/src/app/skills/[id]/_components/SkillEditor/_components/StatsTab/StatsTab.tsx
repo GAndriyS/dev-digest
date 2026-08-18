@@ -4,10 +4,12 @@
 "use client";
 
 import React from "react";
+import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { Badge, Donut, ErrorState, MetricCard, Skeleton } from "@devdigest/ui";
 import type { Skill } from "@devdigest/shared";
 import { useSkillAgents, useSkillStats } from "@/lib/hooks/skills";
+import { pullFrequency } from "../../../../../helpers";
 import { formatAcceptRate, toDonutSegments } from "./helpers";
 import { s } from "./styles";
 
@@ -34,6 +36,12 @@ export function StatsTab({ skill }: { skill: Skill }) {
       <div style={s.cards}>
         <MetricCard label={t("stats.usedBy")} value={stats.used_by.length} />
         <MetricCard label={t("stats.pullCount")} value={stats.pull_count_30d} />
+        {/* AC-22: same formula as the list card's usage line — both read
+            pullFrequency() from the route-level helper, not a local copy. */}
+        <MetricCard
+          label={t("stats.pullFrequency")}
+          value={t("stats.percent", { value: pullFrequency(stats) })}
+        />
         <MetricCard
           label={t("stats.acceptRate")}
           value={formatAcceptRate(stats.accept_rate, t("stats.noValue"))}
@@ -55,6 +63,11 @@ export function StatsTab({ skill }: { skill: Skill }) {
               {!u.agent_enabled && (
                 <Badge color="var(--text-muted)">{t("stats.agentDisabled")}</Badge>
               )}
+              {/* AC-21: same agent-editor destination the Skills tab there
+                  links back from — `?tab=skills` opens straight to it. */}
+              <Link href={`/agents/${u.agent_id}?tab=skills`} style={s.openLink}>
+                {t("stats.openAgent")}
+              </Link>
             </div>
           ))
         )}

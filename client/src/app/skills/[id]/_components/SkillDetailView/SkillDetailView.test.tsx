@@ -27,6 +27,12 @@ vi.mock("@/lib/hooks/skills", () => ({
   }),
   useDeleteSkill: () => mutation,
   useUpdateSkill: () => mutation,
+  // SkillEvalRunProvider wraps the header (Run on evals) and SkillEditor's
+  // Evals tab — mounted whenever the skill resolves, so it needs these even
+  // though the default tab is Config.
+  useSkillEvalCases: () => ({ data: [], isLoading: false, isError: false, refetch: vi.fn() }),
+  useRunEvalCase: () => mutation,
+  useRunAllEvals: () => mutation,
 }));
 
 // ConfigTab's "Project context to use" section (AC-15) mounts the shared
@@ -77,6 +83,14 @@ describe("SkillDetailView", () => {
     expect(screen.getAllByText("Disabled").length).toBeGreaterThan(0);
     expect(screen.getByText("untrusted source")).toBeInTheDocument();
     expect(screen.getByText(/came from an untrusted source/)).toBeInTheDocument();
+  });
+
+  it("shows Run on evals next to Delete skill, disabled with no eval cases", () => {
+    renderView();
+    const runEvals = screen.getByText("Run on evals").closest("button");
+    expect(runEvals).toBeInTheDocument();
+    expect(runEvals).toBeDisabled();
+    expect(screen.getByText("Delete skill").closest("button")).toBeInTheDocument();
   });
 
   it("treats a 404 as 'not found' rather than a transport failure", () => {

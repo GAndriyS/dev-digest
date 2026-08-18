@@ -93,10 +93,58 @@ describe("SkillsListView", () => {
     expect(screen.getAllByRole("switch")).toHaveLength(3);
   });
 
-  it("marks the selected card active via the selectedId prop", () => {
+  it("marks the selected card active via aria-current, not aria-pressed", () => {
     renderList({ skills: [skill("s1", "alpha"), skill("s2", "beta")], selectedId: "s2" });
-    expect(screen.getByRole("button", { name: /beta/ })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("button", { name: /alpha/ })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: /beta/ })).toHaveAttribute("aria-current", "true");
+    expect(screen.getByRole("button", { name: /alpha/ })).toHaveAttribute("aria-current", "false");
+    expect(screen.getByRole("button", { name: /beta/ })).not.toHaveAttribute("aria-pressed");
+    expect(screen.getByRole("button", { name: /alpha/ })).not.toHaveAttribute("aria-pressed");
+  });
+
+  it("exposes the cards as a labelled list", () => {
+    renderList({ skills: [skill("s1", "alpha")] });
+    expect(screen.getByRole("list", { name: "Skills" })).toBeInTheDocument();
+  });
+
+  it("moves focus between cards with the arrow keys", () => {
+    renderList({ skills: [skill("s1", "alpha"), skill("s2", "beta"), skill("s3", "gamma")] });
+    const alpha = screen.getByRole("button", { name: /alpha/ });
+    const beta = screen.getByRole("button", { name: /beta/ });
+    const gamma = screen.getByRole("button", { name: /gamma/ });
+
+    alpha.focus();
+    expect(document.activeElement).toBe(alpha);
+
+    fireEvent.keyDown(alpha, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(beta);
+
+    fireEvent.keyDown(beta, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(gamma);
+
+    // Past the last card, focus stays put — there is no next sibling.
+    fireEvent.keyDown(gamma, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(gamma);
+
+    fireEvent.keyDown(gamma, { key: "ArrowUp" });
+    expect(document.activeElement).toBe(beta);
+  });
+
+  it("selects the focused card with Enter or Space", () => {
+    const { onSelect } = renderList({ skills: [skill("s1", "alpha"), skill("s2", "beta")] });
+    const beta = screen.getByRole("button", { name: /beta/ });
+    fireEvent.keyDown(beta, { key: "Enter" });
+    expect(onSelect).toHaveBeenCalledWith("s2");
+
+    onSelect.mockClear();
+    fireEvent.keyDown(beta, { key: " " });
+    expect(onSelect).toHaveBeenCalledWith("s2");
+  });
+
+  it("keeps a disabled skill's card dimmed but selectable", () => {
+    const { onSelect } = renderList({ skills: [skill("s1", "alpha", { enabled: false })] });
+    const card = screen.getByRole("button", { name: /alpha/ });
+    fireEvent.click(card);
+    expect(onSelect).toHaveBeenCalledWith("s1");
   });
 
   it("calls onSelect rather than navigating itself", () => {

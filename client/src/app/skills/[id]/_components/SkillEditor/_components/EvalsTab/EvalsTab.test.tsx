@@ -28,6 +28,7 @@ vi.mock("@/lib/hooks/skills", () => ({
 }));
 
 import { EvalsTab } from "./EvalsTab";
+import { SkillEvalRunProvider } from "../../../SkillEvalRun";
 
 const SKILL: Skill = {
   id: "sk1",
@@ -71,7 +72,9 @@ const RUN: EvalRun = {
 function renderTab() {
   return render(
     <NextIntlClientProvider locale="en" messages={{ skills: messages }}>
-      <EvalsTab skill={SKILL} />
+      <SkillEvalRunProvider skill={SKILL}>
+        <EvalsTab skill={SKILL} />
+      </SkillEvalRunProvider>
     </NextIntlClientProvider>,
   );
 }

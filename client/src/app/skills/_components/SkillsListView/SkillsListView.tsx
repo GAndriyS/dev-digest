@@ -68,7 +68,7 @@ export function SkillsListView({
       )}
 
       {list.length > 0 && (
-        <div style={s.list}>
+        <div role="list" aria-label={t("page.listLabel")} style={s.list}>
           {list.map((sk) => (
             <SkillCard
               key={sk.id}

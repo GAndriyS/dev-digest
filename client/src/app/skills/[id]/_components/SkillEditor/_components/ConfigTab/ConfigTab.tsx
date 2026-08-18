@@ -9,19 +9,13 @@ import { Badge, Button, FormField, SelectInput, TextInput, Textarea, Toggle } fr
 import type { Skill, SkillType } from "@devdigest/shared";
 import { useUpdateSkill } from "@/lib/hooks/skills";
 import { useToast } from "@/lib/toast";
-import { useActiveRepo } from "@/lib/repo-context";
-import { ContextDocPicker } from "@/components/context-doc-picker";
 import { SKILL_TYPE_VALUES } from "../../../../../constants";
 import { BODY_ROWS } from "./constants";
+import { estimateBodyTokens } from "./helpers";
 import { s } from "./styles";
 
 export function ConfigTab({ skill }: { skill: Skill }) {
   const t = useTranslations("skills");
-  // Not repo-scoped, so the document catalog to attach from is the active repo
-  // (Q3: `useActiveRepo()`, no switcher) — same convention as the Agent editor's
-  // Context tab.
-  const tContext = useTranslations("context");
-  const { repoId } = useActiveRepo();
   const toast = useToast();
   const update = useUpdateSkill();
 
@@ -50,6 +44,7 @@ export function ConfigTab({ skill }: { skill: Skill }) {
     body !== skill.body;
 
   const typeOptions = SKILL_TYPE_VALUES.map((v) => ({ value: v, label: t(`listItem.type.${v}`) }));
+  const bodyTokens = estimateBodyTokens(body);
 
   const save = () =>
     update.mutate(
@@ -86,7 +81,19 @@ export function ConfigTab({ skill }: { skill: Skill }) {
       <FormField label={t("config.typeLabel")}>
         <SelectInput value={type} onChange={(v) => setType(v as SkillType)} options={typeOptions} />
       </FormField>
-      <FormField label={t("preview.bodyLabel")} hint={t("preview.bodyHint")} required>
+      <FormField
+        label={t("preview.bodyLabel")}
+        hint={t("preview.bodyHint")}
+        required
+        right={
+          <div style={s.bodyMeta}>
+            {/* AC-19: deterministic, client-only estimate of the text
+                currently in the field — no request, no model call. */}
+            <span style={s.tokenCount}>{t("config.bodyTokens", { count: bodyTokens })}</span>
+            {dirty && <span style={s.dirtyNote}>{t("config.unsaved")}</span>}
+          </div>
+        }
+      >
         <Textarea value={body} onChange={setBody} rows={BODY_ROWS} mono />
       </FormField>
 
@@ -99,20 +106,6 @@ export function ConfigTab({ skill }: { skill: Skill }) {
         >
           {update.isPending ? t("config.saving") : t("preview.save")}
         </Button>
-        {dirty && <span style={s.dirtyNote}>{t("config.unsaved")}</span>}
-      </div>
-
-      {/* AC-15: any agent that links this skill inherits these documents — the
-          set-write and its optimistic UI are identical to the Agent editor's
-          Context tab, only the owner differs. */}
-      <div style={s.contextSection}>
-        <ContextDocPicker
-          repoId={repoId}
-          ownerType="skill"
-          ownerId={skill.id}
-          title={tContext("picker.skillTitle")}
-          hint={tContext("picker.skillHint")}
-        />
       </div>
     </div>
   );

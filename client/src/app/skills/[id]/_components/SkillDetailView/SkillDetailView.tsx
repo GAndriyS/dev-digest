@@ -14,6 +14,7 @@ import { useDeleteSkill, useSkill } from "@/lib/hooks/skills";
 import { useToast } from "@/lib/toast";
 import { ApiError } from "@/lib/api";
 import { SkillEditor } from "../SkillEditor";
+import { RunEvalsButton, SkillEvalRunProvider } from "../SkillEvalRun";
 import { s } from "./styles";
 
 export function SkillDetailView() {
@@ -64,30 +65,33 @@ export function SkillDetailView() {
   };
 
   return (
-    <div style={s.wrap}>
-      <div style={s.header}>
-        <Icon.Sparkles size={18} style={s.icon} />
-        <h1 style={s.h1}>{skill.name}</h1>
-        <Badge color="var(--text-secondary)" mono>
-          {t("preview.version", { version: skill.version })}
-        </Badge>
-        <Badge color="var(--text-muted)">{t(`listItem.type.${skill.type}`)}</Badge>
-        {!skill.enabled && <Badge color="var(--text-muted)">{t("preview.disabled")}</Badge>}
-        {untrusted && (
-          <Badge color="var(--warn)" icon="AlertTriangle">
-            {t("preview.untrustedBadge")}
+    <SkillEvalRunProvider skill={skill}>
+      <div style={s.wrap}>
+        <div style={s.header}>
+          <Icon.Sparkles size={18} style={s.icon} />
+          <h1 style={s.h1}>{skill.name}</h1>
+          <Badge color="var(--text-secondary)" mono>
+            {t("preview.version", { version: skill.version })}
           </Badge>
-        )}
-        <div style={s.spacer}>
-          <Button kind="danger" size="sm" icon="Trash" onClick={remove} disabled={del.isPending}>
-            {t("detail.delete")}
-          </Button>
+          <Badge color="var(--text-muted)">{t(`listItem.type.${skill.type}`)}</Badge>
+          {!skill.enabled && <Badge color="var(--text-muted)">{t("preview.disabled")}</Badge>}
+          {untrusted && (
+            <Badge color="var(--warn)" icon="AlertTriangle">
+              {t("preview.untrustedBadge")}
+            </Badge>
+          )}
+          <div style={s.spacer}>
+            <RunEvalsButton skill={skill} />
+            <Button kind="danger" size="sm" icon="Trash" onClick={remove} disabled={del.isPending}>
+              {t("detail.delete")}
+            </Button>
+          </div>
         </div>
+
+        {untrusted && <div style={s.notice}>{t("preview.untrustedNotice")}</div>}
+
+        <SkillEditor skill={skill} />
       </div>
-
-      {untrusted && <div style={s.notice}>{t("preview.untrustedNotice")}</div>}
-
-      <SkillEditor skill={skill} />
-    </div>
+    </SkillEvalRunProvider>
   );
 }

@@ -35,11 +35,24 @@ export function SkillCard({
       onClick={onClick}
       role="button"
       tabIndex={0}
-      aria-pressed={!!active}
+      aria-current={active ? "true" : "false"}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
           onClick?.();
+          return;
+        }
+        // Arrow-key traversal between cards: siblings in the list are the
+        // other SkillCard roots, so walking the DOM avoids a parent-owned
+        // refs array. Toggle's own click stopPropagation already keeps its
+        // Enter/Space (the browser turns those into a click on the button)
+        // from reaching this handler.
+        if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+          e.preventDefault();
+          const sibling = (
+            e.key === "ArrowDown" ? e.currentTarget.nextElementSibling : e.currentTarget.previousElementSibling
+          ) as HTMLElement | null;
+          sibling?.focus();
         }
       }}
       style={s.card(!!active, skill.enabled)}

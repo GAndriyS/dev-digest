@@ -56,11 +56,21 @@ vi.mock("@/lib/hooks/core", () => ({
   useContextDoc: () => idle,
 }));
 
+// ContextTab (AC-14) needs to tell "no repo picked yet" (reposLoaded=false)
+// apart from "no active repository" (reposLoaded=true, repoId=null) — a
+// per-test mutable stub, same shape as the default context in repo-context.tsx.
+const activeRepo = { repoId: null as string | null, reposLoaded: false };
+vi.mock("@/lib/repo-context", () => ({
+  useActiveRepo: () => activeRepo,
+}));
+
 import { SkillEditor } from "./SkillEditor";
 
 afterEach(() => {
   cleanup();
   searchParams = new URLSearchParams("tab=config");
+  activeRepo.repoId = null;
+  activeRepo.reposLoaded = false;
 });
 
 const SKILL: Skill = {
@@ -85,13 +95,15 @@ function renderEditor() {
 }
 
 describe("SkillEditor (tab shell)", () => {
-  it("renders all five tabs and opens Config by default", () => {
+  it("renders all six tabs and opens Config by default", () => {
     renderEditor();
-    for (const label of ["Config", "Preview", "Evals", "Stats", "Versions"]) {
+    for (const label of ["Config", "Context", "Preview", "Evals", "Stats", "Versions"]) {
       expect(screen.getByText(label)).toBeInTheDocument();
     }
     expect(screen.getByText("Configuration")).toBeInTheDocument();
     expect(screen.getByDisplayValue("pr-quality-rubric")).toBeInTheDocument();
+    // AC-13: the picker moved to its own tab, so Config no longer shows it.
+    expect(screen.queryByText("Project context to use")).not.toBeInTheDocument();
   });
 
   it("writes the chosen tab into ?tab=", () => {
@@ -127,6 +139,24 @@ describe("SkillEditor › ConfigTab", () => {
     expect(screen.getByText("Save").closest("button")).not.toBeDisabled();
   });
 
+  it("shows a deterministic token estimate next to the body field that updates as it is edited (AC-19)", () => {
+    renderEditor();
+    // SKILL.body is 26 chars → ceil(26/4) = 7.
+    expect(screen.getByText("≈ 7 tokens")).toBeInTheDocument();
+    // getByDisplayValue's built-in whitespace normalizer collapses the
+    // body's "\n\n" before matching, so a multi-line exact string never
+    // matches — a regex sidesteps that, matching against the normalized text.
+    fireEvent.change(screen.getByDisplayValue(/specific/), { target: { value: "12345678" } });
+    expect(screen.getByText("≈ 2 tokens")).toBeInTheDocument();
+    expect(screen.getByText("Unsaved changes")).toBeInTheDocument();
+  });
+
+  it("estimates an empty body as ≈ 0 tokens, not 1", () => {
+    renderEditor();
+    fireEvent.change(screen.getByDisplayValue(/specific/), { target: { value: "" } });
+    expect(screen.getByText("≈ 0 tokens")).toBeInTheDocument();
+  });
+
   it("captions the description as the skill's interface", () => {
     renderEditor();
     expect(screen.getByText(/only thing an agent reads/)).toBeInTheDocument();
@@ -138,9 +168,34 @@ describe("SkillEditor › ConfigTab", () => {
       screen.getByText("Saving a changed body creates a new immutable version."),
     ).toBeInTheDocument();
   });
+});
 
-  it("adds a Project context to use section (AC-15)", () => {
+describe("SkillEditor › ContextTab", () => {
+  it("mounts the same picker, title and hint the Config tab used to carry (AC-12, AC-15)", () => {
+    searchParams = new URLSearchParams("tab=context");
     renderEditor();
     expect(screen.getByText("Project context to use")).toBeInTheDocument();
+    expect(
+      screen.getByText("Any agent using this skill inherits these documents."),
+    ).toBeInTheDocument();
+  });
+
+  it("falls back to the picker's own empty state, not the no-repo one, while repos are still loading", () => {
+    searchParams = new URLSearchParams("tab=context");
+    // activeRepo.reposLoaded is false by default (see afterEach) — mirrors
+    // repo-context.tsx's own default context value before repos resolve.
+    renderEditor();
+    expect(screen.queryByText("No repository selected")).not.toBeInTheDocument();
+  });
+
+  it("explains there is no active repository once repos have loaded and none is selected (AC-14)", () => {
+    searchParams = new URLSearchParams("tab=context");
+    activeRepo.reposLoaded = true;
+    activeRepo.repoId = null;
+    renderEditor();
+    expect(screen.getByText("No repository selected")).toBeInTheDocument();
+    expect(
+      screen.getByText("Pick a repository to browse and attach its context documents."),
+    ).toBeInTheDocument();
   });
 });
