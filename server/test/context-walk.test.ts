@@ -151,6 +151,16 @@ describe('classifyAndRead', () => {
    * clone but outside every CONFIGURED root must still be refused, or
    * `GET /repos/:id/context/doc?path=` reads files the listing never offered
    * (e.g. `node_modules/**`, skipped by the walk but not by a direct path).
+   *
+   * Fix pass 2, item 2: the first version of this test used only
+   * `node_modules/pkg/README.md` — the one shape with NO root-named segment
+   * anywhere, which a naive "root name anywhere in the path" check also
+   * rejects. That proved a narrower rule than the walk's own. These three
+   * cases pin the actual bound: a root-named segment ANYWHERE in the path
+   * (`docs/node_modules/...`), and a `SKIP_DIR_NAMES` segment appearing AFTER
+   * a real root (`specs/node_modules/...`) must both still be refused, and
+   * the reason is pinned exactly — `.toMatch(/root/)` alone also matches the
+   * unrelated symlink-escape message (`escapes the clone root (symlink)`).
    */
   it('rejects a document that is genuinely inside the clone but outside every configured root', async () => {
     const root = await tmp('devdigest-context-read-');
@@ -158,6 +168,34 @@ describe('classifyAndRead', () => {
     await writeFile(join(root, 'node_modules', 'pkg', 'README.md'), '# vendored');
     const result = await classifyAndRead(root, 'node_modules/pkg/README.md', 20_000, ['specs', 'docs']);
     expect('reason' in result).toBe(true);
-    if ('reason' in result) expect(result.reason).toMatch(/root/);
+    if ('reason' in result) expect(result.reason).toBe('outside the configured context roots');
+  });
+
+  it('rejects a root-named segment that appears anywhere in the path, not just first', async () => {
+    const root = await tmp('devdigest-context-read-');
+    await mkdir(join(root, 'node_modules', 'pkg', 'docs'), { recursive: true });
+    await writeFile(join(root, 'node_modules', 'pkg', 'docs', 'README.md'), '# vendored, nested under docs/');
+    const result = await classifyAndRead(
+      root,
+      'node_modules/pkg/docs/README.md',
+      20_000,
+      ['specs', 'docs'],
+    );
+    expect('reason' in result).toBe(true);
+    if ('reason' in result) expect(result.reason).toBe('outside the configured context roots');
+  });
+
+  it('rejects a real root followed by a SKIP_DIR_NAMES segment, matching the walk skipping that subtree', async () => {
+    const root = await tmp('devdigest-context-read-');
+    await mkdir(join(root, 'docs', 'node_modules', 'pkg'), { recursive: true });
+    await writeFile(join(root, 'docs', 'node_modules', 'pkg', 'README.md'), '# vendored, nested under docs/');
+    const result = await classifyAndRead(
+      root,
+      'docs/node_modules/pkg/README.md',
+      20_000,
+      ['specs', 'docs'],
+    );
+    expect('reason' in result).toBe(true);
+    if ('reason' in result) expect(result.reason).toBe('outside the configured context roots');
   });
 });

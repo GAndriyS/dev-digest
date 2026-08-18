@@ -249,25 +249,51 @@ export class ContextService implements ProjectContext {
    * `run-executor.ts` mirrors the "enabled is the kill switch" rule it
    * already applies to `## Skills / rules`). Never throws: a run must not
    * fail because Project Context has nothing to attach, or the clone is gone.
+   *
+   * Every filesystem failure was already degraded into a `skipped` entry
+   * (clone missing, over-limit, outside a configured root, …) — but until
+   * fix pass 2, item 5, the TWO repository reads above (`agentDocPaths`,
+   * `skillDocPaths`) were unguarded: a transient DB error there failed the
+   * whole review run, a failure mode this branch introduced for a run that
+   * attaches no documents at all. Degraded here the same way
+   * `run-executor.ts` already degrades `skillsRepo.recordRunSkills(...)`
+   * three lines above this facade's call site — `.catch()`, a Live Log line,
+   * fall back to "nothing to attach" rather than let it propagate.
    */
   async resolveForRun(
     clonePath: string | null,
     agentId: string,
     enabledSkillIds: string[],
   ): Promise<ResolvedContextDocs> {
-    const ownPaths = await this.repo.agentDocPaths(agentId);
+    const lookupFailures: SkippedContextDoc[] = [];
+
+    const ownPaths = await this.repo.agentDocPaths(agentId).catch((err: unknown) => {
+      lookupFailures.push({
+        path: '(agent context)',
+        reason: `could not load the agent's attached paths — ${(err as Error).message}`,
+      });
+      return [];
+    });
     const skillPathLists = await Promise.all(
-      enabledSkillIds.map((skillId) => this.repo.skillDocPaths(skillId)),
+      enabledSkillIds.map((skillId) =>
+        this.repo.skillDocPaths(skillId).catch((err: unknown) => {
+          lookupFailures.push({
+            path: `(skill ${skillId} context)`,
+            reason: `could not load the skill's attached paths — ${(err as Error).message}`,
+          });
+          return [];
+        }),
+      ),
     );
     const merged = dedupeKeepFirst([...ownPaths, ...skillPathLists.flat()]);
-    if (merged.length === 0) return { specs: [], specsRead: [], skipped: [] };
+    if (merged.length === 0) return { specs: [], specsRead: [], skipped: lookupFailures };
 
     if (!clonePath) {
-      return { specs: [], specsRead: [], skipped: skipAll(merged, 'repository not cloned') };
+      return { specs: [], specsRead: [], skipped: [...lookupFailures, ...skipAll(merged, 'repository not cloned')] };
     }
     const root = await realpath(clonePath).catch(() => null);
     if (root === null) {
-      return { specs: [], specsRead: [], skipped: skipAll(merged, 'clone path unreadable') };
+      return { specs: [], specsRead: [], skipped: [...lookupFailures, ...skipAll(merged, 'clone path unreadable')] };
     }
 
     const readOk: { path: string; content: string }[] = [];
@@ -284,7 +310,11 @@ export class ContextService implements ProjectContext {
     }
 
     const packed = packDocs(readOk, MAX_CONTEXT_BLOCK_CHARS);
-    return { specs: packed.specs, specsRead: packed.specsRead, skipped: [...skippedIO, ...packed.skipped] };
+    return {
+      specs: packed.specs,
+      specsRead: packed.specsRead,
+      skipped: [...lookupFailures, ...skippedIO, ...packed.skipped],
+    };
   }
 
   /** Resolve + validate the repo's clone root once — shared by listContext/readDoc. */

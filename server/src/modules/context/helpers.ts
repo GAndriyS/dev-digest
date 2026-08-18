@@ -1,4 +1,4 @@
-import { BYTES_PER_TOKEN_EST } from './constants.js';
+import { BYTES_PER_TOKEN_EST, SKIP_DIR_NAMES } from './constants.js';
 import type { SkippedContextDoc } from './types.js';
 
 /**
@@ -11,18 +11,40 @@ export function estimateTokens(bytes: number): number {
 }
 
 /**
- * The configured root name a listed path was found under — the FIRST path
- * segment that matches a configured root, scanning left to right. Returns
- * `null` for a path that isn't under any configured root (can happen for an
- * attached path read back outside the listing walk, e.g. a legacy attachment
- * whose repo layout changed) — callers treat that as "no badge", not an error.
+ * The configured root name a listed path was found under — re-derives
+ * `walkContextFiles`'s OWN rule rather than a looser "root name anywhere in
+ * the path" test, so this stays a genuine bound and not just a path-segment
+ * substring check (fix pass 2, item 1).
+ *
+ * The walk's rule, restated purely (no filesystem access, so it can run on a
+ * stored path with no clone on disk): scan the path's DIRECTORY segments
+ * (every segment except the final file name) left to right. The first
+ * directory segment that names a configured root activates that root for
+ * every segment after it — matching `nextRoot = activeRoot ?? (rootSet.has(...)
+ * ? ... : null)` in the walk. But the walk also never DESCENDS into a
+ * `SKIP_DIR_NAMES` directory at all (`if (SKIP_DIR_NAMES.has(entry.name))
+ * continue`), checked on every directory regardless of whether a root is
+ * already active — so a `SKIP_DIR_NAMES` segment anywhere among the
+ * directory segments means the walk would never have reached this file, and
+ * this function must refuse it too, even if a configured root appears
+ * earlier in the path (e.g. `specs/node_modules/pkg/README.md`) or never
+ * appears at all (e.g. `node_modules/pkg/docs/README.md`).
+ *
+ * Returns `null` for a path that isn't under any configured root, or that
+ * passes through a skipped directory — callers treat that as "no badge, not
+ * readable, not attachable", not an error.
  */
 export function rootBadgeFor(relPath: string, roots: readonly string[]): string | null {
   const rootSet = new Set(roots);
-  for (const segment of relPath.split('/')) {
-    if (rootSet.has(segment)) return segment;
+  const segments = relPath.split('/');
+  let activeRoot: string | null = null;
+  // Last segment is the file name — only directory segments gate root/skip.
+  for (let i = 0; i < segments.length - 1; i += 1) {
+    const segment = segments[i]!;
+    if (SKIP_DIR_NAMES.has(segment)) return null;
+    if (activeRoot === null && rootSet.has(segment)) activeRoot = segment;
   }
-  return null;
+  return activeRoot;
 }
 
 /**

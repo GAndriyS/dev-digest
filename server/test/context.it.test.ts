@@ -40,6 +40,13 @@ d('context module', () => {
       // had before fix pass 1, item 4. Never offered by the listing (skipped
       // by `SKIP_DIR_NAMES`), so a direct read must be refused too.
       ['node_modules/pkg/README.md', '# vendored'],
+      // Fix pass 2, item 2: a root-named segment ANYWHERE in the path
+      // (`docs/` here) must not fool the bound — `node_modules` is skipped
+      // before `docs` is ever reached, same as the walk.
+      ['node_modules/pkg/docs/README.md', '# vendored, nested under docs/'],
+      // A real root followed by a SKIP_DIR_NAMES segment: the walk never
+      // descends into `node_modules` even from inside a configured root.
+      ['docs/node_modules/pkg/README.md', '# vendored, nested under a real root'],
     ] as const) {
       await mkdir(dirname(join(clonePath, rel)), { recursive: true });
       await writeFile(join(clonePath, rel), body, 'utf8');
@@ -291,6 +298,39 @@ d('context module', () => {
     const res = await app.inject({
       method: 'GET',
       url: `/repos/${repoId}/context/doc?path=${encodeURIComponent('node_modules/pkg/README.md')}`,
+    });
+    expect(res.statusCode).toBe(404);
+
+    await app.close();
+  });
+
+  /**
+   * Fix pass 2, item 2: the shapes above prove refusal only for the one path
+   * with no root-named segment at all. These pin the two shapes a path-segment
+   * substring test would have let through — a root name appearing anywhere
+   * (`.../docs/README.md`) and a real root followed by a skipped subtree
+   * (`docs/node_modules/...`).
+   */
+  it('404s a doc whose path merely CONTAINS a root-named segment after a skipped directory', async () => {
+    const app = await makeApp();
+    const repoId = await freshRepo();
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/repos/${repoId}/context/doc?path=${encodeURIComponent('node_modules/pkg/docs/README.md')}`,
+    });
+    expect(res.statusCode).toBe(404);
+
+    await app.close();
+  });
+
+  it('404s a doc under a real root once the path enters a skipped subtree', async () => {
+    const app = await makeApp();
+    const repoId = await freshRepo();
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/repos/${repoId}/context/doc?path=${encodeURIComponent('docs/node_modules/pkg/README.md')}`,
     });
     expect(res.statusCode).toBe(404);
 

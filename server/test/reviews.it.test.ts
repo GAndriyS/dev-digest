@@ -531,8 +531,23 @@ d('A2 reviews + agents (Testcontainers pg)', () => {
       });
       expect(attach.statusCode).toBe(200);
 
-      await app.inject({ method: 'POST', url: `/pulls/${pr.id}/review`, payload: { agentId: agent.id } });
+      const body = (
+        await app.inject({ method: 'POST', url: `/pulls/${pr.id}/review`, payload: { agentId: agent.id } })
+      ).json();
+      const runId = body.runs[0].run_id;
       await waitForPrRuns(pg.handle.db, pr.id, { expected: 1 });
+
+      // Fix pass 2, item 3: the call-count delta alone holds whether the
+      // document was read, skipped, or never resolved — a broken Project
+      // Context would leave this test green. Pin that the document actually
+      // reached the prompt (its sibling above at 'own docs come first…' does
+      // the same via `trace.specs_read` / `trace.prompt_assembly.specs`), so
+      // the "zero extra calls" number rests on a real attachment, not a
+      // no-op.
+      const trace = (await app.inject({ method: 'GET', url: `/runs/${runId}/trace` })).json();
+      expect(trace.specs_read).toEqual(['specs/note.md']);
+      expect(trace.prompt_assembly.specs).toContain('specs/note.md');
+      expect(trace.prompt_assembly.specs).toContain('Some guidance.');
 
       expect(callsOf('completeStructured') - callsAfterBaseline).toBe(1);
     } finally {
