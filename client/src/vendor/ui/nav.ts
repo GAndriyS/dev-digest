@@ -18,7 +18,8 @@ export interface NavGroup {
   items: NavItemDef[];
 }
 
-/* DECLARED VENDOR UPDATE (L02, Skills Lab; extended L03, Conventions).
+/* DECLARED VENDOR UPDATE (L02, Skills Lab; extended L03, Conventions; L05,
+   Project Context).
    `src/vendor/ui` is normally fixed upstream and re-vendored; this NAV table is
    edited in place on purpose, because the Skills entry has no other home and
    everything downstream already expects it (`activeKeyFor('/skills')`,
@@ -29,12 +30,18 @@ export interface NavGroup {
 
    L03 adds the Conventions entry on the same terms: `activeKeyFor` already maps
    `/conventions` and `shell.json` already carries `nav.conventions`, so the NAV
-   row is the only thing that was missing. */
+   row is the only thing that was missing.
+
+   L05 adds Project Context the same way: `activeKeyFor` already maps `/context`
+   and `shell.json` already carries `nav.context` — again, the NAV row is the
+   only thing that was missing. It goes in WORKSPACE next to Pull Requests
+   (repo-scoped, `:repoId`-templated), not SKILLS LAB. */
 export const NAV: NavGroup[] = [
   {
     section: "WORKSPACE",
     items: [
       { key: "pulls", label: "Pull Requests", icon: "GitPullRequest", href: "/repos/:repoId/pulls", gKey: "p" },
+      { key: "context", label: "Project Context", icon: "FileText", href: "/repos/:repoId/context", gKey: "x" },
     ],
   },
   {
@@ -71,6 +78,7 @@ export const SHORTCUTS: ShortcutDef[] = [
   { keys: "⌘K", label: "Open command palette", group: "Global" },
   { keys: "?", label: "Show keyboard shortcuts", group: "Global" },
   { keys: "g p", label: "Go to Pull Requests", group: "Navigation" },
+  { keys: "g x", label: "Go to Project Context", group: "Navigation" },
   { keys: "g s", label: "Go to Skills", group: "Navigation" },
   { keys: "g c", label: "Go to Conventions", group: "Navigation" },
   { keys: "g a", label: "Go to Agents", group: "Navigation" },
