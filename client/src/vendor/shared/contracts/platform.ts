@@ -273,7 +273,12 @@ export const SpecFile = z.object({
   content: z.string().nullish(),
   size: z.number().int().nullish(),
   updated_at: z.string().nullish(),
-  /** Configured root the file was found under (e.g. `specs`), doubles as its badge. */
+  /**
+   * Configured root the file was found under (e.g. `specs`), doubles as its
+   * badge. May also carry a badge derived from a matched file name (e.g.
+   * `insights` for a file matched by `PROJECT_CONTEXT_FILES` rather than by
+   * root) — the field's shape does not change, only what can produce a value.
+   */
   root: z.string().nullish(),
   /** Deterministic size-based estimate, never a real tokenizer count — see MAX_CONTEXT_DOC_BYTES. */
   tokens_est: z.number().int().nullish(),
@@ -291,6 +296,8 @@ export const ContextListing = z.object({
   truncated: z.boolean(),
   /** Configured root names that were scanned (e.g. `["specs", "docs", "insights"]`). */
   roots: z.array(z.string()),
+  /** Configured document file names that were matched by name (e.g. `["INSIGHTS.md"]`). */
+  file_names: z.array(z.string()),
   scanned_at: z.string(),
 });
 export type ContextListing = z.infer<typeof ContextListing>;

@@ -297,6 +297,7 @@ describe('ContextListing wraps SpecFile with directory metadata', () => {
         total: 1,
         truncated: false,
         roots: ['specs', 'docs', 'insights'],
+        file_names: ['INSIGHTS.md'],
         scanned_at: '2026-08-18T00:00:00.000Z',
       }),
     ).not.toThrow();
@@ -309,6 +310,7 @@ describe('ContextListing wraps SpecFile with directory metadata', () => {
         total: 0,
         truncated: false,
         roots: ['specs', 'docs', 'insights'],
+        file_names: ['INSIGHTS.md'],
         scanned_at: '2026-08-18T00:00:00.000Z',
       }),
     ).not.toThrow();
@@ -321,6 +323,30 @@ describe('ContextListing wraps SpecFile with directory metadata', () => {
         content: '# hi',
       }),
     ).not.toThrow();
+  });
+
+  it('parses a listing that carries file_names alongside roots', () => {
+    expect(() =>
+      ContextListing.parse({
+        files: [],
+        total: 0,
+        truncated: false,
+        roots: ['specs', 'docs'],
+        file_names: ['INSIGHTS.md'],
+        scanned_at: '2026-08-18T00:00:00.000Z',
+      }),
+    ).not.toThrow();
+  });
+
+  it('rejects a listing missing file_names — proves the field is required in both @devdigest/shared copies', () => {
+    const withoutFileNames = {
+      files: [],
+      total: 0,
+      truncated: false,
+      roots: ['specs', 'docs'],
+      scanned_at: '2026-08-18T00:00:00.000Z',
+    };
+    expect(() => ContextListing.parse(withoutFileNames)).toThrow();
   });
 });
 
