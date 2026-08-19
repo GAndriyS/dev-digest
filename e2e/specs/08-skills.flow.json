@@ -2,6 +2,7 @@
   "name": "Skills Lab lists the seeded skills, opens one straight into its editor, switches to Context, and shows the agent's linked count",
   "description": "Loads /skills and confirms the seeded skills render in the new master-detail left list. Selects the rubric card, which now navigates directly into the full editor at /skills/:id (L05 redesign — no separate side-preview-then-'Open in the editor' step), confirms the route and a tab landed in the URL, then switches to the Context tab and confirms the shared context picker renders there. Then opens the Security Reviewer's Skills tab in the agent editor and confirms the linked count. Read-only seeded data throughout: nothing here attaches, reorders or runs anything, so no model call is triggered.",
   "steps": [
+    { "cmd": ["set", "viewport", "1280", "900"], "label": "tall enough viewport — the skill list is its own scroll column and the rubric card (3rd of the seeded five, ~170px each) sits just below the default 1264×569 headless fold, where `find text … click` reports success and hits nothing" },
     { "cmd": ["open", "{BASE}/skills"], "label": "load the Skills Lab" },
     { "cmd": ["wait", "--url", "/skills"], "label": "skills route reached" },
     { "cmd": ["wait", "--load", "networkidle"], "label": "skills fetch settles" },

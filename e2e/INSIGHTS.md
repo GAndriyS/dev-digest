@@ -20,7 +20,14 @@ skill, append-only. Entry format and promotion rules → root `INSIGHTS.md`.
   `document.elementFromPoint` at the reported coordinate. The fix is
   `set viewport <w> <h>` as the flow's first step (1280×900 in
   `10-project-context.flow.json`), **not** a `scrollintoview` retry — scrolling
-  does not correct for an overlay that is fixed.
+  does not correct for an overlay that is fixed. Second shape of the same bug
+  (2026-08-19, `08-skills.flow.json`, CI-only): a target inside an
+  independently-scrolling column (`overflowY: auto`, Skills Lab list) that lies
+  below the 569px fold — `document.elementFromPoint` at the click point is
+  `null`, the CLI still prints `✓`, and the flow times out on the NEXT step
+  (`wait --url /skills/`). It passed locally only because the local viewport was
+  taller; the tell is a flow green on a laptop and red only in CI at an
+  identical commit. Same fix: `set viewport` first.
 
 - **2026-08-04** — On Windows the runner dies with `spawn agent-browser ENOENT`
   on every step even when `agent-browser --version` works in the shell. `run.ts`
