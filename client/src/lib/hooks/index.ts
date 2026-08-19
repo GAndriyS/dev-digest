@@ -9,3 +9,4 @@ export * from "./repo-intel";
 export * from "./skills";
 export { useConventions, useExtractConventions, useUpdateConvention } from "./conventions";
 export { usePrBlast, useBlastSummary, useCachedBlastSummary } from "./blast";
+export { useOnboardingTour, useGenerateOnboardingTour } from "./onboarding";

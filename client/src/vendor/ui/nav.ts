@@ -35,12 +35,19 @@ export interface NavGroup {
    L05 adds Project Context the same way: `activeKeyFor` already maps `/context`
    and `shell.json` already carries `nav.context` — again, the NAV row is the
    only thing that was missing. It goes in WORKSPACE next to Pull Requests
-   (repo-scoped, `:repoId`-templated), not SKILLS LAB. */
+   (repo-scoped, `:repoId`-templated), not SKILLS LAB.
+
+   L05 (SPEC-03, Onboarding Generator) adds Onboarding Tour on the same terms:
+   `activeKeyFor` maps `/repos/:repoId/onboarding` to `onboarding-tour`,
+   `shell.json` already carries `nav.onboarding-tour`; the NAV row (WORKSPACE,
+   between Pull Requests and Project Context, `g o`) is again the only thing
+   missing. Declared in the PR body as `Vendor-update: client/src/vendor/ui/nav.ts`. */
 export const NAV: NavGroup[] = [
   {
     section: "WORKSPACE",
     items: [
       { key: "pulls", label: "Pull Requests", icon: "GitPullRequest", href: "/repos/:repoId/pulls", gKey: "p" },
+      { key: "onboarding-tour", label: "Onboarding Tour", icon: "Workflow", href: "/repos/:repoId/onboarding", gKey: "o" },
       { key: "context", label: "Project Context", icon: "FileText", href: "/repos/:repoId/context", gKey: "x" },
     ],
   },
@@ -78,6 +85,7 @@ export const SHORTCUTS: ShortcutDef[] = [
   { keys: "⌘K", label: "Open command palette", group: "Global" },
   { keys: "?", label: "Show keyboard shortcuts", group: "Global" },
   { keys: "g p", label: "Go to Pull Requests", group: "Navigation" },
+  { keys: "g o", label: "Go to Onboarding Tour", group: "Navigation" },
   { keys: "g x", label: "Go to Project Context", group: "Navigation" },
   { keys: "g s", label: "Go to Skills", group: "Navigation" },
   { keys: "g c", label: "Go to Conventions", group: "Navigation" },

@@ -1,15 +1,58 @@
 {
   "title": "Onboarding Tour",
-  "sections": "Sections",
-  "sectionCount": "{count} sections",
   "regenerate": "Regenerate",
   "regenerating": "Regenerating…",
-  "unknownError": "Unknown error",
+  "subtitle": "{filesIndexed} of {totalCandidates} code files indexed · index {indexStatus} · generated {generatedAt}",
+  "indexStatus": {
+    "full": "full",
+    "partial": "partial",
+    "degraded": "degraded",
+    "failed": "failed"
+  },
+  "sections": {
+    "architecture_overview": "Architecture overview",
+    "critical_paths": "Critical paths",
+    "run_locally": "Run it locally",
+    "reading_path": "Reading path",
+    "first_tasks": "First tasks"
+  },
+  "toc": {
+    "heading": "On this page"
+  },
+  "card": {
+    "expand": "Expand section",
+    "collapse": "Collapse section"
+  },
+  "criticalPaths": {
+    "open": "Open on GitHub",
+    "openAria": "Open {path} on GitHub in a new tab"
+  },
+  "runLocally": {
+    "copyAria": "Copy command: {command}",
+    "copied": "Copied"
+  },
+  "shareLink": {
+    "label": "Share link",
+    "copied": "Link copied"
+  },
   "generate": {
     "title": "Generate onboarding tour",
-    "body": "DevDigest indexes the repo and specs, then writes a 5-section guided tour: overview, architecture, key modules, getting started, and conventions & gotchas.",
+    "body": "DevDigest reads the repo's index and configuration, then writes a 5-section guided tour: architecture overview, critical paths, running it locally, a recommended reading order, and first tasks.",
     "cta": "Generate onboarding tour",
-    "generating": "Generating…"
+    "generating": "Generating…",
+    "error": "Couldn't generate the onboarding tour"
+  },
+  "skeleton": {
+    "title": "Tour isn't ready yet",
+    "cta": "Try again",
+    "reason": {
+      "no_clone": "The repository hasn't finished cloning yet. Try again once the import completes.",
+      "disabled": "Repository indexing is turned off for this DevDigest instance, so there isn't enough signal yet to build a tour.",
+      "not_indexed": "The repository hasn't been indexed yet. Wait for indexing to finish, then generate the tour.",
+      "degraded": "The repository index is degraded, so the tour can't be generated reliably yet.",
+      "failed": "The repository index failed to build, so the tour can't be generated yet.",
+      "llm_failed": "The last generation attempt didn't produce a usable tour. You can try again."
+    }
   },
   "loadError": {
     "title": "Couldn’t load the onboarding tour"
