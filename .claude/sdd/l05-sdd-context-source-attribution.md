@@ -8,6 +8,9 @@ Plan: .claude/plans/l05-sdd-context-source-attribution.md · Spec: specs/SPEC-01
 | 3 find | arch: PASS 0/0 · cr: 2 low | 84k ∥ — | |
 | 3b review loop | PASS after 1 loop (main session fix) | — | cr #1 accepted (auto, user pre-authorized); cr #2 fixed |
 | 4 verify | COMPLETE (33 MET; 2 manual checks done by main session) | 86k | |
+| 5 docs | server/README.md § Review context | 59k | |
+| 6 pr | PR #9 (existing branch PR, body section appended) | 73k (security+conventions subagent) | self-review PASS, 1 SUGGESTION not applied; spec → implemented |
+| 7 wrap-up | server/INSIGHTS.md +1 (seed stale-state) | — | total agent tokens ≈ 0.72M |
 
 ## Execution brief — l05-sdd-context-source-attribution
 Mode: single-agent · Spec: specs/SPEC-01-project-context-18-08-2026.md (approved) · Slices: backend · Steps this run: 7 of 7
