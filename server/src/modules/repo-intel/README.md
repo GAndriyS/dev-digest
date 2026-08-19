@@ -45,7 +45,13 @@ touch the pipeline internals:
 In the starter, only `getRepoMap` / `getFileRank` / `getCallerSignatures` are
 wired — into `modules/reviews/run-executor.ts`, which adds the repo map and a
 high-blast-radius note to the prompt. Toggled by `REPO_INTEL_ENABLED` (global)
-and a per-agent `repo_intel` flag.
+and a per-agent `repo_intel` flag. `IndexState.totalCandidates`/`bounded`
+(walk-time counters, persisted alongside the index) let a consumer distinguish
+a clean pass from one truncated by `MAX_INDEXED_FILES` without its own read of
+the stats column — `modules/onboarding` is now a consumer of both
+`getTopFilesByRank` and `getCriticalPaths` (L05, facts for the reading path /
+critical-paths sections) and of these two counters (its own "full vs.
+partial" index-status read, distinct from this facade's `status`).
 
 ## Routes
 

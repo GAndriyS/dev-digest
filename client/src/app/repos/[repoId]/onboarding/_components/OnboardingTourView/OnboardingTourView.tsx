@@ -159,6 +159,12 @@ function SectionCard({
           {kind === "architecture_overview" && section.diagram && (
             <MermaidDiagram chart={section.diagram} />
           )}
+          {/* AC-20: "no signals found" is code-enforced, not model-dependent —
+              the server already guarantees `links: []` when no deterministic
+              first-task signal exists, and this is the honest message for it. */}
+          {kind === "first_tasks" && section.links.length === 0 && (
+            <p style={s.noSignals}>{t("firstTasks.noSignals")}</p>
+          )}
           {section.links.length > 0 &&
             (kind === "run_locally" ? (
               <ol style={s.linkList}>

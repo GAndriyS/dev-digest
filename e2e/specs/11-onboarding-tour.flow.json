@@ -5,7 +5,7 @@
     { "cmd": ["set", "viewport", "1280", "900"], "label": "tall enough viewport — matches 08-skills/10-project-context; avoids a headless-fold click miss on the sidebar link (e2e/INSIGHTS.md:14-30)" },
     { "cmd": ["open", "{BASE}/"], "label": "load the app root" },
     { "cmd": ["wait", "--url", "/pulls"], "label": "land on the PR list" },
-    { "cmd": ["find", "role", "link", "click", "--name", "Onboarding Tour"], "label": "sidebar nav — open Onboarding Tour (nav.ts, g o) — role locator, not find-text click (e2e/INSIGHTS.md:14-30)" },
+    { "cmd": ["find", "text", "Onboarding Tour", "click"], "label": "sidebar nav — open Onboarding Tour (nav.ts, g o) — same text locator flow 10 uses for Project Context; `find role link --name` does not resolve the sidebar entry (hermetic run 19/08/2026), and on /pulls the text is unique to the sidebar" },
     { "cmd": ["wait", "--url", "/onboarding"], "label": "onboarding route reached" },
     { "cmd": ["wait", "--load", "networkidle"], "label": "onboarding tour fetch settles" },
     { "cmd": ["wait", "--text", "Tour isn't ready yet"], "label": "skeleton empty state renders for the unindexed seeded repo (AC-24) — this text is unique to the skeleton, unlike the page title" },

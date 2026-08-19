@@ -23,6 +23,9 @@
     "expand": "Expand section",
     "collapse": "Collapse section"
   },
+  "firstTasks": {
+    "noSignals": "No first-task signals were found — no TODO/FIXME markers and no untested high-rank files in the indexed code."
+  },
   "criticalPaths": {
     "open": "Open on GitHub",
     "openAria": "Open {path} on GitHub in a new tab"

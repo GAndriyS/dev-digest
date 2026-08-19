@@ -114,6 +114,7 @@ export const s = {
   } satisfies CSSProperties,
 
   // ---- link / command rows ----
+  noSignals: { margin: "10px 0 0", fontSize: 13, color: "var(--text-muted)" } satisfies CSSProperties,
   linkList: { display: "flex", flexDirection: "column", gap: 8, listStyle: "none", padding: 0, margin: "10px 0 0" } satisfies CSSProperties,
   linkRow: {
     display: "flex",

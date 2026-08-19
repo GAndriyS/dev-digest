@@ -81,6 +81,9 @@ flowchart TB
   subgraph Context["Project Context (L05)"]
     context["context<br/>/repos/:id/context · /repos/:id/context/doc<br/>/agents/:id/context · /skills/:id/context"]
   end
+  subgraph Onboarding["Onboarding Tour (L05)"]
+    onboarding["onboarding<br/>/repos/:id/onboarding<br/>/repos/:id/onboarding/generate"]
+  end
   subgraph Platform["Platform"]
     settings["settings<br/>/settings · /providers"]
     workspace["workspace<br/>/workspace"]
@@ -115,6 +118,45 @@ file names even though the wire contract already validates its shape — a
 stored path is never by itself a reason to open a file (same guarded reader as
 `modules/_shared/clone-fs.ts` uses elsewhere). What an attachment does at run
 time is covered in **Review context (non-obvious)** below.
+
+`onboarding` (`modules/onboarding/`) generates a five-section, first-day tour
+of a repo — architecture overview, critical paths, running it locally, a
+reading path, first tasks — with **at most one** structured LLM call per
+`POST /repos/:id/onboarding/generate`. `GET /repos/:id/onboarding` never calls
+the model: it returns the cached tour, a deterministic **skeleton** (`status:
+'skeleton'`, with a `reason` — `no_clone` / `disabled` / `not_indexed` /
+`degraded` / `failed` / `llm_failed`), or the pre-generation empty state
+(`generated_at: null`, `sections: []`), in that order. `generate` accepts a
+body `{ locale? }` (`OnboardingGenerateBody`, every field optional; a
+body-less POST also validates, since Fastify hands the handler `null` for it)
+and falls back to `en` when `locale` is absent or blank. Facts are gathered
+**before** the model call, from `repoIntel.getTopFilesByRank` /
+`getCriticalPaths` plus symlink-safe reads of the clone (`readInsideClone`,
+same guard `modules/context` and `modules/conventions` use) — never a fresh
+untrusted read afterwards. The model's draft is **post-validated** against the
+union of those facts' paths (`knownPathsOf`): any link whose `path` wasn't
+actually collected is dropped and counted, never rendered; `reading_path`'s
+order and `first_tasks`' path set are entirely re-derived from the facts, the
+model only supplies rationale/description text for them. A repo with no
+clone, `REPO_INTEL_ENABLED=false`, no index yet, or a degraded/failed index
+returns the same skeleton reason as a polite no-op — the model is only ever
+reached once the index is healthy — and a skeleton is **never** written to
+the `onboarding` table (one row per repo, full overwrite on each successful
+generation, never a partial patch). Every generation — skeleton or not — logs
+exactly one `app.log.info` line (`onboardingLogFields`: `provider`, `model`,
+`calls`, `attempts`, `tokensIn`/`tokensOut`, `costUsd`, `droppedPaths`,
+`repoId`, `durationMs`, plus `reason`/`error` when set). A missing provider
+key surfaces as `409 no_provider_key` (`NoProviderKeyError`, same class every
+LLM feature uses), not a 500.
+
+```mermaid
+flowchart LR
+  CLONE["clone + repo-intel index"] --> FACTS["collectFacts<br/>getTopFilesByRank · getCriticalPaths<br/>+ guarded clone reads"]
+  FACTS --> LLM["one completeStructured call<br/>OnboardingDraft"]
+  LLM --> VALID["post-validate<br/>filterToKnownPaths"]
+  VALID --> CACHE[("onboarding table<br/>full overwrite")]
+  CACHE --> PAGE["GET /repos/:id/onboarding<br/>(zero model calls)"]
+```
 
 ## Environment
 

@@ -414,7 +414,10 @@ describe("OnboardingTourView", () => {
     renderView();
 
     const card = document.getElementById("onboarding-section-first_tasks")!;
-    expect(within(card).getByText("No deterministic first-task signals were found in this repository.")).toBeInTheDocument();
+    // The honest message is the VIEW's own i18n copy, keyed off `links: []`
+    // (code-enforced, AC-20) — it must appear even though the model body
+    // says something else; and no task rows are fabricated.
+    expect(within(card).getByText(messages.firstTasks.noSignals)).toBeInTheDocument();
     expect(within(card).queryAllByRole("listitem")).toHaveLength(0);
   });
 
