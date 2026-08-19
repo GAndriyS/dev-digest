@@ -16,8 +16,10 @@ import { AppShell } from "@/components/app-shell";
 import { useSkills } from "@/lib/hooks/skills";
 import { useMediaQuery } from "@/lib/use-media-query";
 import { DEFAULT_TAB } from "../../[id]/_components/SkillEditor";
+import { SkillDirtyGateProvider } from "../SkillDirtyGate";
 import { SkillsListView } from "../SkillsListView";
 import { AddSkillDrawer } from "./_components/AddSkillDrawer";
+import { DiscardChangesDialog } from "./_components/DiscardChangesDialog";
 import { ImportSkillDrawer } from "./_components/ImportSkillDrawer";
 import type { AddFlow } from "./constants";
 import { NARROW_QUERY } from "./constants";
@@ -34,6 +36,13 @@ export function SkillsLabShell({ children }: { children: React.ReactNode }) {
 
   const [query, setQuery] = React.useState("");
   const [adding, setAdding] = React.useState<AddFlow | null>(null);
+
+  // AC-7: ConfigTab (several route segments below, through SkillDirtyGate)
+  // registers whether it has unsaved edits. The shell owns the value — a
+  // plain useState, not read back out of context — so gating a navigation
+  // needs no round trip; only the setter travels down.
+  const [dirty, setDirty] = React.useState(false);
+  const [pendingSwitch, setPendingSwitch] = React.useState<(() => void) | null>(null);
 
   const all = skills ?? [];
   const id = skillIdFromPathname(pathname);
@@ -61,7 +70,18 @@ export function SkillsLabShell({ children }: { children: React.ReactNode }) {
   }, [id, skills, isLoading, isError, router]);
 
   const currentTab = search?.get("tab") ?? DEFAULT_TAB;
-  const selectSkill = (skillId: string) => router.push(skillHref(skillId, currentTab));
+
+  // AC-7: picking a different skill while the editor is dirty asks first —
+  // "chooses ANOTHER skill" is the trigger, so re-clicking the already
+  // selected card is a no-op, not a switch, and never opens the dialog.
+  // Cancel just drops the pending navigation; nothing has moved, so there is
+  // nothing to restore. Discard runs the switch that was on hold.
+  const selectSkill = (skillId: string) => {
+    if (skillId === id) return;
+    const go = () => router.push(skillHref(skillId, currentTab));
+    if (dirty) setPendingSwitch(() => go);
+    else go();
+  };
 
   const crumb = [
     { label: t("page.crumbLab") },
@@ -127,11 +147,23 @@ export function SkillsLabShell({ children }: { children: React.ReactNode }) {
                   {t("page.backToList")}
                 </button>
               )}
-              {children}
+              <SkillDirtyGateProvider onDirtyChange={setDirty}>{children}</SkillDirtyGateProvider>
             </div>
           )}
         </div>
       </div>
+
+      {pendingSwitch && (
+        <DiscardChangesDialog
+          onDiscard={() => {
+            const go = pendingSwitch;
+            setPendingSwitch(null);
+            setDirty(false);
+            go();
+          }}
+          onCancel={() => setPendingSwitch(null)}
+        />
+      )}
     </AppShell>
   );
 }

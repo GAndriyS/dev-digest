@@ -10,6 +10,7 @@ import type { Skill, SkillType } from "@devdigest/shared";
 import { useUpdateSkill } from "@/lib/hooks/skills";
 import { useToast } from "@/lib/toast";
 import { SKILL_TYPE_VALUES } from "../../../../../constants";
+import { useRegisterSkillDirty } from "../../../../../_components/SkillDirtyGate";
 import { BODY_ROWS } from "./constants";
 import { estimateBodyTokens } from "./helpers";
 import { s } from "./styles";
@@ -42,6 +43,14 @@ export function ConfigTab({ skill }: { skill: Skill }) {
     type !== skill.type ||
     enabled !== skill.enabled ||
     body !== skill.body;
+
+  // AC-7: the shell (several route segments up, past SkillEditor and
+  // SkillDetailView) reads this to decide whether switching skill needs
+  // confirmation. ConfigTab stays mounted across a tab switch of the same
+  // skill (SkillEditor.tsx hides, never unmounts, the Config pane), so this
+  // registration — and the form state above it — survives a trip to another
+  // tab and back.
+  useRegisterSkillDirty(dirty);
 
   const typeOptions = SKILL_TYPE_VALUES.map((v) => ({ value: v, label: t(`listItem.type.${v}`) }));
   const bodyTokens = estimateBodyTokens(body);

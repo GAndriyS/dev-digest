@@ -170,6 +170,41 @@ describe("SkillEditor › ConfigTab", () => {
   });
 });
 
+describe("SkillEditor › AC-7 unsaved-changes gate", () => {
+  // L05 step 6's default: tabs stay mounted within one selected skill, so an
+  // edit in Config is not lost by a trip to another tab — the pane is hidden
+  // (display: none), never unmounted, while another tab is active.
+  it("keeps an edited Config field across a switch to another tab and back", () => {
+    const { rerender } = renderEditor();
+    fireEvent.change(screen.getByDisplayValue("pr-quality-rubric"), {
+      target: { value: "renamed" },
+    });
+    expect(screen.getByDisplayValue("renamed")).toBeInTheDocument();
+
+    searchParams = new URLSearchParams("tab=preview");
+    rerender(
+      <NextIntlClientProvider locale="en" messages={{ skills: messages, context: contextMessages }}>
+        <ToastProvider>
+          <SkillEditor skill={SKILL} />
+        </ToastProvider>
+      </NextIntlClientProvider>,
+    );
+    expect(screen.getByText("Rendered body")).toBeInTheDocument();
+    // Still in the DOM (registered for AC-7), just not the active tab.
+    expect(screen.getByDisplayValue("renamed")).not.toBeVisible();
+
+    searchParams = new URLSearchParams("tab=config");
+    rerender(
+      <NextIntlClientProvider locale="en" messages={{ skills: messages, context: contextMessages }}>
+        <ToastProvider>
+          <SkillEditor skill={SKILL} />
+        </ToastProvider>
+      </NextIntlClientProvider>,
+    );
+    expect(screen.getByDisplayValue("renamed")).toBeVisible();
+  });
+});
+
 describe("SkillEditor › ContextTab", () => {
   it("mounts the same picker, title and hint the Config tab used to carry (AC-12, AC-15)", () => {
     searchParams = new URLSearchParams("tab=context");

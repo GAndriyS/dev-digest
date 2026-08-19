@@ -158,6 +158,12 @@
       "body": "Pick a repository to browse and attach its context documents."
     }
   },
+  "unsavedDialog": {
+    "title": "Discard unsaved changes?",
+    "body": "Switching to another skill will discard the changes you made to this one's configuration.",
+    "cancel": "Cancel",
+    "discard": "Discard changes"
+  },
   "config": {
     "title": "Configuration",
     "nameLabel": "Name",

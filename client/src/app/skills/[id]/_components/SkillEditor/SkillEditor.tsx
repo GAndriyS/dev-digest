@@ -39,7 +39,15 @@ export function SkillEditor({ skill }: { skill: Skill }) {
         <Tabs tabs={tabs} value={tab} onChange={setTab} pad="0 28px" />
       </div>
       <div style={s.body}>
-        {tab === "config" && <ConfigTab skill={skill} />}
+        {/* AC-7: Config is the one tab with an unsaved draft (ConfigTab is the
+            sole SkillDirtyGate registrant), so it is the one tab that must
+            not lose state when another tab is picked — hidden via CSS, never
+            unmounted. The other five stay conditionally mounted exactly as
+            before; none of them owns a draft this plan needs to survive a
+            tab switch. */}
+        <div style={tab === "config" ? undefined : s.hidden}>
+          <ConfigTab skill={skill} />
+        </div>
         {tab === "context" && <ContextTab skill={skill} />}
         {tab === "preview" && <PreviewTab skill={skill} />}
         {tab === "evals" && <EvalsTab skill={skill} />}

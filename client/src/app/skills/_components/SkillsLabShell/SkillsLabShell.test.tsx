@@ -6,6 +6,7 @@ import type { Skill } from "@devdigest/shared";
 import messages from "../../../../../messages/en/skills.json";
 import { ToastProvider } from "@/lib/toast";
 import { SkillSelectPrompt } from "../SkillSelectPrompt";
+import { useRegisterSkillDirty } from "../SkillDirtyGate";
 
 let pathname = "/skills";
 let searchParams = new URLSearchParams();
@@ -60,6 +61,14 @@ const skill = (id: string, name: string, over: Partial<Skill> = {}): Skill => ({
   version: 1,
   ...over,
 });
+
+// Stands in for ConfigTab (AC-7): registers `dirty` through the same seam,
+// several route segments closer than the real tree, without pulling in the
+// whole SkillEditor and its own mocks.
+function DirtyStub({ dirty }: { dirty: boolean }) {
+  useRegisterSkillDirty(dirty);
+  return <div>DETAIL</div>;
+}
 
 function tree(children: React.ReactNode) {
   return (
@@ -225,6 +234,52 @@ describe("SkillsLabShell", () => {
       expect(screen.getByText("alpha")).toBeInTheDocument();
       expect(screen.getByText("DETAIL")).toBeInTheDocument();
       expect(screen.queryByText("← All skills")).not.toBeInTheDocument();
+    });
+  });
+
+  describe("unsaved-changes gate (AC-7)", () => {
+    it("switches straight through when nothing is registered as dirty", () => {
+      pathname = "/skills/s1";
+      state.skills = [skill("s1", "alpha"), skill("s2", "beta")];
+      renderShell(<DirtyStub dirty={false} />);
+
+      fireEvent.click(screen.getByText("beta"));
+      expect(push).toHaveBeenCalledWith("/skills/s2?tab=config");
+      expect(screen.queryByText("Discard unsaved changes?")).not.toBeInTheDocument();
+    });
+
+    it("asks before switching skill while the editor is dirty, and switches on Discard", () => {
+      pathname = "/skills/s1";
+      state.skills = [skill("s1", "alpha"), skill("s2", "beta")];
+      renderShell(<DirtyStub dirty={true} />);
+
+      fireEvent.click(screen.getByText("beta"));
+      expect(push).not.toHaveBeenCalled();
+      expect(screen.getByText("Discard unsaved changes?")).toBeInTheDocument();
+
+      fireEvent.click(screen.getByText("Discard changes"));
+      expect(push).toHaveBeenCalledWith("/skills/s2?tab=config");
+    });
+
+    it("leaves the current skill selected and drops the dialog on Cancel", () => {
+      pathname = "/skills/s1";
+      state.skills = [skill("s1", "alpha"), skill("s2", "beta")];
+      renderShell(<DirtyStub dirty={true} />);
+
+      fireEvent.click(screen.getByText("beta"));
+      fireEvent.click(screen.getByText("Cancel"));
+      expect(push).not.toHaveBeenCalled();
+      expect(screen.queryByText("Discard unsaved changes?")).not.toBeInTheDocument();
+    });
+
+    it("never asks for a click on the already-selected skill", () => {
+      pathname = "/skills/s1";
+      state.skills = [skill("s1", "alpha")];
+      renderShell(<DirtyStub dirty={true} />);
+
+      fireEvent.click(screen.getByText("alpha"));
+      expect(push).not.toHaveBeenCalled();
+      expect(screen.queryByText("Discard unsaved changes?")).not.toBeInTheDocument();
     });
   });
 });
