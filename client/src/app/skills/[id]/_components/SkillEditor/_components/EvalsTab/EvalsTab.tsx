@@ -20,8 +20,18 @@ import { s } from "./styles";
 
 export function EvalsTab({ skill }: { skill: Skill }) {
   const t = useTranslations("skills");
-  const { cases, isLoading, isError, refetch, results, running, noProviderKey, runOne, runAll } =
-    useSkillEvalRun();
+  const {
+    cases,
+    isLoading,
+    isError,
+    refetch,
+    results,
+    running,
+    runningAll,
+    noProviderKey,
+    runOne,
+    runAll,
+  } = useSkillEvalRun();
   const del = useDeleteEvalCase();
 
   /** undefined = modal closed, null = creating, EvalCase = editing. */
@@ -63,7 +73,7 @@ export function EvalsTab({ skill }: { skill: Skill }) {
             onClick={runAll}
             disabled={noProviderKey || running || list.length === 0}
           >
-            {running ? t("evals.running") : t("evals.runAll")}
+            {runningAll ? t("evals.running") : t("evals.runAll")}
           </Button>
           <Button kind="primary" size="sm" icon="Plus" onClick={() => setEditing(null)}>
             {t("evals.add")}

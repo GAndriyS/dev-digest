@@ -22,7 +22,7 @@ import { useTranslations } from "next-intl";
 import { Button } from "@devdigest/ui";
 import type { EvalCase, EvalRun, Skill } from "@devdigest/shared";
 import { useRunAllEvals, useRunEvalCase, useSkillEvalCases } from "@/lib/hooks/skills";
-import { indexRunsByCase, isNoProviderKey } from "../SkillEditor/_components/EvalsTab/helpers";
+import { indexRunsByCase, isNoProviderKey } from "./helpers";
 
 export interface SkillEvalRunState {
   cases: EvalCase[];
@@ -31,6 +31,7 @@ export interface SkillEvalRunState {
   refetch: () => void;
   results: Record<string, EvalRun>;
   running: boolean;
+  runningAll: boolean;
   noProviderKey: boolean;
   hasCases: boolean;
   runOne: (id: string) => void;
@@ -44,6 +45,7 @@ const EMPTY_STATE: SkillEvalRunState = {
   refetch: () => {},
   results: {},
   running: false,
+  runningAll: false,
   noProviderKey: false,
   hasCases: false,
   runOne: () => {},
@@ -74,6 +76,15 @@ export function SkillEvalRunProvider({
   // the buttons and explain instead of firing requests that cannot succeed.
   const noProviderKey = isNoProviderKey(runOneMut.error) || isNoProviderKey(runAllMut.error);
   const running = runOneMut.isPending || runAllMut.isPending;
+  // `running` is the combined disable flag (any run in flight blocks every
+  // other run button, same as before this state moved into a shared seam).
+  // `runningAll` stays specific to the run-all mutation so the "Run all"
+  // button's own label only reads "Running…" during an actual run-all, not
+  // while a single case is running via runOne — matching the pre-L05 EvalsTab
+  // (`runAll.isPending ? … : …` on its own local mutation object). Collapsing
+  // both into one flag would make a single-case run show "Running…" on a
+  // button that has not been clicked.
+  const runningAll = runAllMut.isPending;
 
   const runOne = (id: string) =>
     runOneMut.mutate(
@@ -106,6 +117,7 @@ export function SkillEvalRunProvider({
     refetch,
     results,
     running,
+    runningAll,
     noProviderKey,
     hasCases: list.length > 0,
     runOne,
