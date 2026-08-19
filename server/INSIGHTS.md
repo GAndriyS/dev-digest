@@ -217,6 +217,18 @@ promotion rules → root `INSIGHTS.md`.
 
 ## Recurring Errors & Fixes
 
+- **2026-08-19** — "I changed the seed's demo run log / trace and `pnpm db:seed`
+  shows the old one" on a long-lived local database is stale state, not a bug.
+  `seed.ts`'s demo `agent_runs` / `run_traces` insert keys off
+  `(prId, agentId, source='local')` with `.onConflictDoNothing()`, so once ANY
+  run — a real one from earlier manual testing included — occupies that slot
+  for PR #482 / "General Reviewer", the fixture's trace never lands again and
+  the trace drawer keeps showing the older run (here: two pre-L05 runs dated
+  2026-08-05 with `specs_read: []`). Verify seed-format changes in an
+  `*.it.test.ts` that calls the real `seed()` against a fresh testcontainers
+  Postgres (`test/context.it.test.ts` does), not by eye on `devdigest-postgres`;
+  idempotency is doing exactly what it should.
+
 - **2026-08-18** — An integration test that does `waitForPrRuns(...)` and then
   `GET /runs/:id/trace` is load-sensitive and will flake: `run-executor.ts`
   calls `completeAgentRun(runId, { status: 'done' })` (~`:357`) several lines
