@@ -1,0 +1,14 @@
+{
+  "name": "Sidebar navigates to the Onboarding Tour; the seeded repo (clone, no index) renders the skeleton empty state",
+  "description": "From the PR list, follows the sidebar's 'Onboarding Tour' entry (nav.ts row, AC-1) to /repos/:repoId/onboarding. The seeded demo repo has a clonePath (the L05 Project Context fixture) but no repo-intel index rows, so getIndexState reports degradedReason 'no_data' and the service's skeleton-reason ladder (server/src/modules/onboarding/service.ts) returns 'not_indexed' before ever calling a model (AC-24). Confirms the skeleton empty state's own copy — title and 'Try again' CTA (client/messages/en/onboarding.json skeleton.*) — rather than the page title, which also appears as the sidebar's own link text. Deterministic locators only, no chat, no model call — read-only seeded data throughout.",
+  "steps": [
+    { "cmd": ["set", "viewport", "1280", "900"], "label": "tall enough viewport — matches 08-skills/10-project-context; avoids a headless-fold click miss on the sidebar link (e2e/INSIGHTS.md:14-30)" },
+    { "cmd": ["open", "{BASE}/"], "label": "load the app root" },
+    { "cmd": ["wait", "--url", "/pulls"], "label": "land on the PR list" },
+    { "cmd": ["find", "role", "link", "click", "--name", "Onboarding Tour"], "label": "sidebar nav — open Onboarding Tour (nav.ts, g o) — role locator, not find-text click (e2e/INSIGHTS.md:14-30)" },
+    { "cmd": ["wait", "--url", "/onboarding"], "label": "onboarding route reached" },
+    { "cmd": ["wait", "--load", "networkidle"], "label": "onboarding tour fetch settles" },
+    { "cmd": ["wait", "--text", "Tour isn't ready yet"], "label": "skeleton empty state renders for the unindexed seeded repo (AC-24) — this text is unique to the skeleton, unlike the page title" },
+    { "cmd": ["wait", "--text", "Try again"], "label": "skeleton CTA renders" }
+  ]
+}

@@ -24,3 +24,11 @@ DAG: stated in plan (Depends on column) + amendments A1–A15
 Notes: gate auto-accepted (autonomous run). Amendments A1–A15 are binding. R1/R2 not adopted, R5 adopted.
 
 ## Reports
+
+### Implementer reports (stage 2)
+- Wave 1 / lane A, step 1 — 1/1 · 111k tokens. Contracts in both shared copies; `contracts.test.ts` fixture + mirror-on-disk assertion (A1). backend: typecheck/depcruise PASS, 5 pre-existing unit failures (context-walk ×3, depgraph-adapter ×2 — env-bound, identical on base); frontend PASS.
+- Wave 2 / lane A, steps 2–8 — 7/7 · ~2 runs (first cut by API ENOTFOUND, resumed). repo-intel `IndexState` +`totalCandidates`/`bounded`; `modules/onboarding/{constants,types,helpers,facts,repository,service,routes}`; five-kind prompt. Deviations: `buildSkeleton(reason, index)` (no clone reads on skeleton); A14 probe uses `MAX_FILE_BYTES` (readInsideClone rejects oversize → `maxBytes:1` would misreport); model-supplied section titles, `SECTION_TITLES` for skeleton; rate-limit on POST /generate; `response[200]` declared. Insight candidates: `completeStructured` throws on exhausted retries without accumulated usage; `readInsideClone` is not an existence probe.
+- Wave 2 / lane B, steps 9–12 — 4/4 · 174k. `activeKeyFor` regex for `/repos/:id/onboarding`; hooks always send `{ locale }`; `OnboardingTourView` (states: loading/error/skeleton/empty/full; `generated_at === null` discriminator; TOC scroll-spy with IntersectionObserver guard); onboarding.json rewritten. frontend PASS (367 tests). R5 `.dd-md` already on branch (83d11ec).
+- Wave 2 / step 13 — main session, via Bash with explicit user authorization (Edit denied by settings): NAV row `onboarding-tour` (`Workflow`, `g o`) + SHORTCUTS + declared-vendor-update comment.
+- Wave 3 / step 15 (integration) — 1/1 · verification-only, 0 edits: six seams confirmed consistent; integration lane 80/82 (2 = documented `reviews.it.test.ts` specs_read race).
+- Wave 3 / step 14 (e2e) — 1/1 · 75k. `e2e/specs/11-onboarding-tour.flow.json` (viewport 1280×900, role-link navigation, asserts skeleton title/CTA, reason on the seeded stand = `not_indexed`) + README row. Not run: `agent-browser` not installed on this machine.
