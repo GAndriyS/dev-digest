@@ -102,27 +102,25 @@ export function badgeFor(
  * enabled skills" (SPEC-01 AC-17/AC-18): the agent's own choice always wins
  * over an inherited duplicate, and the first skill in prompt order wins over
  * a later one.
+ *
+ * Implemented as a projection of `mergeWithAttribution` so there is exactly
+ * ONE keep-first rule in the module — the repository's stored set and the
+ * run's attributed merge cannot drift apart.
  */
 export function dedupeKeepFirst(paths: readonly string[]): string[] {
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const p of paths) {
-    if (seen.has(p)) continue;
-    seen.add(p);
-    out.push(p);
-  }
-  return out;
+  return mergeWithAttribution(paths, []).map((d) => d.path);
 }
 
 /**
  * Merge the agent's own paths with every enabled skill's paths, own-first
  * then skill-by-skill in `enabledSkills` order (SPEC-01 AC-17/AC-18), keeping
  * the FIRST occurrence of each path and attributing it to whichever source
- * produced that first occurrence (SPEC-01 AC-39). This is `dedupeKeepFirst`'s
- * merge rule, restated once here so the attribution can never drift from it
- * (`server/INSIGHTS.md` 2026-08-18, Codebase Patterns) — a path duplicated
- * between the agent and a skill, or between two skills, is attributed to
- * whichever source's list it appears in FIRST.
+ * produced that first occurrence (SPEC-01 AC-39). This is THE keep-first rule
+ * of the module — `dedupeKeepFirst` is a projection of it, so the attribution
+ * can never drift from the plain merge (`server/INSIGHTS.md` 2026-08-18,
+ * Codebase Patterns) — a path duplicated between the agent and a skill, or
+ * between two skills, is attributed to whichever source's list it appears in
+ * FIRST.
  */
 export function mergeWithAttribution(
   ownPaths: readonly string[],
