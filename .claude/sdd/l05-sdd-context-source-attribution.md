@@ -7,6 +7,7 @@ Plan: .claude/plans/l05-sdd-context-source-attribution.md · Spec: specs/SPEC-01
 | 2 implement | 7/7 | 189k | 0 re-delegations |
 | 3 find | arch: PASS 0/0 · cr: 2 low | 84k ∥ — | |
 | 3b review loop | PASS after 1 loop (main session fix) | — | cr #1 accepted (auto, user pre-authorized); cr #2 fixed |
+| 4 verify | COMPLETE (33 MET; 2 manual checks done by main session) | 86k | |
 
 ## Execution brief — l05-sdd-context-source-attribution
 Mode: single-agent · Spec: specs/SPEC-01-project-context-18-08-2026.md (approved) · Slices: backend · Steps this run: 7 of 7
@@ -30,3 +31,7 @@ PASS · 0 CRITICAL · 0 WARNING · 0 SUGGESTION · depcruise exit 0 · 84k token
 
 ### /code-review (stage 3)
 2 findings (both PLAUSIBLE, low): (1) summary `skipped` counter includes lookup-failure pseudo-docs — **accepted, no change** (the counter must equal the number of `skipped` lines that follow; the pseudo-doc line itself explains it); (2) `mergeWithAttribution` restates `dedupeKeepFirst` — **fixed** in loop 1: `dedupeKeepFirst` is now a projection of `mergeWithAttribution` (one keep-first rule). Backend lane re-run: typecheck PASS, depcruise PASS, unit: only the pre-existing env-bound failures (context-walk symlink realpath, depgraph-adapter) — identical on base.
+
+### plan-verifier (stage 4)
+33 MET · 0 PARTIAL · 0 NOT MET · 2 UNVERIFIABLE (the two manual checks) · unrequested changes: none · verdict INCOMPLETE solely on the manual checks · 86k tokens.
+Manual checks then performed by the main session: (a) AC-37/AC-38 live panel — General Reviewer run 59f9d5dc on GAndriyS/dev-digest PR #9 with `specs/README.md` on the agent and `client/INSIGHTS.md` temporarily attached to linked skill `dev-digest-conventions v1`; Live Review / trace log showed `Project context: 2 doc(s) attached, 0 skipped` → `attached specs/README.md (agent, ~380 tokens)` → `attached client/INSIGHTS.md (via skill dev-digest-conventions v1, ~890 tokens)`, name/version identical to the `Skills:` line; temporary attachment reverted. (b) AC-44 manual `pnpm db:seed` check on this long-lived local DB is blocked by stale state (see implementer insight) — covered by `context.it.test.ts` on a fresh DB. → effective verdict **COMPLETE**.
