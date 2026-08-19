@@ -594,8 +594,12 @@ export async function seed(db: Db): Promise<{ workspaceId: string; userId: strin
             specs_read: specsRead,
             log: [
               { t: '00.00', kind: 'info', msg: `Starting review with agent "${generalReviewer.name}"` },
-              { t: '00.01', kind: 'info', msg: `Project context: attached ${specsRead[0]} (~46 tokens)` },
-              { t: '00.01', kind: 'info', msg: `Project context: attached ${specsRead[1]} (~44 tokens)` },
+              // SPEC-01 AC-37/AC-38/AC-44 — the summary line first (both docs
+              // are the agent's own, no linked skill in this fixture), then
+              // one attributed `attached` line per doc.
+              { t: '00.01', kind: 'info', msg: `Project context: ${specsRead.length} doc(s) attached, 0 skipped` },
+              { t: '00.01', kind: 'info', msg: `Project context: attached ${specsRead[0]} (agent, ~46 tokens)` },
+              { t: '00.01', kind: 'info', msg: `Project context: attached ${specsRead[1]} (agent, ~44 tokens)` },
               { t: '04.20', kind: 'result', msg: `Citation grounding: 2/2 passed` },
             ],
           },

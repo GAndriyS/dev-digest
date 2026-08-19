@@ -6,8 +6,16 @@ import { AppError, NotFoundError } from '../../platform/errors.js';
 import { isInsideRoot, readInsideClone } from '../_shared/clone-fs.js';
 import { ContextRepository } from './repository.js';
 import { MAX_CONTEXT_BLOCK_CHARS, MAX_CONTEXT_DOC_BYTES, MAX_CONTEXT_FILES, REPO_NOT_CLONED_CODE, SKIP_DIR_NAMES } from './constants.js';
-import { badgeFor, dedupeKeepFirst, estimateTokens, nameBadgeFor, packDocs } from './helpers.js';
-import type { ProjectContext, ResolvedContextDocs, SkippedContextDoc } from './types.js';
+import {
+  agentLookupFailureDoc,
+  badgeFor,
+  estimateTokens,
+  mergeWithAttribution,
+  nameBadgeFor,
+  packDocs,
+  skillLookupFailureDoc,
+} from './helpers.js';
+import type { ContextDocSource, EnabledSkillRef, ProjectContext, ResolvedContextDocs, SkippedContextDoc } from './types.js';
 
 /**
  * L05 — Project Context service.
@@ -295,42 +303,49 @@ export class ContextService implements ProjectContext {
   async resolveForRun(
     clonePath: string | null,
     agentId: string,
-    enabledSkillIds: string[],
+    enabledSkills: EnabledSkillRef[],
   ): Promise<ResolvedContextDocs> {
     const lookupFailures: SkippedContextDoc[] = [];
 
     const ownPaths = await this.repo.agentDocPaths(agentId).catch((err: unknown) => {
-      lookupFailures.push({
-        path: '(agent context)',
-        reason: `could not load the agent's attached paths — ${(err as Error).message}`,
-      });
+      lookupFailures.push(agentLookupFailureDoc(err as Error));
       return [];
     });
     const skillPathLists = await Promise.all(
-      enabledSkillIds.map((skillId) =>
-        this.repo.skillDocPaths(skillId).catch((err: unknown) => {
-          lookupFailures.push({
-            path: `(skill ${skillId} context)`,
-            reason: `could not load the skill's attached paths — ${(err as Error).message}`,
-          });
+      enabledSkills.map((skill) =>
+        this.repo.skillDocPaths(skill.id).catch((err: unknown) => {
+          lookupFailures.push(skillLookupFailureDoc(skill, err as Error));
           return [];
         }),
       ),
     );
-    const merged = dedupeKeepFirst([...ownPaths, ...skillPathLists.flat()]);
-    if (merged.length === 0) return { specs: [], specsRead: [], skipped: lookupFailures };
+    const merged = mergeWithAttribution(
+      ownPaths,
+      enabledSkills.map((skill, i) => ({ skill, paths: skillPathLists[i]! })),
+    );
+    if (merged.length === 0) return { specs: [], attached: [], specsRead: [], skipped: lookupFailures };
 
     if (!clonePath) {
-      return { specs: [], specsRead: [], skipped: [...lookupFailures, ...skipAll(merged, 'repository not cloned')] };
+      return {
+        specs: [],
+        attached: [],
+        specsRead: [],
+        skipped: [...lookupFailures, ...skipAll(merged, 'repository not cloned')],
+      };
     }
     const root = await realpath(clonePath).catch(() => null);
     if (root === null) {
-      return { specs: [], specsRead: [], skipped: [...lookupFailures, ...skipAll(merged, 'clone path unreadable')] };
+      return {
+        specs: [],
+        attached: [],
+        specsRead: [],
+        skipped: [...lookupFailures, ...skipAll(merged, 'clone path unreadable')],
+      };
     }
 
-    const readOk: { path: string; content: string }[] = [];
+    const readOk: { path: string; content: string; source: ContextDocSource }[] = [];
     const skippedIO: SkippedContextDoc[] = [];
-    for (const path of merged) {
+    for (const { path, source } of merged) {
       const result = await classifyAndRead(
         root,
         path,
@@ -338,14 +353,15 @@ export class ContextService implements ProjectContext {
         this.container.config.contextRoots,
         this.container.config.contextFiles,
       );
-      if ('reason' in result) skippedIO.push({ path, reason: result.reason });
-      else readOk.push({ path, content: result.content });
+      if ('reason' in result) skippedIO.push({ path, source, reason: result.reason });
+      else readOk.push({ path, content: result.content, source });
     }
 
     const packed = packDocs(readOk, MAX_CONTEXT_BLOCK_CHARS);
     return {
       specs: packed.specs,
-      specsRead: packed.specsRead,
+      attached: packed.attached,
+      specsRead: packed.attached.map((a) => a.path),
       skipped: [...lookupFailures, ...skippedIO, ...packed.skipped],
     };
   }
@@ -361,6 +377,6 @@ export class ContextService implements ProjectContext {
   }
 }
 
-function skipAll(paths: string[], reason: string): SkippedContextDoc[] {
-  return paths.map((path) => ({ path, reason }));
+function skipAll(docs: { path: string; source: ContextDocSource }[], reason: string): SkippedContextDoc[] {
+  return docs.map(({ path, source }) => ({ path, source, reason }));
 }

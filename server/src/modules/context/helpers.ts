@@ -1,5 +1,5 @@
 import { BYTES_PER_TOKEN_EST, SKIP_DIR_NAMES } from './constants.js';
-import type { SkippedContextDoc } from './types.js';
+import type { AttachedContextDoc, ContextDocSource, EnabledSkillRef, SkippedContextDoc } from './types.js';
 
 /**
  * Deterministic size-based token estimate (see `constants.ts` for why this is
@@ -115,6 +115,70 @@ export function dedupeKeepFirst(paths: readonly string[]): string[] {
 }
 
 /**
+ * Merge the agent's own paths with every enabled skill's paths, own-first
+ * then skill-by-skill in `enabledSkills` order (SPEC-01 AC-17/AC-18), keeping
+ * the FIRST occurrence of each path and attributing it to whichever source
+ * produced that first occurrence (SPEC-01 AC-39). This is `dedupeKeepFirst`'s
+ * merge rule, restated once here so the attribution can never drift from it
+ * (`server/INSIGHTS.md` 2026-08-18, Codebase Patterns) — a path duplicated
+ * between the agent and a skill, or between two skills, is attributed to
+ * whichever source's list it appears in FIRST.
+ */
+export function mergeWithAttribution(
+  ownPaths: readonly string[],
+  skillPathLists: readonly { skill: EnabledSkillRef; paths: readonly string[] }[],
+): { path: string; source: ContextDocSource }[] {
+  const seen = new Set<string>();
+  const out: { path: string; source: ContextDocSource }[] = [];
+  for (const path of ownPaths) {
+    if (seen.has(path)) continue;
+    seen.add(path);
+    out.push({ path, source: { kind: 'agent' } });
+  }
+  for (const { skill, paths } of skillPathLists) {
+    for (const path of paths) {
+      if (seen.has(path)) continue;
+      seen.add(path);
+      out.push({
+        path,
+        source: { kind: 'skill', skillId: skill.id, skillName: skill.name, skillVersion: skill.version },
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * The `skipped` entry for "could not load the agent's OWN attached paths"
+ * (a repository read failure, not a filesystem one — SPEC-01 AC-42). Pure —
+ * takes the already-caught error, does no I/O itself — so the "lookup failure
+ * still names its source" invariant is unit-testable without a container
+ * (`.claude/skills/onion-architecture/SKILL.md` § Testing seams).
+ */
+export function agentLookupFailureDoc(err: Error): SkippedContextDoc {
+  return {
+    path: '(agent context)',
+    source: { kind: 'agent' },
+    reason: `could not load the agent's attached paths — ${err.message}`,
+  };
+}
+
+/**
+ * The `skipped` entry for "could not load ONE enabled skill's attached
+ * paths" (SPEC-01 AC-42). The skill's name+version travel in from the SAME
+ * `EnabledSkillRef` the run's `Skills:` line was built from, so this line
+ * names the skill even though the pseudo-path still carries only its id
+ * (Recommendations §1, declined — the id stays).
+ */
+export function skillLookupFailureDoc(skill: EnabledSkillRef, err: Error): SkippedContextDoc {
+  return {
+    path: `(skill ${skill.id} context)`,
+    source: { kind: 'skill', skillId: skill.id, skillName: skill.name, skillVersion: skill.version },
+    reason: `could not load the skill's attached paths — ${err.message}`,
+  };
+}
+
+/**
  * One document, formatted for the `specs` prompt slot. reviewer-core wraps
  * each array element with `wrapUntrusted('spec-N', …)` — it has no idea which
  * document N is, so the path is baked into the chunk itself (matches the
@@ -127,7 +191,7 @@ export function formatContextChunk(path: string, content: string): string {
 /** Result of packing already-read documents under a character budget. */
 export interface PackedContextDocs {
   specs: string[];
-  specsRead: string[];
+  attached: AttachedContextDoc[];
   skipped: SkippedContextDoc[];
 }
 
@@ -140,25 +204,27 @@ export interface PackedContextDocs {
  *
  * Pure — no I/O. The service reads file content first; this only decides
  * ordering and the budget cutoff, which is what makes it unit-testable
- * without a filesystem or a container.
+ * without a filesystem or a container. Each doc carries its `source` in from
+ * the merge (`mergeWithAttribution`) and out again unchanged on both the
+ * `attached` and `skipped` sides (SPEC-01 AC-43).
  */
 export function packDocs(
-  docs: readonly { path: string; content: string }[],
+  docs: readonly { path: string; content: string; source: ContextDocSource }[],
   maxChars: number,
 ): PackedContextDocs {
   const specs: string[] = [];
-  const specsRead: string[] = [];
+  const attached: AttachedContextDoc[] = [];
   const skipped: SkippedContextDoc[] = [];
   let total = 0;
-  for (const { path, content } of docs) {
+  for (const { path, content, source } of docs) {
     const chunk = formatContextChunk(path, content);
     if (total + chunk.length > maxChars) {
-      skipped.push({ path, reason: `exceeds the ${maxChars}-character project context budget` });
+      skipped.push({ path, source, reason: `exceeds the ${maxChars}-character project context budget` });
       continue;
     }
     specs.push(chunk);
-    specsRead.push(path);
+    attached.push({ path, source });
     total += chunk.length;
   }
-  return { specs, specsRead, skipped };
+  return { specs, attached, skipped };
 }

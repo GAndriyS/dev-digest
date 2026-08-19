@@ -4,6 +4,7 @@ Plan: .claude/plans/l05-sdd-context-source-attribution.md · Spec: specs/SPEC-01
 | Stage | Result | Agent tokens | Note |
 |---|---|---|---|
 | 1 read plan | 1 wave · 1 lane | — | DAG stated in plan (Depends on column); gate auto-accepted — user instructed "do not stop and do not ask for approvals" (19/08/2026) |
+| 2 implement | 7/7 | 189k | 0 re-delegations |
 
 ## Execution brief — l05-sdd-context-source-attribution
 Mode: single-agent · Spec: specs/SPEC-01-project-context-18-08-2026.md (approved) · Slices: backend · Steps this run: 7 of 7
@@ -16,3 +17,8 @@ DAG: stated in plan
 Notes: no wire contract change (neither `vendor/shared` copy touched); no client change; open-question defaults recorded in the plan (code vocabulary, seed keeps `agent`, keep UUID in pseudo-path, no e2e edit); test-writer not in chain — tests are steps 5–7 of the implementer.
 
 ## Reports
+
+### Implementer report (stage 2)
+Steps: 7/7 · agent tokens 189k · backend lane: typecheck PASS, depcruise PASS, 426/431 unit (5 pre-existing failures in context-walk/depgraph-adapter, identical on base) · integration 82/82 PASS ×2.
+Deviations: extracted `agentLookupFailureDoc`/`skillLookupFailureDoc` as pure helpers (testing-seam rule); applied Recommendations §2, §4; §1, §3 declined per plan defaults.
+Insight candidate: seed's demo trace insert no-ops on a long-lived local DB that already holds a run for the same (prId, agentId, source) key.

@@ -6,7 +6,13 @@ import * as schema from '../../db/schema.js';
 import type { AgentRow } from '../../db/rows.js';
 import type { ReviewRepository, FindingRow, PullRow, ReviewRow } from './repository.js';
 import { REVIEW_STRATEGY } from './constants.js';
-import { taskLine, flagOutOfScope } from './helpers.js';
+import {
+  taskLine,
+  flagOutOfScope,
+  formatContextAttachedLine,
+  formatContextSkippedLine,
+  formatContextSummaryLine,
+} from './helpers.js';
 import { loadDiff } from './diff-loader.js';
 import { deriveIntent } from './intent.js';
 import { BYTES_PER_TOKEN_EST } from '../context/constants.js';
@@ -264,19 +270,22 @@ export class ReviewRunExecutor {
       const projectContext = await this.container.projectContext.resolveForRun(
         repo.clonePath,
         agent.id,
-        linkedSkills.map((l) => l.skill.id),
+        linkedSkills.map((l) => ({ id: l.skill.id, name: l.skill.name, version: l.skill.version })),
       );
       contextSpecs = projectContext.specs;
       contextSpecsRead = projectContext.specsRead;
-      // One Live Log line per attached doc (path + estimate) and per skipped
-      // one (path + reason) — Observability NFR, "never go silent" precedent
+      // SPEC-01 AC-37..AC-43 — one summary line ALWAYS, before any per-document
+      // line, then one Live Log line per attached doc (path + source +
+      // estimate) and per skipped one (path + source + reason) —
+      // Observability NFR, "never go silent" precedent
       // (`reviewer-core/src/review/run.ts` grounding drops).
-      projectContext.specsRead.forEach((path, i) => {
+      runLog.info(formatContextSummaryLine(projectContext.attached.length, projectContext.skipped.length));
+      projectContext.attached.forEach(({ path, source }, i) => {
         const tokensEst = Math.max(1, Math.ceil((contextSpecs[i]?.length ?? 0) / BYTES_PER_TOKEN_EST));
-        runLog.info(`Project context: attached ${path} (~${tokensEst} tokens)`);
+        runLog.info(formatContextAttachedLine(path, source, tokensEst));
       });
-      for (const { path, reason } of projectContext.skipped) {
-        runLog.info(`Project context: skipped ${path} — ${reason}`);
+      for (const { path, source, reason } of projectContext.skipped) {
+        runLog.info(formatContextSkippedLine(path, source, reason));
       }
 
       const task = taskLine(pull, intent) + rankNote;

@@ -1,9 +1,34 @@
 import type { ContextListing, ContextPaths, SpecFile } from '@devdigest/shared';
 
-/** One attached-but-unpacked document, with why — feeds the run's Live Log (Observability NFR). */
+/**
+ * Where an attached/skipped document came from (SPEC-01 AC-38/AC-43): the
+ * agent's own attachment, or inherited from an enabled linked skill. Name and
+ * version are carried IN by the caller (`run-executor`'s already-resolved
+ * `linkedSkills`) rather than re-read from the DB, so the source can never
+ * disagree with the same run's `Skills: … <name> v<version>` line.
+ */
+export type ContextDocSource =
+  | { kind: 'agent' }
+  | { kind: 'skill'; skillId: string; skillName: string; skillVersion: number };
+
+/** An enabled linked skill, as the run path needs it — id to query by, name+version to attribute by. */
+export interface EnabledSkillRef {
+  id: string;
+  name: string;
+  version: number;
+}
+
+/** One attached-but-unpacked document, with why and where it came from — feeds the run's Live Log (Observability NFR). */
 export interface SkippedContextDoc {
   path: string;
+  source: ContextDocSource;
   reason: string;
+}
+
+/** One document that made it into the prompt, and where it came from. */
+export interface AttachedContextDoc {
+  path: string;
+  source: ContextDocSource;
 }
 
 /** The result of resolving one run's Project Context attachments. */
@@ -13,7 +38,14 @@ export interface ResolvedContextDocs {
    * packed — pass straight into reviewer-core's `ReviewInput.specs`.
    */
   specs: string[];
-  /** Paths of the chunks above, same order — becomes `RunTrace.specs_read` verbatim. */
+  /**
+   * Path + source per attached doc, same order as `specs` — the single
+   * source of truth `specsRead` is derived from (SPEC-01 AC-43): the two
+   * cannot disagree because one is a projection of the other, not a second
+   * parallel array kept in sync by hand.
+   */
+  attached: AttachedContextDoc[];
+  /** `attached.map(a => a.path)`, same order — becomes `RunTrace.specs_read` verbatim. */
   specsRead: string[];
   /** Every attached path that did NOT make it into the prompt, with why. */
   skipped: SkippedContextDoc[];
@@ -66,6 +98,6 @@ export interface ProjectContext {
   resolveForRun(
     clonePath: string | null,
     agentId: string,
-    enabledSkillIds: string[],
+    enabledSkills: EnabledSkillRef[],
   ): Promise<ResolvedContextDocs>;
 }

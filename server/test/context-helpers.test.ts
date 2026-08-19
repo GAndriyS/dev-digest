@@ -3,13 +3,17 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it, expect, afterEach } from 'vitest';
 import {
+  agentLookupFailureDoc,
   badgeFor,
   dedupeKeepFirst,
   estimateTokens,
   formatContextChunk,
+  mergeWithAttribution,
   nameBadgeFor,
   packDocs,
+  skillLookupFailureDoc,
 } from '../src/modules/context/helpers.js';
+import type { EnabledSkillRef } from '../src/modules/context/types.js';
 import { BYTES_PER_TOKEN_EST, MAX_CONTEXT_BLOCK_CHARS } from '../src/modules/context/constants.js';
 import { walkContextFiles } from '../src/modules/context/service.js';
 
@@ -154,37 +158,57 @@ describe('context helpers', () => {
   });
 
   describe('packDocs', () => {
+    const AGENT = { kind: 'agent' as const };
+
     it('packs everything that fits, in order', () => {
       const docs = [
-        { path: 'a.md', content: 'aaaa' },
-        { path: 'b.md', content: 'bbbb' },
+        { path: 'a.md', content: 'aaaa', source: AGENT },
+        { path: 'b.md', content: 'bbbb', source: AGENT },
       ];
       const result = packDocs(docs, 10_000);
-      expect(result.specsRead).toEqual(['a.md', 'b.md']);
+      expect(result.attached.map((a) => a.path)).toEqual(['a.md', 'b.md']);
       expect(result.specs).toHaveLength(2);
       expect(result.skipped).toEqual([]);
     });
 
     it('skips a document that would overflow the budget, but keeps trying later ones', () => {
       const docs = [
-        { path: 'huge.md', content: 'x'.repeat(100) },
-        { path: 'small.md', content: 'y' },
+        { path: 'huge.md', content: 'x'.repeat(100), source: AGENT },
+        { path: 'small.md', content: 'y', source: AGENT },
       ];
       // Budget fits the header + "small.md" chunk but not "huge.md"'s.
       const budget = formatContextChunk('small.md', 'y').length;
       const result = packDocs(docs, budget);
-      expect(result.specsRead).toEqual(['small.md']);
+      expect(result.attached.map((a) => a.path)).toEqual(['small.md']);
       expect(result.skipped).toHaveLength(1);
       expect(result.skipped[0]).toMatchObject({ path: 'huge.md' });
       expect(result.skipped[0]!.reason).toMatch(/budget/);
     });
 
     it('never partially includes a document — over budget means fully skipped', () => {
-      const docs = [{ path: 'only.md', content: 'z'.repeat(50) }];
+      const docs = [{ path: 'only.md', content: 'z'.repeat(50), source: AGENT }];
       const result = packDocs(docs, 5);
       expect(result.specs).toEqual([]);
-      expect(result.specsRead).toEqual([]);
+      expect(result.attached).toEqual([]);
       expect(result.skipped).toHaveLength(1);
+    });
+
+    it('keeps each document\'s source on both sides — attached AND a budget skip (SPEC-01 AC-43)', () => {
+      const skillSource = { kind: 'skill' as const, skillId: 'sk1', skillName: 'pr-quality-rubric', skillVersion: 2 };
+      const docs = [
+        { path: 'kept.md', content: 'y', source: AGENT },
+        { path: 'over.md', content: 'x'.repeat(100), source: skillSource },
+      ];
+      const budget = formatContextChunk('kept.md', 'y').length;
+      const result = packDocs(docs, budget);
+      expect(result.attached).toEqual([{ path: 'kept.md', source: AGENT }]);
+      expect(result.skipped).toEqual([
+        {
+          path: 'over.md',
+          source: skillSource,
+          reason: expect.stringMatching(/budget/),
+        },
+      ]);
     });
 
     /**
@@ -202,20 +226,90 @@ describe('context helpers', () => {
       const chunkContentFor = (path: string, targetChunkLen: number) =>
         'x'.repeat(targetChunkLen - formatContextChunk(path, '').length);
 
-      const doc1 = { path: 'root/INSIGHTS.md', content: chunkContentFor('root/INSIGHTS.md', 19_335) };
-      const doc2 = { path: 'server/INSIGHTS.md', content: chunkContentFor('server/INSIGHTS.md', 17_899) };
+      const doc1 = { path: 'root/INSIGHTS.md', content: chunkContentFor('root/INSIGHTS.md', 19_335), source: AGENT };
+      const doc2 = {
+        path: 'server/INSIGHTS.md',
+        content: chunkContentFor('server/INSIGHTS.md', 17_899),
+        source: AGENT,
+      };
       expect(formatContextChunk(doc1.path, doc1.content).length).toBe(19_335);
       expect(formatContextChunk(doc2.path, doc2.content).length).toBe(17_899);
 
       // A third doc sized to push the running total exactly one char past budget.
       const remaining = budget - 19_335 - 17_899;
-      const doc3 = { path: 'third.md', content: chunkContentFor('third.md', remaining + 1) };
+      const doc3 = { path: 'third.md', content: chunkContentFor('third.md', remaining + 1), source: AGENT };
 
       const result = packDocs([doc1, doc2, doc3], budget);
-      expect(result.specsRead).toEqual(['root/INSIGHTS.md', 'server/INSIGHTS.md']);
+      expect(result.attached.map((a) => a.path)).toEqual(['root/INSIGHTS.md', 'server/INSIGHTS.md']);
       expect(result.skipped).toHaveLength(1);
       expect(result.skipped[0]).toMatchObject({ path: 'third.md' });
       expect(result.skipped[0]!.reason).toMatch(new RegExp(String(budget)));
+    });
+  });
+
+  describe('mergeWithAttribution', () => {
+    const skill1: EnabledSkillRef = { id: 'sk1', name: 'alpha', version: 2 };
+    const skill2: EnabledSkillRef = { id: 'sk2', name: 'beta', version: 7 };
+
+    it('attributes an agent-only path to the agent', () => {
+      const merged = mergeWithAttribution(['a.md'], []);
+      expect(merged).toEqual([{ path: 'a.md', source: { kind: 'agent' } }]);
+    });
+
+    it('AC-39/edge case: a path attached to both the agent and an inherited skill is attributed to the agent (own wins over inherited)', () => {
+      const merged = mergeWithAttribution(['shared.md'], [{ skill: skill1, paths: ['shared.md'] }]);
+      expect(merged).toEqual([{ path: 'shared.md', source: { kind: 'agent' } }]);
+    });
+
+    it('AC-39/edge case: a path attached to two enabled skills is attributed to the FIRST skill in prompt order', () => {
+      const merged = mergeWithAttribution(
+        [],
+        [
+          { skill: skill1, paths: ['shared.md'] },
+          { skill: skill2, paths: ['shared.md'] },
+        ],
+      );
+      expect(merged).toEqual([
+        { path: 'shared.md', source: { kind: 'skill', skillId: 'sk1', skillName: 'alpha', skillVersion: 2 } },
+      ]);
+    });
+
+    it('own docs come first, then each skill in order, each surviving path exactly once', () => {
+      const merged = mergeWithAttribution(
+        ['own.md'],
+        [
+          { skill: skill1, paths: ['sk1-doc.md'] },
+          { skill: skill2, paths: ['sk2-doc.md'] },
+        ],
+      );
+      expect(merged.map((m) => m.path)).toEqual(['own.md', 'sk1-doc.md', 'sk2-doc.md']);
+      expect(merged[1]!.source).toEqual({ kind: 'skill', skillId: 'sk1', skillName: 'alpha', skillVersion: 2 });
+      expect(merged[2]!.source).toEqual({ kind: 'skill', skillId: 'sk2', skillName: 'beta', skillVersion: 7 });
+    });
+
+    it('a disabled skill never appears here — the caller filters before this merge runs (AC-40)', () => {
+      // No disabled-skill branch to test: `enabledSkills` is ALREADY filtered
+      // by run-executor before this helper ever sees it. Documented so the
+      // absence of an "enabled: false" case here isn't mistaken for a gap.
+      const merged = mergeWithAttribution([], [{ skill: skill1, paths: ['a.md'] }]);
+      expect(merged).toHaveLength(1);
+    });
+  });
+
+  describe('agentLookupFailureDoc / skillLookupFailureDoc (AC-42)', () => {
+    it('names the agent as the source and keeps the pseudo-path', () => {
+      const doc = agentLookupFailureDoc(new Error('connection reset'));
+      expect(doc.path).toBe('(agent context)');
+      expect(doc.source).toEqual({ kind: 'agent' });
+      expect(doc.reason).toContain('connection reset');
+    });
+
+    it('names the skill by name+version, not just its id — the pseudo-path still carries the id (Recommendations §1, declined)', () => {
+      const skill: EnabledSkillRef = { id: 'sk-9f3c', name: 'pr-quality-rubric', version: 2 };
+      const doc = skillLookupFailureDoc(skill, new Error('timeout'));
+      expect(doc.path).toBe('(skill sk-9f3c context)');
+      expect(doc.source).toEqual({ kind: 'skill', skillId: 'sk-9f3c', skillName: 'pr-quality-rubric', skillVersion: 2 });
+      expect(doc.reason).toContain('timeout');
     });
   });
 });

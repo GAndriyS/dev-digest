@@ -4,6 +4,7 @@
  */
 import type { Finding, Intent } from '@devdigest/shared';
 import type { FindingRow, PullRow, ReviewRow } from './repository.js';
+import type { ContextDocSource } from '../context/types.js';
 
 // reduceReviews + sliceDiff live in @devdigest/reviewer-core (pure engine logic
 // shared with the CI runner); re-exported here for backward-compatible imports.
@@ -105,6 +106,42 @@ export function taskLine(pull: PullRow, intent?: Intent): string {
       `Risk areas to look closely at: ${intent.risk_areas.join(', ')}`,
   );
   return `${base}\n\n## PR intent (untrusted, non-binding)\n${intentBlock}`;
+}
+
+/**
+ * The source segment of a Project Context Live Log line (SPEC-01 AC-38): the
+ * agent's own attachment, or the inherited skill's name+version — the SAME
+ * name/version the run's `Skills: … <name> v<version>` line uses, carried in
+ * rather than re-read (AC-43), so the two can never disagree.
+ */
+export function formatContextSourceLabel(source: ContextDocSource): string {
+  return source.kind === 'agent' ? 'agent' : `via skill ${source.skillName} v${source.skillVersion}`;
+}
+
+/**
+ * AC-37 — the one summary line a run always writes, before any per-document
+ * line, in the same format whether or not either count is zero.
+ */
+export function formatContextSummaryLine(attachedCount: number, skippedCount: number): string {
+  return `Project context: ${attachedCount} doc(s) attached, ${skippedCount} skipped`;
+}
+
+/**
+ * AC-38 — one line per document that reached the prompt: the source segment
+ * sits right after the path, same style as the skipped line below.
+ */
+export function formatContextAttachedLine(path: string, source: ContextDocSource, tokensEst: number): string {
+  return `Project context: attached ${path} (${formatContextSourceLabel(source)}, ~${tokensEst} tokens)`;
+}
+
+/**
+ * AC-41 — one line per document that did NOT reach the prompt. The two
+ * prefixes (`Project context: attached ` / `Project context: skipped `) stay
+ * byte-for-byte what the existing tests and the seed fixture already assert
+ * on; the reason stays last, after the new source segment.
+ */
+export function formatContextSkippedLine(path: string, source: ContextDocSource, reason: string): string {
+  return `Project context: skipped ${path} (${formatContextSourceLabel(source)}) — ${reason}`;
 }
 
 /**

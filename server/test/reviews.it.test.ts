@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { startPg, dockerAvailable, type PgFixture } from './helpers/pg.js';
-import { waitForPrRuns } from './helpers/runs.js';
+import { waitForPrRuns, waitForRunTrace } from './helpers/runs.js';
 import { buildApp } from '../src/app.js';
 import { loadConfig } from '../src/platform/config.js';
 import { seed } from '../src/db/seed.js';
@@ -341,6 +341,7 @@ d('A2 reviews + agents (Testcontainers pg)', () => {
       ).json();
       const runId = body.runs[0].run_id;
       await waitForPrRuns(pg.handle.db, pr.id, { expected: 1 });
+      await waitForRunTrace(pg.handle.db, runId);
 
       const trace = (await app.inject({ method: 'GET', url: `/runs/${runId}/trace` })).json();
       // Exactly the attached path, in prompt order (AC-22).
@@ -352,6 +353,14 @@ d('A2 reviews + agents (Testcontainers pg)', () => {
       expect(trace.prompt_assembly.specs).toContain('Always read secrets from the environment.');
       expect(trace.prompt_assembly.specs).toContain('<untrusted source="spec-0">');
       expect(trace.prompt_assembly.specs).toContain('specs/security.md');
+
+      // SPEC-01 AC-37/AC-38 (a) — one summary line first, then the doc's own
+      // attached line naming the agent as its source.
+      const contextLines = (trace.log as { msg: string }[])
+        .map((l) => l.msg)
+        .filter((m) => m.startsWith('Project context:'));
+      expect(contextLines[0]).toBe('Project context: 1 doc(s) attached, 0 skipped');
+      expect(contextLines[1]).toMatch(/^Project context: attached specs\/security\.md \(agent, ~\d+ tokens\)$/);
 
       await app.close();
     } finally {
@@ -449,6 +458,7 @@ d('A2 reviews + agents (Testcontainers pg)', () => {
       ).json();
       const runId = body.runs[0].run_id;
       await waitForPrRuns(pg.handle.db, pr.id, { expected: 1 });
+      await waitForRunTrace(pg.handle.db, runId);
 
       const trace = (await app.inject({ method: 'GET', url: `/runs/${runId}/trace` })).json();
       expect(trace.specs_read).toEqual([]); // skipped whole, never partially read
@@ -456,7 +466,14 @@ d('A2 reviews + agents (Testcontainers pg)', () => {
       const skipLine = (trace.log as { msg: string }[]).find((l) =>
         l.msg.includes('specs/huge.md'),
       );
-      expect(skipLine?.msg).toContain('over the 40000-byte document limit');
+      // SPEC-01 AC-41 (e) — the skip line carries its source right after the
+      // path, and the reason stays last.
+      expect(skipLine?.msg).toBe(
+        'Project context: skipped specs/huge.md (agent) — over the 40000-byte document limit',
+      );
+      // AC-37 — the summary counts it as skipped, not attached.
+      const summaryLine = (trace.log as { msg: string }[]).find((l) => l.msg.startsWith('Project context: 0'));
+      expect(summaryLine?.msg).toBe('Project context: 0 doc(s) attached, 1 skipped');
 
       await app.close();
     } finally {
@@ -480,10 +497,18 @@ d('A2 reviews + agents (Testcontainers pg)', () => {
     ).json();
     const runId = body.runs[0].run_id;
     await waitForPrRuns(pg.handle.db, pr.id, { expected: 1 });
+    await waitForRunTrace(pg.handle.db, runId);
 
     const trace = (await app.inject({ method: 'GET', url: `/runs/${runId}/trace` })).json();
     expect(trace.specs_read).toEqual([]);
     expect(trace.prompt_assembly.specs).toBeNull();
+
+    // SPEC-01 AC-37 (d)/edge case (19/08) — exactly one summary line, `0`/`0`,
+    // even with no linked skills and no own attachments; no per-doc line follows it.
+    const contextLines = (trace.log as { msg: string }[])
+      .map((l) => l.msg)
+      .filter((m) => m.startsWith('Project context:'));
+    expect(contextLines).toEqual(['Project context: 0 doc(s) attached, 0 skipped']);
 
     await app.close();
   });
@@ -559,6 +584,7 @@ d('A2 reviews + agents (Testcontainers pg)', () => {
       ).json();
       const runId = body.runs[0].run_id;
       await waitForPrRuns(pg.handle.db, pr.id, { expected: 1 });
+      await waitForRunTrace(pg.handle.db, runId);
 
       const trace = (await app.inject({ method: 'GET', url: `/runs/${runId}/trace` })).json();
       // Own docs first (agent-doc.md, shared.md), THEN the skill's docs — with
@@ -572,6 +598,123 @@ d('A2 reviews + agents (Testcontainers pg)', () => {
         (trace.prompt_assembly.specs as string).match(/Shared doc/g) ?? []
       ).length;
       expect(sharedOccurrences).toBe(1);
+
+      // SPEC-01 AC-37/AC-38/AC-39/AC-43 (b, f, Recommendations §2) — the
+      // summary counters, the per-doc source attribution, and the AC-43
+      // path/order parity against `trace.specs_read` all live in this ONE
+      // test, so a resolution/log drift fails a single assertion rather than
+      // passing two tests that split the invariant across them.
+      const contextLines = (trace.log as { msg: string }[])
+        .map((l) => l.msg)
+        .filter((m) => m.startsWith('Project context:'));
+      expect(contextLines[0]).toBe(`Project context: ${trace.specs_read.length} doc(s) attached, 0 skipped`);
+      // Own docs — agent-doc.md and the FIRST occurrence of shared.md — both
+      // attribute to `agent`, even though the skill also attaches shared.md
+      // (AC-39: own wins over inherited on the same path).
+      expect(contextLines[1]).toMatch(/^Project context: attached specs\/agent-doc\.md \(agent, ~\d+ tokens\)$/);
+      expect(contextLines[2]).toMatch(/^Project context: attached specs\/shared\.md \(agent, ~\d+ tokens\)$/);
+      // The skill's own doc attributes to the skill, by the SAME name+version
+      // the run's `Skills:` line used (AC-38/AC-43).
+      const skillsLine = (trace.log as { msg: string }[]).find((l) => l.msg.startsWith('Skills: '));
+      expect(skillsLine?.msg).toContain(`${skill.name} v${skill.version}`);
+      expect(contextLines[3]).toMatch(
+        new RegExp(
+          `^Project context: attached specs/skill-doc\\.md \\(via skill ${skill.name} v${skill.version}, ~\\d+ tokens\\)$`,
+        ),
+      );
+      // AC-43 — the attached-line PATHS, in order, equal `trace.specs_read`.
+      const attachedPaths = contextLines
+        .slice(1)
+        .map((m) => m.match(/^Project context: attached (\S+) /)![1]);
+      expect(attachedPaths).toEqual(trace.specs_read);
+
+      await app.close();
+    } finally {
+      await rm(clonePath, { recursive: true, force: true });
+    }
+  });
+
+  it('L05/SPEC-01 AC-40: a DISABLED linked skill\'s docs are mentioned in NO line — not attached, not skipped, not counted', async () => {
+    const clonePath = await mkdtemp(join(tmpdir(), 'devdigest-reviews-context-disabled-'));
+    try {
+      await mkdir(join(clonePath, 'specs'), { recursive: true });
+      await writeFile(
+        join(clonePath, 'specs', 'agent-doc.md'),
+        '# Agent-only doc\n\nOnly the agent attaches this.',
+        'utf8',
+      );
+      await writeFile(
+        join(clonePath, 'specs', 'disabled-skill-doc.md'),
+        '# Disabled skill doc\n\nAttached to a skill that gets disabled before the run.',
+        'utf8',
+      );
+
+      const app = await appWith(REVIEW_FIXTURE);
+      const { pr } = await setupRepoAndPr(pg.handle.db, workspaceId, { clonePath });
+
+      const agent = (
+        await app.inject({
+          method: 'POST',
+          url: '/agents',
+          payload: { name: 'Kill Switch Reviewer', provider: 'openai', model: 'gpt-4.1', system_prompt: 'sec' },
+        })
+      ).json();
+
+      const skill = (
+        await app.inject({
+          method: 'POST',
+          url: '/skills',
+          payload: { name: 'Disabled Skill', body: 'Should never reach the prompt once disabled.' },
+        })
+      ).json();
+
+      await app.inject({
+        method: 'POST',
+        url: `/agents/${agent.id}/context`,
+        payload: { paths: ['specs/agent-doc.md'] },
+      });
+      await app.inject({
+        method: 'POST',
+        url: `/skills/${skill.id}/context`,
+        payload: { paths: ['specs/disabled-skill-doc.md'] },
+      });
+      const linked = await app.inject({
+        method: 'POST',
+        url: `/agents/${agent.id}/skills`,
+        payload: { skill_ids: [skill.id] },
+      });
+      expect(linked.statusCode).toBe(200);
+
+      // The kill switch: disable AFTER linking, before the run.
+      const disabled = await app.inject({
+        method: 'PUT',
+        url: `/skills/${skill.id}`,
+        payload: { enabled: false },
+      });
+      expect(disabled.json().enabled).toBe(false);
+
+      const body = (
+        await app.inject({ method: 'POST', url: `/pulls/${pr.id}/review`, payload: { agentId: agent.id } })
+      ).json();
+      const runId = body.runs[0].run_id;
+      await waitForPrRuns(pg.handle.db, pr.id, { expected: 1 });
+      await waitForRunTrace(pg.handle.db, runId);
+
+      const trace = (await app.inject({ method: 'GET', url: `/runs/${runId}/trace` })).json();
+      // Only the agent's own doc reaches the prompt/trace.
+      expect(trace.specs_read).toEqual(['specs/agent-doc.md']);
+
+      const contextLines = (trace.log as { msg: string }[])
+        .map((l) => l.msg)
+        .filter((m) => m.startsWith('Project context:'));
+      // AC-40: the summary counts ONLY the agent's doc — the disabled skill's
+      // doc is neither attached nor skipped, so it never touches either counter.
+      expect(contextLines[0]).toBe('Project context: 1 doc(s) attached, 0 skipped');
+      // AC-40: no line of ANY kind mentions the disabled skill's doc or name.
+      const mentionsDisabled = (trace.log as { msg: string }[]).some(
+        (l) => l.msg.includes('disabled-skill-doc.md') || l.msg.includes('Disabled Skill'),
+      );
+      expect(mentionsDisabled).toBe(false);
 
       await app.close();
     } finally {

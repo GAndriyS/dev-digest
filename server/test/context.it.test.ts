@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { and, eq } from 'drizzle-orm';
 import { startPg, dockerAvailable, type PgFixture } from './helpers/pg.js';
 import { buildApp } from '../src/app.js';
 import { loadConfig } from '../src/platform/config.js';
@@ -447,5 +448,49 @@ d('context module', () => {
     expect(badQuery.statusCode).toBe(422);
 
     await app.close();
+  });
+
+  it('SPEC-01 AC-44: the demo fixture\'s seeded trace log carries the AC-37 summary line and both attributed AC-38 lines, unchanged by re-seeding', async () => {
+    const [generalReviewer] = await pg.handle.db
+      .select()
+      .from(t.agents)
+      .where(and(eq(t.agents.workspaceId, workspaceId), eq(t.agents.name, 'General Reviewer')));
+    const [pr] = await pg.handle.db
+      .select()
+      .from(t.pullRequests)
+      .where(and(eq(t.pullRequests.workspaceId, workspaceId), eq(t.pullRequests.number, 482)));
+    const [fixtureRun] = await pg.handle.db
+      .select()
+      .from(t.agentRuns)
+      .where(
+        and(
+          eq(t.agentRuns.prId, pr!.id),
+          eq(t.agentRuns.agentId, generalReviewer!.id),
+          eq(t.agentRuns.source, 'local'),
+        ),
+      );
+    expect(fixtureRun).toBeDefined();
+
+    const readLog = async () => {
+      const [row] = await pg.handle.db
+        .select()
+        .from(t.runTraces)
+        .where(eq(t.runTraces.runId, fixtureRun!.id));
+      return (row!.trace as { log: { msg: string }[] }).log;
+    };
+
+    const log = await readLog();
+    const contextLines = log.map((l) => l.msg).filter((m) => m.startsWith('Project context:'));
+    // AC-37 — one summary line, first, counting both demo docs as attached
+    // (both stay `agent` in this fixture — Decisions taken, "seed keeps both
+    // docs as agent").
+    expect(contextLines[0]).toBe('Project context: 2 doc(s) attached, 0 skipped');
+    // AC-38/AC-44 — both attached lines carry the `(agent, ~N tokens)` source.
+    expect(contextLines[1]).toMatch(/^Project context: attached specs\/overview\.md \(agent, ~\d+ tokens\)$/);
+    expect(contextLines[2]).toMatch(/^Project context: attached docs\/architecture\.md \(agent, ~\d+ tokens\)$/);
+
+    // Idempotency (AC-44) — a second seed() must not duplicate or change the log.
+    await seed(pg.handle.db);
+    expect(await readLog()).toEqual(log);
   });
 });
