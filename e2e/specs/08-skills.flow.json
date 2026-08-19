@@ -9,7 +9,7 @@
     { "cmd": ["wait", "--text", "pr-quality-rubric"], "label": "seeded rubric skill is listed" },
     { "cmd": ["wait", "--text", "secret-leakage-gate"], "label": "seeded security skill is listed" },
     { "cmd": ["wait", "--text", "no-then-chains"], "label": "seeded convention skill is listed" },
-    { "cmd": ["find", "text", "pr-quality-rubric", "click"], "label": "select the rubric card — navigates straight into its editor (L05 master-detail)" },
+    { "cmd": ["find", "role", "button", "click", "--name", "pr-quality-rubric"], "label": "select the rubric card (role locator — `find text … click` reports ✓ and navigates nothing on this card in CI; the card is a div[role=button] whose accessible name starts with the skill name) — navigates straight into its editor (L05 master-detail)" },
     { "cmd": ["wait", "--url", "/skills/"], "label": "skill detail route reached" },
     { "cmd": ["wait", "--url", "tab="], "label": "lands on a tab (default Config)" },
     { "cmd": ["wait", "--load", "networkidle"], "label": "skill detail settles" },
