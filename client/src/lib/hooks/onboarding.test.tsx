@@ -93,3 +93,49 @@ describe("useGenerateOnboardingTour — cache write on success (finding #3)", ()
     expect(client.getQueryData(["onboarding", repoId])).toEqual(ready);
   });
 });
+
+describe("useGenerateOnboardingTour — invalidate only follows a 'ready' result (AC-26)", () => {
+  it("invalidates the onboarding query on a 'ready' response, so a refetch can pick up what the server actually persisted", async () => {
+    const repoId = "r1";
+    const ready = readyTour({ generated_at: "2026-08-19T00:00:00.000Z" });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ready }),
+    );
+
+    const client = makeClient();
+    const invalidateSpy = vi.spyOn(client, "invalidateQueries");
+    const { result } = renderHook(() => useGenerateOnboardingTour(repoId), {
+      wrapper: wrapperFor(client),
+    });
+    result.current.mutate();
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["onboarding", repoId] });
+  });
+
+  it("does NOT invalidate on a 'skeleton' response, so this call's own reason is not immediately overwritten by a refetch of the prior stored tour", async () => {
+    const repoId = "r1";
+    const skeleton = skeletonTour();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => skeleton }),
+    );
+
+    const client = makeClient();
+    client.setQueryData(["onboarding", repoId], readyTour());
+    const invalidateSpy = vi.spyOn(client, "invalidateQueries");
+    const { result } = renderHook(() => useGenerateOnboardingTour(repoId), {
+      wrapper: wrapperFor(client),
+    });
+    result.current.mutate();
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(invalidateSpy).not.toHaveBeenCalled();
+    // The written cache still carries this call's own skeleton + reason —
+    // an uninvalidated cache is only meaningful if the write itself held.
+    expect(client.getQueryData(["onboarding", repoId])).toEqual(skeleton);
+  });
+});

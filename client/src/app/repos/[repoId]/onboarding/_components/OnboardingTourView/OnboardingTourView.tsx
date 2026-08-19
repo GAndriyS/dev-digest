@@ -25,7 +25,7 @@ import { useActiveRepo, useRepoNotFound } from "@/lib/repo-context";
 import { useOnboardingTour, useGenerateOnboardingTour } from "@/lib/hooks/onboarding";
 import { ApiError } from "@/lib/api";
 import { COPY_CONFIRM_MS, OPEN_LINK_KINDS, SECTION_KINDS, LOADING_ROWS } from "./constants";
-import { formatGeneratedAt, isEmptyTour, isSkeletonTour, sectionByKind, skeletonIconFor } from "./helpers";
+import { formatGeneratedAt, isEmptyTour, isSkeletonTour, sectionByKind, skeletonIconFor, sanitizeSectionBody } from "./helpers";
 import { s } from "./styles";
 import { githubBlobUrl } from "@/lib/github-urls";
 
@@ -154,8 +154,10 @@ function SectionCard({
       {expanded && (
         <div id={panelId} style={s.cardBody}>
           {/* Model output, rendered as markdown only — no rehype-raw, so an
-              embedded <script> in `body` never executes (AC-38). */}
-          <Markdown>{section.body}</Markdown>
+              embedded <script> in `body` never executes (AC-38) — and
+              de-linkified first, so an injected image cannot beacon and an
+              injected link cannot phish (see `sanitizeSectionBody`). */}
+          <Markdown>{sanitizeSectionBody(section.body)}</Markdown>
           {kind === "architecture_overview" && section.diagram && (
             <MermaidDiagram chart={section.diagram} />
           )}

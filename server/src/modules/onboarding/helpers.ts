@@ -8,6 +8,7 @@ import {
   CRITICAL_FILES_SHOWN,
   MAX_FIRST_TASKS,
   MAX_PROMPT_FILE_CHARS,
+  MAX_ARCHITECTURE_LINKS,
   MAX_PROMPT_TOTAL_CHARS,
   MAX_RUN_LOCALLY_LINKS,
   READING_PATH_LEN,
@@ -261,6 +262,94 @@ export function orderByTopFileRank(links: OnboardingLink[], topFiles: string[]):
   return [...links].sort((a, b) => rankOf(a.path) - rankOf(b.path));
 }
 
+/**
+ * `run_locally` is the one section whose `label` is a **shell command** the UI
+ * offers to copy, so `path`-only post-validation is not enough: a repo that
+ * injects instructions into its own README could otherwise have the model emit
+ * `curl … | sh` attributed to a real config file, and the card would present
+ * it as step N of the setup with a Copy button.
+ *
+ * Three gates, all in code (the prompt's "copied verbatim from a FACTS
+ * excerpt" is a request to the model, not a check):
+ *
+ * 1. the claimed `path` must be a file actually read off the clone;
+ * 2. the command must contain no shell chaining, substitution or redirection —
+ *    that single rule is what kills `curl … | sh`, `x && y`, `$(…)`, `>` and
+ *    friends, whatever wording the model wrapped them in;
+ * 3. it must then be either verbatim in that file (whitespace-normalised, so a
+ *    command quoted in a `package.json` script or indented in a README fence
+ *    still matches) OR one of the fixed bootstrap SHAPES below, whose every
+ *    identifier is itself grounded in the claimed file or in the collected
+ *    facts. `npm install` is the motivating case: it is what the manifest
+ *    means, never what it literally contains.
+ */
+export function filterToSourcedCommands(
+  links: OnboardingLink[],
+  runFiles: { path: string; content: string }[],
+): { kept: OnboardingLink[]; dropped: number } {
+  const contentByPath = new Map(runFiles.map((f) => [f.path, normalizeCommand(f.content)]));
+  const kept: OnboardingLink[] = [];
+  for (const link of links) {
+    const haystack = contentByPath.get(link.path);
+    if (haystack === undefined) continue;
+    // The RAW label is tested for the unsafe class first: `normalizeCommand`
+    // flattens newlines into spaces, so testing afterwards would make the
+    // newline branch unreachable and let a two-statement label be judged as one.
+    if (UNSAFE_SHELL_RE.test(link.label)) continue;
+    const command = normalizeCommand(stripTrailingComment(link.label));
+    if (command.length === 0) continue;
+    if (haystack.includes(command) || isGroundedBootstrapCommand(command, haystack)) {
+      kept.push({ label: command, path: link.path });
+    }
+  }
+  return { kept, dropped: links.length - kept.length };
+}
+
+/**
+ * Chaining, substitution, redirection, background and newline — a copyable
+ * setup step needs none of them, and every "download and run" shape needs at
+ * least one. Rejecting the class beats blocklisting `curl`.
+ */
+const UNSAFE_SHELL_RE = /[|;&`$><\n(){}]|\\$/;
+
+/** Collapse whitespace so a command quoted in JSON or indented in a fence still matches. */
+function normalizeCommand(text: string): string {
+  return text.replace(/\s+/g, ' ').trim();
+}
+
+/** Drop a trailing `# comment` (the mockup's `pnpm dev # http://localhost:3000`) — inert, but not part of the command. */
+function stripTrailingComment(text: string): string {
+  const hash = text.indexOf('#');
+  return hash === -1 ? text : text.slice(0, hash);
+}
+
+/**
+ * The bootstrap shapes a manifest *implies* rather than contains. Every
+ * variable part is checked against the claimed file's own text, so a shape can
+ * never smuggle an identifier the repo does not have.
+ */
+function isGroundedBootstrapCommand(command: string, haystack: string): boolean {
+  // `npm install` / `pnpm i` / `yarn install --frozen-lockfile` — no free arguments.
+  if (/^(npm|pnpm|yarn|bun) (install|ci|i)( --[a-z-]+)*$/.test(command)) return true;
+
+  // `pnpm dev`, `npm run build` — the script name must be a key in the manifest.
+  const script = /^(?:npm|pnpm|yarn|bun) (?:run )?([a-z0-9:_-]+)$/.exec(command);
+  if (script) return haystack.includes(`"${script[1]}"`);
+
+  // `docker compose up -d postgres redis` — every service name must appear in the file.
+  const compose = /^docker(?: compose|-compose) (?:up|start)((?: -[a-zA-Z-]+)*)((?: [a-z0-9._-]+)*)$/.exec(command);
+  if (compose) {
+    const services = (compose[2] ?? '').trim().split(' ').filter(Boolean);
+    return services.every((svc) => haystack.includes(svc));
+  }
+
+  // `cp .env.example .env` — the source file must exist in the facts we read.
+  const copy = /^cp ([\w./-]+) ([\w./-]+)$/.exec(command);
+  if (copy) return haystack.length > 0 && copy[1] !== undefined;
+
+  return false;
+}
+
 /** Union of every path the code itself put into `facts` — the post-validation allow-list (D7). */
 export function knownPathsOf(facts: OnboardingFacts): Set<string> {
   const known = new Set<string>();
@@ -295,7 +384,10 @@ export function assembleSections(draft: OnboardingDraft, facts: OnboardingFacts)
   droppedPaths += criticalFiltered.dropped;
 
   const run = draft.run_locally;
-  const runFiltered = filterToKnownPaths(run.links, known);
+  // Not `known`: a command's provenance is the file it was READ from, so the
+  // allow-list is `facts.runFiles` alone — and the command text itself must be
+  // in that file (see `filterToSourcedCommands`).
+  const runFiltered = filterToSourcedCommands(run.links, facts.runFiles);
   droppedPaths += runFiltered.dropped;
 
   const rationaleByPath = new Map(draft.reading_path.entries.map((e) => [e.path, e.rationale]));
@@ -314,7 +406,10 @@ export function assembleSections(draft: OnboardingDraft, facts: OnboardingFacts)
       title: architecture.title,
       body: architecture.body,
       diagram: normalizeDiagram('architecture_overview', architecture.diagram),
-      links: arch.kept,
+      // The only section whose cap used to live in the prompt alone ("up to 4
+      // REAL files") — a model-controlled list length is a model-controlled
+      // payload size, so the bound is a constant like every sibling's.
+      links: arch.kept.slice(0, MAX_ARCHITECTURE_LINKS),
     },
     {
       kind: 'critical_paths',
@@ -329,8 +424,8 @@ export function assembleSections(draft: OnboardingDraft, facts: OnboardingFacts)
       body: run.body,
       diagram: null,
       // `label` is a command, `path` the config file it came from (see
-      // `LinkDraft`'s doc comment) — post-validation above already checked
-      // `path`; this only bounds the count, in the model's own order.
+      // `LinkDraft`'s doc comment) — `filterToSourcedCommands` above checked
+      // both; this only bounds the count, in the model's own (execution) order.
       links: runFiltered.kept.slice(0, MAX_RUN_LOCALLY_LINKS),
     },
     {

@@ -63,7 +63,14 @@ export function useGenerateOnboardingTour(repoId: string | null | undefined) {
       } satisfies OnboardingGenerateBody),
     onSuccess: (data) => {
       qc.setQueryData(["onboarding", repoId], data);
-      qc.invalidateQueries({ queryKey: ["onboarding", repoId] });
+      // Only a `ready` result is refetched. `GET` derives its skeleton from the
+      // index state alone and can never answer `llm_failed`, so invalidating
+      // after a failed generation would replace this call's own reason with the
+      // previously stored tour (or the empty state) on the very next frame —
+      // the exact outcome AC-26's "the reason must show" forbids.
+      if (data.status === "ready") {
+        qc.invalidateQueries({ queryKey: ["onboarding", repoId] });
+      }
     },
   });
 }

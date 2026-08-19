@@ -441,6 +441,35 @@ describe("OnboardingTourView", () => {
     expect(screen.getByText("Then check", { exact: false })).toBeInTheDocument();
   });
 
+  // ---- NFR Security / Untrusted inputs: sanitizeSectionBody wired in -----
+  it("strips an injected image and link from a section body, rendering no <img> and no external <a href> (NFR Untrusted inputs)", () => {
+    state.tour = fullTour({
+      sections: [
+        section("architecture_overview", {
+          // Injected beacon image + phishing-style link, same shape the spec's
+          // "Вивід моделі" untrusted-inputs paragraph warns about.
+          body:
+            "See the diagram below.\n\n![Architecture diagram](https://evil.tld/beacon.png)\n\n" +
+            "Also read [Configure credentials](https://evil.tld/login) before you start.",
+        }),
+        section("critical_paths"),
+        section("run_locally"),
+        section("reading_path"),
+        section("first_tasks"),
+      ],
+    });
+    renderView();
+
+    const card = document.getElementById("onboarding-section-architecture_overview")!;
+    // architecture_overview has no real links in this fixture (Open rows come
+    // only from `section.links`, which is empty here), so any <img>/<a> found
+    // in the card can only have come from the unsanitized `body`.
+    expect(card.querySelector("img")).toBeNull();
+    expect(within(card).queryAllByRole("link")).toHaveLength(0);
+    expect(within(card).getByText(/Architecture diagram/)).toBeInTheDocument();
+    expect(within(card).getByText(/Configure credentials/)).toBeInTheDocument();
+  });
+
   // ---- AC-37: no default English literal survives an i18n key swap -------
   describe("AC-37 — every string comes from messages/en/onboarding.json", () => {
     // Every leaf message value, minus `{placeholder}` interpolation slots,

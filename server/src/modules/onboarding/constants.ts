@@ -62,6 +62,9 @@ export const TOP_FILES_N = 12;
 /** How many `critical_paths` chains are shown on the wire. */
 export const CRITICAL_FILES_SHOWN = 4;
 
+/** Cap on `architecture_overview` links — mirrors the prompt's "up to 4 REAL files". */
+export const MAX_ARCHITECTURE_LINKS = 4;
+
 /** Cap on `run_locally` commands shown, in the model's (execution) order — mirrors the prompt's "at most 6" instruction. */
 export const MAX_RUN_LOCALLY_LINKS = 6;
 

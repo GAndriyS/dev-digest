@@ -28,6 +28,18 @@ live in `<package>/INSIGHTS.md`. Maintained by the `engineering-insights` skill.
 
 ## What Works
 
+- **2026-08-19** — Sending the finished **plan** to an independent cross-model
+  review before any code is written paid for itself on the L05 Onboarding run:
+  15 amendments, 4 of them MAJOR and all of them things a review of the *diff*
+  would have caught only after the work existed — a strict-`json_schema`
+  incompatibility in the draft schema (`z.record`/`.optional()` are rejected by
+  `strict: true`), an unbounded prompt, a 409 test that would have reached the
+  real provider, and a stale contract fixture the wire change was about to
+  break. Shape that worked: accept the findings as a **binding amendments
+  table appended to the plan** (A1…A15, "overrides the step rows where they
+  differ"), so `implementer`, `test-writer` and `plan-verifier` all read one
+  document instead of a plan plus a review nobody re-opens.
+
 - **2026-08-04** — Splitting a feature across parallel subagents works when the
   split is by FILE OWNERSHIP, not by concern: each agent got an explicit
   "you own these paths, these are someone else's" list and nothing collided

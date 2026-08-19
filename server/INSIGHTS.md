@@ -31,6 +31,18 @@ promotion rules → root `INSIGHTS.md`.
 
 ## What Doesn't Work
 
+- **2026-08-19** — Grounding a model-authored **shell command** by "must appear
+  verbatim in the file it cites" is too strict to ship: `npm install` is what a
+  `package.json` *means*, never what it contains, so the rule silently emptied
+  the whole `run_locally` section (caught by `onboarding.it.test.ts` AC-15, not
+  by any unit test). What works is two gates instead of one: reject the unsafe
+  *class* outright (`[|;&\`$><\n(){}]` — chaining, substitution, redirection,
+  which is what every "download and run" shape needs), then accept either a
+  verbatim match or one of a few fixed bootstrap shapes whose every identifier
+  is checked against the cited file (`<pm> install`, `<pm> run <script>` with
+  the script key present, `docker compose up <services>` with each service
+  present) — `server/src/modules/onboarding/helpers.ts` `filterToSourcedCommands`.
+
 - **2026-08-13** — `[repo-intel]` An adapter that catches its own failures and
   returns an empty result makes the whole degradation invisible downstream:
   `DepCruiseGraph.buildEdges` swallowed every error into `[]`, so the pipeline's
@@ -183,6 +195,16 @@ promotion rules → root `INSIGHTS.md`.
   writing your own tally.
 
 ## Tool & Library Notes
+
+- **2026-08-19** — A Fastify route whose `schema.body` is a plain zod object
+  rejects a **body-less** POST with 422, and `.optional()` does not fix it: with
+  no `content-type` the validator is handed `null`, not `undefined`, so the
+  error reads `Expected object, received null` (`fastify-type-provider-zod`
+  `validatorCompiler` runs `schema.safeParse(data)` on whatever Fastify parsed).
+  Use `.nullish()` and read `req.body?.field`
+  (`server/src/modules/onboarding/routes.ts:40-50`). The trap is that every
+  `app.inject({ payload: {} })` test passes — `payload: {}` serializes a real
+  JSON body — so only a caller that sends nothing (curl, an MCP tool) hits it.
 
 - **2026-07-31** — tsx watch restarts only on imported-module changes; editing
   `server/.env` does nothing until a manual restart, because config is read

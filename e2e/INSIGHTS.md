@@ -11,6 +11,16 @@ skill, append-only. Entry format and promotion rules → root `INSIGHTS.md`.
 
 ## Tool & Library Notes
 
+- **2026-08-19** — `find role link click --name "<label>"` does **not** resolve
+  the sidebar entries, even though they render as `<a>`: the hermetic run failed
+  with `Command failed: agent-browser find role link click --name Onboarding
+  Tour` while every other step passed, and switching to `find text "<label>"
+  click` (what `10-project-context.flow.json` already uses for Project Context)
+  made the same flow green. Prefer the text locator for nav items; keep
+  `find role button --name` for the in-page controls, where it does work
+  (`08-skills.flow.json`). Both still need the `set viewport 1280 900` first
+  step for the reason recorded above.
+
 - **2026-08-18** — `find text <text> click` can report `✓ Done` and change
   nothing when the target sits UNDER a stacked sibling at the click point — the
   default headless viewport here is 1264×569, short enough that

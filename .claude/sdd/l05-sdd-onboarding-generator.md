@@ -48,3 +48,14 @@ Closed by the main session after the verdict:
 - Step 14 → **MET**: user authorized `npm i -g agent-browser && agent-browser install`; `./scripts/e2e.sh` on alternate ports (5433 was taken): first run 10/11 — `find role link --name "Onboarding Tour"` does not resolve the sidebar entry; switched to the same `find text … click` flow 10 uses → **11/11 flows passed**.
 - Step 13 pr-gate → closes with the PR body (`Vendor-update: client/src/vendor/ui/nav.ts`) at stage 6.
 → effective verdict **COMPLETE** (40/40 AC MET; steps 1–19 MET).
+
+### Stage 6 — /pr-self-review
+PASS (report-only; 0 surviving CRITICAL). Gates: backend typecheck/depcruise PASS + 2 pre-existing `depgraph-adapter` failures **reproduced on base 5d82522 in a clean worktree**; frontend 402/402; integration 108/108; mcp PASS; `./scripts/e2e.sh` 11/11; check-specs clean; contract mirror asserted on disk.
+- /security-review: **1 CRITICAL fixed** — `run_locally` `label` is a copyable shell command and was unvalidated model output attributed to a real config file (injected README → `curl … | sh` with a Copy button). Now `filterToSourcedCommands`: path ∈ files actually read, unsafe shell class rejected outright, then verbatim-or-grounded-bootstrap-shape. Verbatim-only was tried first and emptied the section (`npm install` is not literally in `package.json`) — the it-test caught it. W1 arch-link cap and W3 markdown-body sanitization also fixed; W2 (`.env.example` reaches the provider — it is the feature) and W4 (read amplification, local-first, rate-limited) accepted with reasons.
+- Skill subagents: 4 WARNINGs → 3 fixed (run_locally gate narrowed to `facts.runFiles`, hook invalidates only on `ready` so a skeleton reason survives, client `SECTION_KINDS` derived from the wire enum); 1 accepted (`OnboardingTourView.tsx` component split — pure move, deferred as follow-up #1). 11 SUGGESTIONs recorded, not applied.
+- Artifacts: `.claude/reviews/self-review-L05-SDD-onboarding.md`, `.claude/reviews/pr-body-L05-SDD-onboarding.md`, `.git/pr-self-review.json`.
+
+### Stage 7 — wrap-up
+INSIGHTS +4: `server/INSIGHTS.md` ×2 (Fastify body-less POST arrives as `null` → `.nullish()`, invisible to `payload: {}` tests; verbatim-only command grounding is unshippable — reject the unsafe class + grounded shapes), `e2e/INSIGHTS.md` (role-link locator does not resolve sidebar entries), root `INSIGHTS.md` (cross-model plan review as a binding amendments table).
+Follow-ups recorded, not done: split `SectionCard`/`LinkRow`/`CommandRow` into `_components/`; `existsInsideClone` stat-only probe in `_shared/clone-fs.ts`; in-degree facade method for AC-19's third signal (R2); `'empty'` as a third `Onboarding.status` (R1).
+Agent cost this run ≈ 1.6M tokens (spec 105k · planner 209k · cross-model review 163k · implementers 111k+~180k+174k+75k+42k · test-writers 105k+81k+~120k · architecture-reviewer ~60k · code-review angles ~330k · plan-verifier 145k · doc-writer 88k · security 65k).
