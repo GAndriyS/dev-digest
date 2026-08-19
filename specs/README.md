@@ -214,7 +214,7 @@ The starter deliberately omits these; each lesson adds one back.
 | L02 | Skills in the product · conventions extractor | [L02-skills-lab.md](L02-skills-lab.md) (skills only) · [SPEC-02-skills-lab-redesign-18-08-2026.md](SPEC-02-skills-lab-redesign-18-08-2026.md) (redesign: one-screen list+editor, `Context` tab) |
 | L03 | Intent layer · Smart Diff | — |
 | L04 | `devdigest-mcp` server · Blast Radius | [L04-devdigest-mcp.md](L04-devdigest-mcp.md) (MCP server only) |
-| L05 | Project Context Folder · onboarding generator · PR Brief | [SPEC-01-project-context-18-08-2026.md](SPEC-01-project-context-18-08-2026.md) (Project Context only — roots + file-name matching, e.g. `INSIGHTS.md`; AC-37…AC-44 add source attribution in the Live Review log) |
+| L05 | Project Context Folder · onboarding generator · PR Brief | [SPEC-01-project-context-18-08-2026.md](SPEC-01-project-context-18-08-2026.md) (Project Context only — roots + file-name matching, e.g. `INSIGHTS.md`; AC-37…AC-44 add source attribution in the Live Review log) · [SPEC-03-onboarding-generator-19-08-2026.md](SPEC-03-onboarding-generator-19-08-2026.md) (Onboarding generator — five-section repo tour, one LLM call, deterministic skeleton) |
 | L06 | Eval pipeline · secret/phantom gates · plan verifier · export to CI | — |
 | L07 | Multi-agent review · run trace / live log · persistent memory | — |
 | L08 | Plugin export/import · agent performance dashboard · weekly digest | — |
