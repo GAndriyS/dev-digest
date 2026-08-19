@@ -33,15 +33,74 @@ export const OnboardingLink = z.object({
 export type OnboardingLink = z.infer<typeof OnboardingLink>;
 
 export const OnboardingSection = z.object({
-  kind: z.string(),
+  kind: z.enum([
+    'architecture_overview',
+    'critical_paths',
+    'run_locally',
+    'reading_path',
+    'first_tasks',
+  ]),
   title: z.string(),
   body: z.string(), // markdown
-  diagram: z.string().nullish(), // mermaid
+  diagram: z.string().nullish(), // mermaid; only ever set on 'architecture_overview'
   links: z.array(OnboardingLink),
 });
 export type OnboardingSection = z.infer<typeof OnboardingSection>;
 
+export const OnboardingStatus = z.enum(['ready', 'skeleton']);
+export type OnboardingStatus = z.infer<typeof OnboardingStatus>;
+
+/**
+ * Why `status` is `'skeleton'` instead of a generated tour. `no_clone` /
+ * `disabled` / `not_indexed` mean generation was never attempted (no clone
+ * path, repo-intel disabled, or the repo has no usable index yet);
+ * `degraded` / `failed` mirror repo-intel's own index status; `llm_failed`
+ * means facts were collected but the model call did not produce a usable
+ * draft.
+ */
+export const OnboardingSkeletonReason = z.enum([
+  'no_clone',
+  'disabled',
+  'not_indexed',
+  'degraded',
+  'failed',
+  'llm_failed',
+]);
+export type OnboardingSkeletonReason = z.infer<typeof OnboardingSkeletonReason>;
+
+/**
+ * Index summary carried on the tour, frozen at generation time — `GET`
+ * replays what was true when the tour was generated, not the live index
+ * state. `status` is the onboarding module's OWN read of the index, not
+ * repo-intel's `IndexState.status` verbatim: a clean indexing pass that was
+ * still truncated by `MAX_INDEXED_FILES` counts as `partial` here even
+ * though repo-intel itself calls that pass `full` (repo-intel's own status
+ * only degrades on a soft-budget or parse failure, never on truncation).
+ */
+export const OnboardingIndexSummary = z.object({
+  files_indexed: z.number().int(),
+  total_candidates: z.number().int(),
+  bounded: z.boolean(),
+  status: z.enum(['full', 'partial', 'degraded', 'failed']),
+});
+export type OnboardingIndexSummary = z.infer<typeof OnboardingIndexSummary>;
+
+/**
+ * Repo onboarding tour — one per repo, fully regenerated (never patched) on
+ * each `generate` call. `status:'ready'` carries exactly one of two shapes,
+ * never a third: either `generated_at` is non-null and `sections` holds all
+ * five `OnboardingSection.kind`s (a stored, previously generated tour), or
+ * `generated_at` is null and `sections` is empty (no tour has been generated
+ * for this repo yet). Clients branch on `generated_at === null`, never on
+ * `sections.length`. `status:'skeleton'` means the last generation attempt
+ * did not produce a storable tour; `reason` says why. A skeleton is never
+ * written to the `onboarding` table.
+ */
 export const Onboarding = z.object({
+  status: OnboardingStatus,
+  reason: OnboardingSkeletonReason.nullish(),
+  generated_at: z.string().nullish(),
+  index: OnboardingIndexSummary,
   sections: z.array(OnboardingSection),
 });
 export type Onboarding = z.infer<typeof Onboarding>;

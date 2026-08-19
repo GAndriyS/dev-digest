@@ -160,7 +160,31 @@ describe('AI contracts parse fixtures', () => {
     ).not.toThrow();
     expect(() =>
       Onboarding.parse({
-        sections: [{ kind: 'architecture', title: 'T', body: 'b', links: [] }],
+        status: 'ready',
+        reason: null,
+        generated_at: '2026-08-18T00:00:00.000Z',
+        index: { files_indexed: 120, total_candidates: 150, bounded: true, status: 'partial' },
+        sections: [{ kind: 'architecture_overview', title: 'T', body: 'b', links: [] }],
+      }),
+    ).not.toThrow();
+    // Empty state — no tour generated yet: `generated_at` null, `sections` empty (AC-3).
+    expect(() =>
+      Onboarding.parse({
+        status: 'ready',
+        reason: null,
+        generated_at: null,
+        index: { files_indexed: 0, total_candidates: 0, bounded: false, status: 'full' },
+        sections: [],
+      }),
+    ).not.toThrow();
+    // Skeleton — generation did not run to completion: `reason` names why (AC-24).
+    expect(() =>
+      Onboarding.parse({
+        status: 'skeleton',
+        reason: 'not_indexed',
+        generated_at: null,
+        index: { files_indexed: 0, total_candidates: 0, bounded: false, status: 'degraded' },
+        sections: [],
       }),
     ).not.toThrow();
     expect(() =>
@@ -184,6 +208,43 @@ describe('AI contracts parse fixtures', () => {
         sources: [{ pr: 401, context: 'ctx' }],
       }),
     ).not.toThrow();
+  });
+
+  it('mirrors the Onboarding* block across BOTH @devdigest/shared copies on disk (SPEC-03 AC-30)', () => {
+    // AC-30 requires `status`/`reason`/`generated_at`/`index` to be "present
+    // in BOTH copies" of @devdigest/shared, but (per the plan's Context read)
+    // the two copies of knowledge.ts are NOT identical overall — only the
+    // `Onboarding*` block is mirrored, never the whole file (the client copy
+    // deliberately lacks AgentVersion/AgentVersionConfig). This reads both
+    // files' source directly (no module resolution, no alias) and requires
+    // the mirrored block to be byte-identical, except for
+    // `OnboardingGenerateBody` — a request body, not part of the `Onboarding`
+    // resource, kept server-only until a client hook needs it (see the
+    // comment on that export in the server copy).
+    const extractOnboardingBlock = (src: string): string => {
+      const match = src.match(/\/\/ ---- Onboarding ----\n([\s\S]*?)\n\/\/ ---- Eval ----/);
+      if (!match) throw new Error('Onboarding block marker not found');
+      return match[1]!
+        .replace(
+          /\/\*\*(?:(?!\*\/)[\s\S])*?\*\/\s*\nexport const OnboardingGenerateBody[\s\S]*?export type OnboardingGenerateBody = z\.infer<typeof OnboardingGenerateBody>;\n?/,
+          '',
+        )
+        .trim();
+    };
+    const testDir = dirname(fileURLToPath(import.meta.url));
+    const serverSrc = readFileSync(
+      resolve(testDir, '../src/vendor/shared/contracts/knowledge.ts'),
+      'utf8',
+    );
+    const clientSrc = readFileSync(
+      resolve(testDir, '../../client/src/vendor/shared/contracts/knowledge.ts'),
+      'utf8',
+    );
+    const serverBlock = extractOnboardingBlock(serverSrc);
+    const clientBlock = extractOnboardingBlock(clientSrc);
+    expect(serverBlock).not.toContain('OnboardingGenerateBody');
+    expect(clientSrc).not.toContain('OnboardingGenerateBody');
+    expect(clientBlock).toBe(serverBlock);
   });
 
   it('RunTrace (data2.jsx TRACE single-document)', () => {
