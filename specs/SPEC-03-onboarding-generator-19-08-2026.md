@@ -1,6 +1,6 @@
 # Spec: Onboarding Generator — тур незнайомим репозиторієм із п'яти секцій
 Spec ID: SPEC-03
-Status: approved
+Status: implemented
 Source: L05 · Onboarding generator (lesson brief + запит користувача 19/08/2026, українською) · два скріншоти макета (сторінка тура, згорнуті картки)
 Supersedes: none
 
