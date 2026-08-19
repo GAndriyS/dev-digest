@@ -26,16 +26,41 @@ export function ConfigTab({ skill }: { skill: Skill }) {
   const [enabled, setEnabled] = React.useState(skill.enabled);
   const [body, setBody] = React.useState(skill.body);
 
-  // Reset the form when the route swaps to a different skill under the same
-  // mounted tab. Editing THIS skill must not clobber unsaved keystrokes, so the
-  // effect is keyed on the id alone.
+  // The `skill` prop can change for two different reasons, and they need
+  // opposite handling:
+  //
+  // 1. The route swapped to a DIFFERENT skill (`skill.id` changed). AC-7's
+  //    gate has already made sure that only happens with nothing unsaved (the
+  //    shell blocks the navigation and asks to discard first) — so this is an
+  //    unconditional reseed, same as before: every field takes the new
+  //    skill's value, full stop.
+  // 2. The SAME skill's record changed under an untouched form (`skill.id` is
+  //    the same, `skill` itself is a new object). The left-column card and
+  //    this form are on screen together, so flipping a card's `enabled`
+  //    toggle runs its own mutation, which primes ["skill", id] with a fresh
+  //    object right under this form's feet (useUpdateSkill's onSuccess,
+  //    hooks/skills.ts) — with no user edit anywhere. Reseeding on
+  //    `skill.id` alone treated this exactly like case 1 never happened at
+  //    all: the stale field just sat there, `dirty` read true with nothing
+  //    typed, and Save would PUT that STALE value back, silently reverting
+  //    the change just made elsewhere. Here, each field only follows the
+  //    update if it still equals what the PREVIOUS `skill` held for it (i.e.
+  //    nothing was typed into it) — so an untouched field tracks the server
+  //    and stays out of `dirty`, while a field the user HAS edited keeps
+  //    exactly what they typed, whatever the server value goes on to become.
+  const lastSeenRef = React.useRef(skill);
   React.useEffect(() => {
-    setName(skill.name);
-    setDescription(skill.description);
-    setType(skill.type);
-    setEnabled(skill.enabled);
-    setBody(skill.body);
-  }, [skill.id]); // eslint-disable-line react-hooks/exhaustive-deps
+    const prev = lastSeenRef.current;
+    const idChanged = prev.id !== skill.id;
+
+    setName((current) => (idChanged || current === prev.name ? skill.name : current));
+    setDescription((current) => (idChanged || current === prev.description ? skill.description : current));
+    setType((current) => (idChanged || current === prev.type ? skill.type : current));
+    setEnabled((current) => (idChanged || current === prev.enabled ? skill.enabled : current));
+    setBody((current) => (idChanged || current === prev.body ? skill.body : current));
+
+    lastSeenRef.current = skill;
+  }, [skill]);
 
   const dirty =
     name !== skill.name ||

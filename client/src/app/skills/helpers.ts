@@ -7,10 +7,11 @@ import type { SkillStats } from "@devdigest/shared";
  *
  * Route-level because it now has two consumers reading the exact same number
  * (AC-22 requires it): the list card's usage line (`SkillCard/helpers.ts`,
- * which delegates here) and the editor's Stats tab "PULL FREQUENCY" tile.
- * Two consumers is the step where a helper like this climbs — see
- * `SkillsListView/helpers.ts`'s `typeColor` for the same rule already applied
- * once.
+ * which delegates here) and the editor's Stats tab "PULL FREQUENCY" tile. Two
+ * consumers is the step where a helper like this climbs — `typeColor` in
+ * `SkillCard/helpers.ts` used to be the example (it once had a second
+ * consumer, `SkillPreviewPane`), but the L05 redesign deleted that consumer,
+ * so it moved back down; this one still genuinely has two.
  */
 export function pullFrequency(stats: Pick<SkillStats, "pull_count_30d" | "runs_total">): number {
   return stats.runs_total > 0 ? Math.round((stats.pull_count_30d / stats.runs_total) * 100) : 0;

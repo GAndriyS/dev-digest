@@ -205,6 +205,49 @@ describe("SkillEditor › AC-7 unsaved-changes gate", () => {
   });
 });
 
+describe("SkillEditor › ConfigTab follows background updates to the same skill (fix pass 1, item 1)", () => {
+  // Simulates useUpdateSkill's onSuccess priming ["skill", id] with a fresh
+  // object while ConfigTab is mounted and untouched — e.g. flipping the
+  // `enabled` toggle on the left-column card for the currently-open skill.
+  function rerenderWith(skill: Skill) {
+    return (
+      <NextIntlClientProvider locale="en" messages={{ skills: messages, context: contextMessages }}>
+        <ToastProvider>
+          <SkillEditor skill={skill} />
+        </ToastProvider>
+      </NextIntlClientProvider>
+    );
+  }
+
+  it("follows the update when the form is untouched, and stays clean", () => {
+    const { rerender } = renderEditor();
+    expect(screen.queryByText("Unsaved changes")).not.toBeInTheDocument();
+
+    rerender(rerenderWith({ ...SKILL, enabled: false }));
+
+    expect(screen.getByText("Disabled")).toBeInTheDocument();
+    expect(screen.queryByText("Unsaved changes")).not.toBeInTheDocument();
+    expect(screen.getByText("Save").closest("button")).toBeDisabled();
+  });
+
+  it("never clobbers a field the user has edited when an unrelated field updates in the background", () => {
+    const { rerender } = renderEditor();
+    fireEvent.change(screen.getByDisplayValue("pr-quality-rubric"), {
+      target: { value: "renamed" },
+    });
+    expect(screen.getByText("Unsaved changes")).toBeInTheDocument();
+
+    rerender(rerenderWith({ ...SKILL, enabled: false }));
+
+    // The edited name survives — it is not reverted to the server's value.
+    expect(screen.getByDisplayValue("renamed")).toBeInTheDocument();
+    // The untouched `enabled` field still follows the background update.
+    expect(screen.getByText("Disabled")).toBeInTheDocument();
+    // Still dirty — the name edit alone accounts for that.
+    expect(screen.getByText("Unsaved changes")).toBeInTheDocument();
+  });
+});
+
 describe("SkillEditor › ContextTab", () => {
   it("mounts the same picker, title and hint the Config tab used to carry (AC-12, AC-15)", () => {
     searchParams = new URLSearchParams("tab=context");

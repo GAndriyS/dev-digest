@@ -9,8 +9,7 @@ import { useTranslations } from "next-intl";
 import { Badge, Icon, Toggle } from "@devdigest/ui";
 import type { Skill } from "@devdigest/shared";
 import { useSkillStats } from "@/lib/hooks/skills";
-import { isUntrusted, typeColor } from "../../helpers";
-import { statsLine } from "./helpers";
+import { isUntrusted, statsLine, typeColor } from "./helpers";
 import { s } from "./styles";
 
 export function SkillCard({
