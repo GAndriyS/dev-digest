@@ -179,6 +179,29 @@ What the reviewer actually sends to the model is assembled in
   "Specs read" and the Prompt assembly section's `Project context — attached
   specs (untrusted)` block render this trace verbatim, including on a
   failed/cancelled run.
+- **The run log names where each Project Context document came from.** Before
+  the model call, `run-executor.ts` writes exactly one summary line to the run
+  log (Live Review panel + `RunTrace.log`) —
+  `Project context: <N> doc(s) attached, <M> skipped`, always in that format
+  even when both counts are `0` — followed by one line per attached document
+  and one per skipped document, each naming its source right after the path:
+  `agent` for the agent's own attachment, or `via skill <name> v<version>` for
+  one inherited from an enabled linked skill, using the same name/version as
+  that run's `Skills: … <name> v<version>` line. The source rides on
+  `ResolvedContextDocs.attached[]` and `SkippedContextDoc.source`
+  (`modules/context/types.ts`) from the same merge that produces `specsRead` —
+  a path attached to more than one source keeps only its first occurrence,
+  attributed to that first source — so the log and `RunTrace.specs_read` can
+  never disagree on composition or order. A disabled skill's documents are
+  filtered out before this resolution and never appear, attached or skipped.
+  No wire or client change: `RunLogLine` stays `{ t, kind, msg }`; the source
+  lives only in the message text. Example, from a real run:
+
+  ```
+  Project context: 2 doc(s) attached, 0 skipped
+  Project context: attached specs/README.md (agent, ~380 tokens)
+  Project context: attached client/INSIGHTS.md (via skill dev-digest-conventions v1, ~890 tokens)
+  ```
 
 ## Testing
 
