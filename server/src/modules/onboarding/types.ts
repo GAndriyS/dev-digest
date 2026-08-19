@@ -47,8 +47,15 @@ export interface OnboardingTelemetry {
   model: string;
   /** Provider round-trips — 1 for an attempted generation, 0 for a structural skeleton. */
   calls: number;
-  /** `completeStructured`'s attempt count (retries collapse into ONE call — AC-34). */
-  attempts: number;
+  /**
+   * `completeStructured`'s attempt count (retries collapse into ONE call —
+   * AC-34). `null` when the call threw before reporting one — the adapter
+   * doesn't expose a partial attempt count on failure (`ExternalServiceError`
+   * carries only `raw`), so `null` is honest where a guessed number wouldn't
+   * be (`llm_failed` skeletons only; the "never attempted" skeleton reasons
+   * report `0`).
+   */
+  attempts: number | null;
   tokensIn: number;
   tokensOut: number;
   costUsd: number | null;
@@ -58,4 +65,6 @@ export interface OnboardingTelemetry {
   durationMs: number;
   /** Present only when the result is a skeleton (AC-35). */
   reason?: OnboardingSkeletonReason;
+  /** The failure message — present only on an `llm_failed` skeleton (AC-35 names the reason; this names why). */
+  error?: string;
 }

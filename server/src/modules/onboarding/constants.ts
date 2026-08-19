@@ -62,6 +62,9 @@ export const TOP_FILES_N = 12;
 /** How many `critical_paths` chains are shown on the wire. */
 export const CRITICAL_FILES_SHOWN = 4;
 
+/** Cap on `run_locally` commands shown, in the model's (execution) order — mirrors the prompt's "at most 6" instruction. */
+export const MAX_RUN_LOCALLY_LINKS = 6;
+
 /** How many files `reading_path` orders and shows (rank DESC — AC-17). */
 export const READING_PATH_LEN = 6;
 
@@ -72,10 +75,21 @@ export const MAX_FIRST_TASKS = 5;
  * How many top-ranked files are scanned for `first_tasks` signals (TODO/FIXME
  * markers, missing sibling test). Read-cost bound for one generation:
  * `RUN_CONFIG_FILES.length + MAX_MANIFEST_DIRS` manifest/config reads, plus
- * up to `TASK_SCAN_FILES * 4` reads (one file read + up to 3 sibling-test
- * probes each) — independent of repo size (A14).
+ * up to `TASK_SCAN_FILES * (1 + SIBLING_TEST_PROBES)` reads (one file read +
+ * up to `SIBLING_TEST_PROBES` sibling-test probes each) — independent of repo
+ * size (A14).
+ *
+ * Larger than `TOP_FILES_N` on purpose (the scan is meant to look further
+ * down the rank than `reading_path`/`critical_paths` show): `facts.ts` fetches
+ * `getTopFilesByRank(repoId, Math.max(TOP_FILES_N, TASK_SCAN_FILES))` ONCE and
+ * slices the same result for both consumers — fetching only `TOP_FILES_N` and
+ * then slicing to `TASK_SCAN_FILES` would silently cap the scan at
+ * `TOP_FILES_N`, which is exactly the no-op this constant used to be.
  */
 export const TASK_SCAN_FILES = 20;
+
+/** Candidate locations probed per scanned file by `siblingTestCandidates` (fixed count). */
+export const SIBLING_TEST_PROBES = 7;
 
 /** Per-file read cap in bytes, same bound conventions uses for the same reason. */
 export const MAX_FILE_BYTES = 2_000_000;
@@ -93,4 +107,4 @@ export const MAX_STRUCTURED_RETRIES = 2;
 export const SCHEMA_NAME = 'OnboardingTour';
 
 /** Mirrors conventions/skills — the UI keys its disabled action off this. */
-export const NO_PROVIDER_KEY_CODE = 'no_provider_key';
+export { NO_PROVIDER_KEY_CODE } from '../../platform/errors.js';

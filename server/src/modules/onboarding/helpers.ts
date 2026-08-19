@@ -1,3 +1,4 @@
+import { clipHead } from '../_shared/prompt-text.js';
 import { z } from 'zod';
 import type { ChatMessage, Onboarding, OnboardingIndexSummary, OnboardingLink, OnboardingSection, OnboardingSkeletonReason } from '@devdigest/shared';
 import { OnboardingIndexSummary as OnboardingIndexSummarySchema, OnboardingSection as OnboardingSectionSchema } from '@devdigest/shared';
@@ -8,6 +9,7 @@ import {
   MAX_FIRST_TASKS,
   MAX_PROMPT_FILE_CHARS,
   MAX_PROMPT_TOTAL_CHARS,
+  MAX_RUN_LOCALLY_LINKS,
   READING_PATH_LEN,
   SECTION_KINDS,
   SECTION_TITLES,
@@ -34,6 +36,19 @@ import type { FirstTaskSignal, OnboardingFacts, OnboardingTelemetry } from './ty
 // code-collected facts, never trusted from the model (AC-17, AC-19).
 // ---------------------------------------------------------------------------
 
+/**
+ * `OnboardingLink`'s two fields carry DIFFERENT meanings per section — this
+ * schema doesn't encode that (the model's shape is uniform), but the wire
+ * consumer does branch on `kind`:
+ *   - `run_locally`: `label` is the exact shell COMMAND, copied verbatim from
+ *     a FACTS excerpt (never invented); `path` is the config/manifest FILE
+ *     that command was read from (one of `RUN_CONFIG_FILES` /
+ *     `<seg>/package.json`) — post-validation checks `path` against the
+ *     known-facts set, never `label`. `OnboardingTourView`'s `CommandRow`
+ *     renders `label` as the copyable command and `path` as its source file.
+ *   - every other section: `label` is a human-readable description of the
+ *     file at `path` (e.g. why to read it); `path` is what gets opened.
+ */
 const LinkDraft = z.object({ label: z.string(), path: z.string() });
 
 const ArchitectureOverviewDraft = z.object({
@@ -77,9 +92,7 @@ export type OnboardingDraft = z.infer<typeof OnboardingDraft>;
 // ---------------------------------------------------------------------------
 
 /** Truncate to a bound, appending an ellipsis marker — same shape as conventions' `clipFile`. */
-export function clipForPrompt(text: string, maxChars: number): string {
-  return text.length <= maxChars ? text : `${text.slice(0, maxChars)}\n…`;
-}
+export const clipForPrompt = clipHead;
 
 /**
  * One system + one user message. The system prompt is already rendered
@@ -148,7 +161,15 @@ export function scanTodoMarkers(path: string, content: string): FirstTaskSignal[
   return [];
 }
 
-/** `<stem>.test.<ext>`, `<stem>.spec.<ext>`, `__tests__/<name>` — AC-19 signal 2. */
+/**
+ * Where a test for `path` may live — AC-19 signal 2. Colocated
+ * (`<stem>.test.<ext>`, `<stem>.spec.<ext>`, `__tests__/<name>`), the
+ * cross-extension colocated form (`.tsx`/`.jsx` tested by `.test.ts`/`.test.js`),
+ * and the `test/` / `tests/` mirror next to the nearest `src/` segment
+ * (`pkg/src/a/b.ts` → `pkg/test/a/b.test.ts`, `pkg/tests/a/b.test.ts`,
+ * `pkg/test/b.test.ts`). Always exactly `SIBLING_TEST_PROBES` entries so the
+ * read bound in `constants.ts` stays a constant, not a per-file surprise.
+ */
 export function siblingTestCandidates(path: string): string[] {
   const lastSlash = path.lastIndexOf('/');
   const dir = lastSlash === -1 ? '' : path.slice(0, lastSlash);
@@ -157,7 +178,24 @@ export function siblingTestCandidates(path: string): string[] {
   const stem = dotIdx <= 0 ? base : base.slice(0, dotIdx);
   const ext = dotIdx <= 0 ? '' : base.slice(dotIdx);
   const prefix = dir ? `${dir}/` : '';
-  return [`${prefix}${stem}.test${ext}`, `${prefix}${stem}.spec${ext}`, `${prefix}__tests__/${base}`];
+  // `.tsx` → `.ts`, `.jsx` → `.js`; anything else keeps its own extension.
+  const crossExt = ext === '.tsx' ? '.ts' : ext === '.jsx' ? '.js' : ext;
+
+  // `pkg/src/a/b.ts` → pkgRoot `pkg/`, rel `a/`; no `src/` segment → repo root, rel = dir.
+  const srcIdx = dir.split('/').indexOf('src');
+  const segs = dir ? dir.split('/') : [];
+  const pkgRoot = srcIdx === -1 ? '' : segs.slice(0, srcIdx).map((x) => `${x}/`).join('');
+  const rel = srcIdx === -1 ? prefix : segs.slice(srcIdx + 1).map((x) => `${x}/`).join('');
+
+  return [
+    `${prefix}${stem}.test${ext}`,
+    `${prefix}${stem}.spec${ext}`,
+    `${prefix}__tests__/${base}`,
+    `${prefix}${stem}.test${crossExt}`,
+    `${pkgRoot}test/${rel}${stem}.test${crossExt}`,
+    `${pkgRoot}tests/${rel}${stem}.test${crossExt}`,
+    `${pkgRoot}test/${stem}.test${crossExt}`,
+  ];
 }
 
 // ---------------------------------------------------------------------------
@@ -204,6 +242,23 @@ export function orderReadingPath(
   rationaleByPath: Map<string, string>,
 ): OnboardingLink[] {
   return orderedPaths.map((path) => ({ label: rationaleByPath.get(path) ?? path, path }));
+}
+
+/**
+ * The one place that knows `facts.topFiles` is already rank DESC (same
+ * assumption `orderReadingPath` makes) — reused wherever a *different*
+ * section's links need the code's rank order instead of the model's link
+ * order (AC-13). A link whose `path` isn't in `topFiles` (e.g. surfaced only
+ * via a critical-path chain) sorts after every ranked link, in its original
+ * (model) order — `Array.prototype.sort` is spec-stable, so ties resolve to
+ * input order rather than being reshuffled.
+ */
+export function orderByTopFileRank(links: OnboardingLink[], topFiles: string[]): OnboardingLink[] {
+  const rankOf = (path: string) => {
+    const i = topFiles.indexOf(path);
+    return i === -1 ? Number.POSITIVE_INFINITY : i;
+  };
+  return [...links].sort((a, b) => rankOf(a.path) - rankOf(b.path));
 }
 
 /** Union of every path the code itself put into `facts` — the post-validation allow-list (D7). */
@@ -266,14 +321,17 @@ export function assembleSections(draft: OnboardingDraft, facts: OnboardingFacts)
       title: critical.title,
       body: critical.body,
       diagram: null,
-      links: criticalFiltered.kept.slice(0, CRITICAL_FILES_SHOWN),
+      links: orderByTopFileRank(criticalFiltered.kept, facts.topFiles).slice(0, CRITICAL_FILES_SHOWN),
     },
     {
       kind: 'run_locally',
       title: run.title,
       body: run.body,
       diagram: null,
-      links: runFiltered.kept,
+      // `label` is a command, `path` the config file it came from (see
+      // `LinkDraft`'s doc comment) — post-validation above already checked
+      // `path`; this only bounds the count, in the model's own order.
+      links: runFiltered.kept.slice(0, MAX_RUN_LOCALLY_LINKS),
     },
     {
       kind: 'reading_path',
@@ -356,6 +414,7 @@ export function onboardingLogFields(t: OnboardingTelemetry): Record<string, unkn
     durationMs: t.durationMs,
   };
   if (t.reason) fields.reason = t.reason;
+  if (t.error) fields.error = t.error;
   return fields;
 }
 

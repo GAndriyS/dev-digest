@@ -3,10 +3,13 @@
      POST /repos/:id/onboarding/generate → exactly one model call, full rewrite
 
    Mirrors hooks/conventions.ts: a mutation that rewrites a single wire object,
-   not a list — the response IS the new tour, but the plan calls for cache
-   invalidation over a direct `setQueryData` here, so the next render always
-   refetches the freshly stored row (and its `generated_at`) from the server
-   rather than trusting the mutation response to be byte-identical to it. */
+   not a list. The generate response is written straight into the query cache
+   (`setQueryData`) so a `status: 'skeleton'` result renders immediately — the
+   stored tour is unchanged server-side on that branch (AC-26), so there is
+   nothing a refetch would add. `invalidateQueries` still runs after, so a
+   `status: 'ready'` result also picks up whatever the server actually
+   persisted rather than trusting the mutation response to be byte-identical
+   to it. */
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -41,6 +44,14 @@ export function useOnboardingTour(repoId: string | null | undefined) {
  * full rewrite of the stored tour (AC-4). Always sends `{ locale }` from the
  * active UI locale (A7) so the server always has a language to write the tour
  * in, falling back to `en` server-side when there is none.
+ *
+ * On success the response IS the new cached read: `setQueryData` first so a
+ * `status: 'skeleton'` result (AC-26 — the previously stored tour is left
+ * untouched server-side, but this call's own reason must show) renders
+ * immediately without an extra round trip. `invalidateQueries` still follows,
+ * because `status: 'ready'` responses should refetch to pick up whatever the
+ * server actually persisted (byte-identical in practice, but the response is
+ * not treated as automatically authoritative — see the module doc above).
  */
 export function useGenerateOnboardingTour(repoId: string | null | undefined) {
   const qc = useQueryClient();
@@ -50,7 +61,8 @@ export function useGenerateOnboardingTour(repoId: string | null | undefined) {
       api.post<Onboarding>(`/repos/${repoId}/onboarding/generate`, {
         locale,
       } satisfies OnboardingGenerateBody),
-    onSuccess: () => {
+    onSuccess: (data) => {
+      qc.setQueryData(["onboarding", repoId], data);
       qc.invalidateQueries({ queryKey: ["onboarding", repoId] });
     },
   });

@@ -78,10 +78,15 @@ function LinkRow({
     AC-16 — the button only ever writes to the clipboard). */
 function CommandRow({ command, source, t }: { command: string; source?: string; t: Translate }) {
   const [copied, setCopied] = React.useState(false);
+  // Same ref + cleanup shape as the Share handler: a collapse/unmount inside
+  // the confirm window must not fire setState on an unmounted row.
+  const timeout = React.useRef<ReturnType<typeof setTimeout>>(undefined);
+  React.useEffect(() => () => clearTimeout(timeout.current), []);
   const copy = () => {
     void navigator.clipboard?.writeText(command);
     setCopied(true);
-    setTimeout(() => setCopied(false), COPY_CONFIRM_MS);
+    clearTimeout(timeout.current);
+    timeout.current = setTimeout(() => setCopied(false), COPY_CONFIRM_MS);
   };
   return (
     <li style={s.commandRow}>

@@ -23,8 +23,12 @@ Section-specific instructions:
   through, from the FACTS below. `links` names the files in those chains.
 - `run_locally` — how to get the repo running, grounded ONLY in the config and
   manifest excerpts given in the FACTS (scripts, docker compose, env example).
-  Never invent a command that isn't backed by one of those excerpts. `links`
-  points at the config/manifest files you drew from.
+  Never invent a command that isn't backed by one of those excerpts. Each
+  `links` entry is ONE command: `label` is the exact shell command (e.g.
+  `pnpm install`), copied verbatim from a FACTS excerpt, never paraphrased or
+  invented; `path` is the FACTS file that command came from (the config or
+  manifest excerpt it was copied out of). At most 6 entries, in the order they
+  should be run.
 - `reading_path` — a suggested file-reading order for a newcomer. The FACTS give
   you the exact ordered file list; for `entries`, write one `rationale` per
   listed path (why read it, in this order) — you may skip a path, but never add

@@ -1,7 +1,7 @@
 import { realpath } from 'node:fs/promises';
 import type { Onboarding, OnboardingSkeletonReason } from '@devdigest/shared';
 import type { Container } from '../../platform/container.js';
-import { AppError, ConfigError, NotFoundError } from '../../platform/errors.js';
+import { AppError, ConfigError, NotFoundError, errSummary, NoProviderKeyError } from '../../platform/errors.js';
 import { loadPromptTemplate, renderTemplate } from '../../platform/prompts.js';
 import { readInsideClone } from '../_shared/clone-fs.js';
 import { resolveFeatureModel } from '../settings/index.js';
@@ -9,7 +9,6 @@ import type { IndexState } from '../repo-intel/types.js';
 import {
   MAX_FILE_BYTES,
   MAX_STRUCTURED_RETRIES,
-  NO_PROVIDER_KEY_CODE,
   SCHEMA_NAME,
   SECTION_KINDS,
 } from './constants.js';
@@ -36,17 +35,7 @@ import type { OnboardingTelemetry } from './types.js';
  * is actually healthy.
  */
 
-/** 409, not 500 — "no key configured yet" is a UI state, not a server fault (mirrors conventions). */
-export class NoProviderKeyError extends AppError {
-  constructor(provider: string) {
-    super(
-      NO_PROVIDER_KEY_CODE,
-      `No API key configured for provider "${provider}" — add one in Settings to generate the onboarding tour.`,
-      409,
-      { provider },
-    );
-  }
-}
+export { NoProviderKeyError } from '../../platform/errors.js';
 
 export interface OnboardingGenerateResult {
   tour: Onboarding;
@@ -117,7 +106,7 @@ export class OnboardingService {
 
     const llm = await this.container.llm(provider).catch((e) => {
       // Translate the container's "key missing" into the 409 the UI renders.
-      if (e instanceof ConfigError) throw new NoProviderKeyError(provider);
+      if (e instanceof ConfigError) throw new NoProviderKeyError(provider, 'generate the onboarding tour');
       throw e;
     });
 
@@ -154,10 +143,13 @@ export class OnboardingService {
         temperature: 0,
         maxRetries: MAX_STRUCTURED_RETRIES,
       });
-    } catch {
+    } catch (err) {
       // Network failure, or valid-JSON-but-schema-invalid after every retry
       // (`openai.ts:132-134`) — the PREVIOUSLY stored tour, if any, is left
-      // untouched (AC-26): we never write here.
+      // untouched (AC-26): we never write here. `ConfigError` (missing key,
+      // translated to `NoProviderKeyError`) is thrown from `container.llm(...)`
+      // ABOVE, outside this `try` — this catch only ever sees a genuine
+      // `completeStructured` failure, never the 409 case.
       return {
         tour: buildSkeleton('llm_failed', index),
         telemetry: skeletonTelemetry(
@@ -167,7 +159,14 @@ export class OnboardingService {
           'llm_failed',
           startedAt,
           1,
-          MAX_STRUCTURED_RETRIES + 1,
+          // `completeStructured` doesn't expose how many attempts it made
+          // before throwing — `ExternalServiceError`'s `details` carries only
+          // `raw` (openai.ts:132-134), and a network/timeout failure can
+          // throw well before `MAX_STRUCTURED_RETRIES + 1` attempts. Honest
+          // `null` beats inventing a number that's only ever true for the
+          // schema-exhausted case.
+          null,
+          errSummary(err).message,
         ),
       };
     }
@@ -223,7 +222,8 @@ function skeletonTelemetry(
   reason: OnboardingSkeletonReason,
   startedAt: number,
   calls: number,
-  attempts = 0,
+  attempts: number | null = 0,
+  error?: string,
 ): OnboardingTelemetry {
   return {
     provider,
@@ -237,5 +237,6 @@ function skeletonTelemetry(
     repoId,
     durationMs: Date.now() - startedAt,
     reason,
+    ...(error ? { error } : {}),
   };
 }

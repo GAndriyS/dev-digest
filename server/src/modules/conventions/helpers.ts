@@ -1,3 +1,4 @@
+import { clipHead } from '../_shared/prompt-text.js';
 import { z } from 'zod';
 import type { ChatMessage, ConventionCandidate } from '@devdigest/shared';
 import type { ConventionRow } from './repository.js';
@@ -42,7 +43,7 @@ export interface SampleFile {
 
 /** Truncate to the head — conventions show up in imports and the first handler. */
 export function clipFile(content: string): string {
-  return content.length <= MAX_FILE_CHARS ? content : `${content.slice(0, MAX_FILE_CHARS)}\n…`;
+  return clipHead(content, MAX_FILE_CHARS);
 }
 
 /**

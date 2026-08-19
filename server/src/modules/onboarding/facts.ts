@@ -39,10 +39,18 @@ function uniqueFirstSegments(paths: string[]): string[] {
 export async function collectFacts(repoId: string, deps: CollectFactsDeps): Promise<OnboardingFacts> {
   const { repoIntel, read } = deps;
 
-  const [topFiles, criticalPaths] = await Promise.all([
-    repoIntel.getTopFilesByRank(repoId, TOP_FILES_N),
+  // One `getTopFilesByRank` call, sized to cover BOTH consumers below.
+  // `TASK_SCAN_FILES` (20) is larger than `TOP_FILES_N` (12): fetching only
+  // `TOP_FILES_N` and then `.slice(0, TASK_SCAN_FILES)` on that same
+  // 12-length array was a no-op — the scan never saw files ranked 13-20.
+  const [rankedFiles, criticalPaths] = await Promise.all([
+    repoIntel.getTopFilesByRank(repoId, Math.max(TOP_FILES_N, TASK_SCAN_FILES)),
     repoIntel.getCriticalPaths(repoId),
   ]);
+  // `facts.topFiles` (reading-path order, manifest-dir discovery,
+  // critical-path link ordering) stays bounded to TOP_FILES_N — only the
+  // first_tasks scan below is meant to look further down the rank.
+  const topFiles = rankedFiles.slice(0, TOP_FILES_N);
 
   const manifestDirs = uniqueFirstSegments(topFiles).slice(0, MAX_MANIFEST_DIRS);
   const runCandidates: string[] = [
@@ -57,7 +65,7 @@ export async function collectFacts(repoId: string, deps: CollectFactsDeps): Prom
   );
   const runFiles: SampleFile[] = runReads.filter((f): f is SampleFile => f !== null);
 
-  const scanFiles = topFiles.slice(0, TASK_SCAN_FILES);
+  const scanFiles = rankedFiles.slice(0, TASK_SCAN_FILES);
   const taskSignals: FirstTaskSignal[] = [];
   for (const path of scanFiles) {
     const content = await read(path, MAX_FILE_BYTES);

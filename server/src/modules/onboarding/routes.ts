@@ -37,7 +37,16 @@ export default async function onboardingRoutes(appBase: FastifyInstance) {
   app.post(
     '/repos/:id/onboarding/generate',
     {
-      schema: { params: IdParams, body: OnboardingGenerateBody, response: { 200: Onboarding } },
+      // `.nullish()`: every field of `OnboardingGenerateBody` is already
+      // optional, but that only covers a SENT-but-empty JSON body — a
+      // truly body-less POST (no `content-type`) reaches the validator as
+      // `null` (Fastify's default for an absent body), which fails a bare
+      // `z.object({...})`. The handler reads `req.body?.locale`.
+      schema: {
+        params: IdParams,
+        body: OnboardingGenerateBody.nullish(),
+        response: { 200: Onboarding },
+      },
       config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
     },
     async (req) => {
@@ -45,7 +54,7 @@ export default async function onboardingRoutes(appBase: FastifyInstance) {
       const { tour, telemetry } = await service.generate(
         workspaceId,
         req.params.id,
-        req.body.locale,
+        req.body?.locale,
       );
       app.log.info(onboardingLogFields(telemetry), 'onboarding tour generated');
       return tour;

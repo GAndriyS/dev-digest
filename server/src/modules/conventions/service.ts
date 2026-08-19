@@ -5,7 +5,7 @@ import type {
   ConventionStatus,
 } from '@devdigest/shared';
 import type { Container } from '../../platform/container.js';
-import { AppError, ConfigError, NotFoundError } from '../../platform/errors.js';
+import { AppError, ConfigError, NotFoundError, NoProviderKeyError } from '../../platform/errors.js';
 import { resolveFeatureModel } from '../settings/index.js';
 import { readInsideClone } from '../_shared/clone-fs.js';
 import { ConventionsRepository, type InsertConvention } from './repository.js';
@@ -15,7 +15,6 @@ import {
   EXTRACTION_SYSTEM_PROMPT,
   MAX_CANDIDATES,
   MAX_FILE_BYTES,
-  NO_PROVIDER_KEY_CODE,
   NO_SAMPLES_CODE,
   REPO_NOT_CLONED_CODE,
   SAMPLE_COUNT,
@@ -39,17 +38,7 @@ import {
  * list the user triages contains no invented rules.
  */
 
-/** 409, not 500 — "no key configured yet" is a UI state, not a server fault. */
-export class NoProviderKeyError extends AppError {
-  constructor(provider: string) {
-    super(
-      NO_PROVIDER_KEY_CODE,
-      `No API key configured for provider "${provider}" — add one in Settings to extract conventions.`,
-      409,
-      { provider },
-    );
-  }
-}
+export { NoProviderKeyError } from '../../platform/errors.js';
 
 export class RepoNotClonedError extends AppError {
   constructor() {
@@ -121,7 +110,7 @@ export class ConventionsService {
     );
     const llm = await this.container.llm(provider).catch((e) => {
       // Translate the container's "key missing" into the 409 the UI renders.
-      if (e instanceof ConfigError) throw new NoProviderKeyError(provider);
+      if (e instanceof ConfigError) throw new NoProviderKeyError(provider, 'extract conventions');
       throw e;
     });
 

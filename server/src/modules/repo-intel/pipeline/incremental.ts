@@ -252,6 +252,12 @@ export async function runIncremental(
     ...(graphFailed ? { graphFailed } : {}),
     parseDegraded,
     durationMs: Date.now() - startedAt,
+    // Carried forward from the PRIOR walk (the slice path never re-walks the
+    // whole clone) — without this, `upsertIndexState` replaces the `stats`
+    // column wholesale and AC-6/AC-28's `totalCandidates`/`bounded` silently
+    // zero out on the very next incremental pass after a full index.
+    totalCandidates: state.totalCandidates,
+    bounded: state.bounded,
   };
 
   // The aggregate filesIndexed counter on `repo_index_state` is the prior

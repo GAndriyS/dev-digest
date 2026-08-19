@@ -9,7 +9,11 @@ import type { Onboarding, OnboardingSection } from "@devdigest/shared";
  * array, and a non-null `generated_at` with all five sections.
  */
 export function isEmptyTour(tour: Onboarding): boolean {
-  return tour.generated_at === null;
+  // `generated_at` is `.nullish()` on the wire (`z.string().nullish()`), so
+  // it can arrive as `undefined`, not just `null` — a strict `=== null`
+  // would fall through to the fully-generated branch and try to render
+  // `sections: []` as a real tour.
+  return tour.generated_at == null;
 }
 
 /** The last generation attempt did not produce a storable tour (AC-23). */
