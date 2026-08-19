@@ -98,6 +98,30 @@ Rereading a 40-file diff to reconfirm 30 `MET` rows is where a second run used
 to cost as much as the first; the locator check is what makes carrying them
 forward honest rather than lazy.
 
+**The reviewer reports — optional, and they narrow the work.** When the
+delegation carries the architecture review, the `/code-review` findings or the
+`/security-review` verdict for this branch, pin them and say so in the meta
+line. They do not grade anything for you — a requirement is still `MET` only
+with a locator you confirmed — but they tell you where the tree already moved,
+and that changes the order and the cost of your pass:
+
+- Grade first every requirement whose files appear in a reviewer finding, and
+  every requirement touched by a fix that followed one. Those are the rows most
+  likely to have drifted.
+- For the rest, when a supplied `test-writer` report already maps an `AC-N` to
+  a test at a locator **and** the lane you ran is green, confirming that
+  locator is enough — do not re-derive the production path a reviewer has
+  already read and reported on.
+- Never carry a reviewer's *conclusion* across as a verdict. `PASS` from the
+  architecture reviewer says the boundaries hold; it says nothing about whether
+  the requirement was built.
+
+The point is to stop paying three times for the same reading. On the run this
+rule comes from, the verifier spent 145k tokens and 13 minutes re-deriving
+evidence that the architecture review, `/code-review` and three test suites had
+already produced and located
+(`docs/retro/ledger/2026-08-19-l05-sdd-onboarding-generator.md`).
+
 **The stage.** The delegation may say `stage: post-implementer` or `stage:
 final` (default). This chain runs `plan-verifier` once, last, on a settled
 tree — `stage: final` — and every row is graded. In the rare `stage:

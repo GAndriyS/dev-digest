@@ -432,7 +432,19 @@ the reviews the human runs by hand afterwards.>
 
 ## Contract & migration impact
 <What crosses the wire and which copies must move together; whether a new
-migration is needed — or "none".>
+migration is needed — or "none".
+
+**Pin the meaning of any field whose meaning varies by variant.** When one wire
+field carries different semantics in different cases — a `label` that is a
+human description in four section kinds and an executable command in the fifth,
+a `payload` shaped by a `kind`, a nullable that means "absent" in one state and
+"pending" in another — say per variant what each side puts in and reads out,
+in one line each. A field the plan leaves implicit is a field two lanes will
+implement differently: on the run this rule comes from
+(`docs/retro/ledger/2026-08-19-l05-sdd-onboarding-generator.md`) exactly one
+such field cost three separate corrections — an integration-pass reconciliation,
+a `/code-review` finding, and then the run's only security CRITICAL, because
+"command" and "description" had never been written down as different things.>
 
 ## Verification plan
 <One line per touched slice: `node scripts/verify.mjs --slice <frontend |

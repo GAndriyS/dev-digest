@@ -1,8 +1,8 @@
 ---
 name: implement
-description: Executes an approved Implementation Plan end to end from one command — /implement <plan path> [--max-review-loops N] [--from plan|implement|find|verify|docs|pr]. Drives implementer → (architecture-reviewer ∥ /code-review) → the architecture fix loop → plan-verifier → doc-writer → /pr-self-review, stops at the human gates (accepted warnings, deviations, PR), and records stage state + agent token cost in .claude/sdd/<slug>.md so a later chat can resume with --from. Spec and plan are NOT part of it — run spec-creator and implementation-planner by hand first; this starts once .claude/plans/<slug>.md exists. Use when the user invokes /implement, says "implement the plan", or wants to continue an implementation run. Not a subagent — the main session executes it.
+description: Executes an approved Implementation Plan end to end from one command — /implement <plan path> [--max-review-loops N] [--from plan|implement|find|verify|docs|pr]. Drives implementer → (architecture-reviewer ∥ /code-review ∥ /security-review) → the fix loop → plan-verifier → doc-writer → /pr-self-review, stops at the human gates (accepted warnings, deviations, PR), and records stage state + agent token cost in .claude/sdd/<slug>.md (plus a <slug>-brief.md every delegation reads as its Step 1) so a later chat can resume with --from. Spec and plan are NOT part of it — run spec-creator and implementation-planner by hand first; this starts once .claude/plans/<slug>.md exists. Use when the user invokes /implement, says "implement the plan", or wants to continue an implementation run. Not a subagent — the main session executes it.
 metadata:
-  version: 1.0.0
+  version: 1.1.0
   tags: sdd, implement, workflow, orchestration, subagents, plan, command
 ---
 
@@ -83,6 +83,43 @@ DAG: stated in plan | inferred (see notes)
 Notes: <inferred edges · ownership gaps · rows not this run · anything in Open questions the executor inherits>
 ```
 
+### The handoff brief — `.claude/sdd/<slug>-brief.md`
+
+Write it in this stage, once, and commit it with the run file. It is what every
+delegation points at instead of making each agent re-derive the same map:
+
+```markdown
+# Handoff brief — <slug>
+Spec: <path> (<status>) · Plan: <path> · Branch: <name> · Base: <merge-base sha>
+
+## Binding rules (locators, not prose)
+<the plan's **Context read**, verbatim — every rule with its `path:line`>
+
+## Ownership
+<the plan's Ownership table, or the brief's own if the plan had none>
+
+## Amendments in force
+<the plan's accepted review amendments, if any — these override step rows>
+
+## Known pre-existing failures
+<filled in at stage 2 from the base-commit check; "none observed yet" until then>
+```
+
+Then every delegation opens with:
+
+```
+Your Step 1 is .claude/sdd/<slug>-brief.md — read it instead of re-deriving the
+context. Beyond it, read only the files you will edit (and their tests).
+```
+
+**Why.** On the run this comes from, all fourteen agents whose reports carried
+a *Files read* section opened it with root `AGENTS.md`, the package
+`AGENTS.md`, the module `INSIGHTS.md`, the spec and the plan — the same
+unchanged context, re-derived ~14 times at 15–25k a sweep. The brief is
+written once by the party that already holds it. It does **not** replace an
+agent reading the code it is about to change, and an agent that finds the brief
+wrong says so in its report rather than silently re-deriving.
+
 **Gate:** `AskUserQuestion` — "Run with this split? (N waves, M parallel
 lanes at the widest, DAG stated | inferred)". Options: *run as shown* /
 *serialise everything into one lane* / *edit* (the human names the change; you
@@ -94,8 +131,9 @@ stage 2.
 
 ## The run file — `.claude/sdd/<slug>.md`
 
-Created at the first stage (or at `--from`), appended after every stage,
-committed with the branch. It is what makes the "new chat" possible: the next
+Created at the first stage (or at `--from`) next to
+`.claude/sdd/<slug>-brief.md`, appended after every stage, committed with the
+branch. It is what makes the "new chat" possible: the next
 session reads it and continues.
 
 ```markdown
@@ -126,11 +164,11 @@ Token counts come from each `Agent` result. This table is the only place
 |---|---|---|---|
 | 1 | read the plan | you — execution brief: tasks, DAG, owned paths, waves, mode | ⛔ **Human confirms the split** (run as shown / one lane / edit) |
 | 2 | implement | `implementer` (sonnet), wave by wave per the brief — one lane or N in parallel, then the integration step | Report `Steps: N/N`. `done < total` → same delegation again with the report; **no reviewer yet** |
-| 3 | find | `architecture-reviewer` (sonnet) ∥ `/code-review` — one message | Collect CRITICAL / WARNING / bugs into one findings list. Empty → stage 4 |
+| 3 | find | `architecture-reviewer` (sonnet) ∥ `/code-review` ∥ `/security-review` — one message | Collect CRITICAL / WARNING / bugs into one findings list. Empty → stage 4 |
 | 3b | review loop | `implementer` fix pass → `architecture-reviewer` re-review (scoped) → … until PASS with no open item, or `--max-review-loops` | ⛔ **Human decides** on WARNINGs left standing and on a loop that hit the cap |
 | 4 | verify | `plan-verifier` (sonnet), **once**, with the last implementer report; `INCOMPLETE` → implementer on Gaps → re-verify with the previous report | `COMPLETE`, or ⛔ `DEVIATED` the human accepts |
 | 5 | docs | `doc-writer` (sonnet) | Commit docs |
-| 6 | pr | `/pr-self-review` (runs `/code-review` again on the final diff + `/security-review`) → PR; spec `Status: → implemented` by hand in the same commit | ⛔ Human opens the PR |
+| 6 | pr | `/pr-self-review` (re-runs `/code-review` + `/security-review` on the FINAL diff — a confirmation pass; the discovery pass was stage 3) → PR; spec `Status: → implemented` by hand in the same commit | ⛔ Human opens the PR |
 | 7 | wrap-up | `/engineering-insights` with every report's **Insight candidates**; finish the run-file table | — |
 
 **`test-writer` is not in this chain — by decision, to save tokens.** The
@@ -172,6 +210,30 @@ Other lanes run in parallel on their own paths.
 The integration step (the last wave, when the plan has one) is its own
 delegation once every lane before it reported.
 
+**At most 3 agents in flight at once, and scope each so it finishes inside
+~5 minutes.** Two waves of three beat one wave of five: on the run this rule
+comes from, all three stream-watchdog stalls (600s each, plus a resume
+round-trip) happened while four or more agents were streaming, and that dead
+wall clock — ~50 minutes with the two transient API deaths — was the single
+largest non-working span of the run. A lane that cannot be cut below ~5
+minutes is a lane the plan should have split.
+
+**Settle "is this failure pre-existing?" once, here, and write the answer into
+the run file.** The first lane report that comes back red on a test nobody
+touched gets ONE check — a worktree at the merge base, the same lane command,
+the verdict recorded as a line in `.claude/sdd/<slug>.md`:
+
+```bash
+git worktree add /tmp/<slug>-base $(git merge-base origin/main HEAD)
+# run the failing lane there, then: git worktree remove --force /tmp/<slug>-base
+```
+
+Every later delegation then carries "known pre-existing: <names> (verified on
+<sha>)". Without it the same two or three failures get re-investigated by
+every agent that runs a lane — four separate agents did exactly that on the
+run this rule comes from, each reaching the same conclusion independently, and
+the check that settled it was only run at the very end.
+
 Read each report's first line. `Steps: 5/7` → the same delegation again with:
 
 ```
@@ -179,17 +241,37 @@ Your previous report follows. Finish steps <n, m>; do not redo the rest.
 <report verbatim>
 ```
 
-## Stage 3 — find (one message, two calls)
+## Stage 3 — find (one message, three calls)
 
 ```
 [architecture-reviewer]
 Review the diff of this branch against origin/main plus uncommitted changes. Plan for context: .claude/plans/<slug>.md.
 
-[/code-review]  — invoke the skill in the same turn
+[/code-review]      — invoke the skill in the same turn
+[/security-review]  — invoke it in the same turn too
 ```
 
+**`/security-review` runs HERE, not at stage 6** (retro
+`docs/retro/ledger/2026-08-19-l05-sdd-onboarding-generator.md`). It used to
+run only inside `/pr-self-review`, which meant the one CRITICAL of that run —
+model-authored shell commands presented to the user with a Copy button — was
+found six stages after the code was written, and fixing it cost two extra
+`test-writer` passes (187k tokens) plus a fixture repair, because the tests
+had already been written against the unsafe shape. Security findings send work
+back to `implementer` exactly like a boundary break or a bug does, so they
+belong in the stage where everything that can send work back runs together.
+It still runs again inside `/pr-self-review` at stage 6, on the final diff —
+that pass is now a confirmation rather than a discovery.
+
+**Diff budget.** On a feature diff over ~1000 changed lines, invoke
+`/code-review medium` here rather than `high`, and spend the difference on the
+security pass: at `high` the review fans out to eight angle agents (~400k
+tokens on that run) for a finding set the security pass then has to
+re-examine anyway. Under ~1000 lines, `high` is still the default.
+
 Findings list = every CRITICAL, every WARNING (see the loop for which ones go
-in when), every `/code-review` finding you judge real. Note the SHA of the tree
+in when), every `/code-review` finding you judge real, every `/security-review`
+finding at WARNING or above. Note the SHA of the tree
 the reviewer saw (`git rev-parse HEAD` + whether the tree was dirty) — the
 re-review is scoped to what changed after it.
 

@@ -78,10 +78,12 @@ a package — read its own `AGENTS.md` (`server/`, `client/`, `reviewer-core/`,
   executes it. Neither can call the next step — no agent here lists `Agent` in
   its `tools` allowlist, so the main session orchestrates.
 - Building an approved plan → run `/implement .claude/plans/<slug>.md`; it
-  drives implementer → architecture-reviewer ∥ /code-review → fix loop →
-  plan-verifier → doc-writer → /pr-self-review, stops at the human gates and
-  logs state + agent cost to `.claude/sdd/<slug>.md` (`--from` resumes in a
-  new chat). `spec-creator` and `implementation-planner` are run by hand
+  drives implementer → architecture-reviewer ∥ /code-review ∥ /security-review
+  → fix loop → plan-verifier → doc-writer → /pr-self-review, stops at the human
+  gates and logs state + agent cost to `.claude/sdd/<slug>.md` (`--from`
+  resumes in a new chat); stage 1 also writes `<slug>-brief.md`, which every
+  delegation names as the agent's Step 1 instead of each one re-deriving the
+  same context. `spec-creator` and `implementation-planner` are run by hand
   before it, never from it. `test-writer` is off the default chain (token
   budget) — delegate to it by hand when a feature needs a test pass. Why the
   order → read `.claude/agents/README.md`.

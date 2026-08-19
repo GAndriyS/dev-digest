@@ -148,6 +148,26 @@ spec-creator ⛔(interview answered by main session, not the human) → spec
 | 7 | `.claude/agents/plan-verifier.md` § Scope | When a run has already produced an architecture review, a `/code-review` and a test suite, let the verifier grade **rows whose evidence changed** and accept the reviewers' verdicts for the rest, instead of re-deriving all 40 AC. | 145 k / 13 min, re-reading evidence three agents had already produced | ≈80 k, ≈7 min | scope paragraph |
 | 8 | process (main session) | Settle "is this failure pre-existing?" **once**, at stage 2, with a base-commit worktree run, and put the answer in the run file. | 4 agents investigated the same 2–5 failures independently | small tokens, less noise in every later report | one line in the run file |
 
+## Applied
+
+Accepted by the human on 2026-08-20 and applied in commit `<this commit>`:
+proposals **1, 2, 3, 5, 6, 7, 8**.
+
+| # | Landed in |
+|---|---|
+| 1 | `.claude/skills/implement/SKILL.md` § Stage 3 + Stage map, `.claude/agents/README.md` § The chain + *Why the order is what it is*, `AGENTS.md` |
+| 2 | `.claude/skills/implement/SKILL.md` § Stage 1 (*The handoff brief*), `.claude/sdd/README.md`, `AGENTS.md` |
+| 3 | `.claude/skills/pr-self-review/routing.md` § Delegation (*Effort by diff size*), skill `v3.1.0` + CHANGELOG |
+| 5 | `.claude/agents/implementation-planner.md` § Contract & migration impact |
+| 6 | `.claude/skills/implement/SKILL.md` § Stage 2, `.claude/skills/pr-self-review/routing.md` § Cost ceiling (8 → 3) |
+| 7 | `.claude/agents/plan-verifier.md` § Step 1 (*The reviewer reports*) |
+| 8 | `.claude/skills/implement/SKILL.md` § Stage 2 (base-commit check, once) |
+
+**Proposal 4 — declined by the human.** The rule that the main session may
+answer a spec interview only with the agent's own proposed defaults, marked
+`default-assumed`, was not adopted. The observation stands in **Handoff
+losses**: SPEC-03 records four orchestrator answers as `human-answered`.
+
 ## Delta vs previous
 
 First entry in this ledger — no prior run to compare against. Baseline for the next retro: ≈2.5 M tokens, 26 spawns, 5 h 28 min wall clock, 3 fix loops, 1 CRITICAL found at stage 6.

@@ -88,15 +88,16 @@ implementation-planner (opus)
              → implementer (sonnet) — one, or several in parallel by file ownership
                   → report: Steps done/total · Deviations
                   → ⛔ done < total? → implementer again (same plan + its report) — no reviewer yet
-                  → in parallel, both produce rework, neither writes code:
+                  → in parallel, all three produce rework, none writes code:
                        architecture-reviewer (sonnet) — boundaries, evidence-backed findings
                        /code-review                   — bugs (architecture-reviewer does NOT hunt them)
+                       /security-review               — the exploit path (neither of the other two hunts it)
                   → fix loop: implementer fix pass → architecture-reviewer re-review (scoped to prior findings + new hunks)
                        … until PASS or --max-review-loops → ⛔ YOU accept the standing WARNINGs
                   → plan-verifier (sonnet)            — ONCE, on the settled tree, with the last implementer report
                        → INCOMPLETE? → implementer on the gaps → plan-verifier re-verify (previous report supplied)
                   → doc-writer (sonnet)              — once the behaviour has stopped moving
-                       → /pr-self-review → /code-review · /security-review → PR → spec Status: implemented (by hand)
+                       → /pr-self-review → /code-review · /security-review on the FINAL diff (confirmation; discovery was the stage above) → PR → spec Status: implemented (by hand)
 ```
 
 The first two stages are **manual by decision** — you delegate to
@@ -113,8 +114,15 @@ Both modes produce the same plan headings — the difference is who takes each
 step and where verification sits — so `plan-verifier` grades either.
 
 **Why the order is what it is.** Everything that can send work back to
-`implementer` runs together and early: `architecture-reviewer` (a CRITICAL)
-and `/code-review` (a bug). Then the fix loop — a fix can clear one boundary
+`implementer` runs together and early: `architecture-reviewer` (a CRITICAL),
+`/code-review` (a bug) and — **since 2026-08-20** — `/security-review` (an
+exploit path). Security used to run only inside `/pr-self-review`, at the very
+end. On the L05 Onboarding run that put the only CRITICAL of the run six
+stages downstream of the code that caused it, and paying for it late cost two
+extra `test-writer` passes plus a fixture repair, because the tests had been
+written against the unsafe shape
+(`docs/retro/ledger/2026-08-19-l05-sdd-onboarding-generator.md`). A security
+finding is rework like any other, so it belongs where the rework stage is. Then the fix loop — a fix can clear one boundary
 break and open another, so the reviewer re-reviews after each pass, scoped to
 its own prior findings plus the hunks that changed. Then `plan-verifier`
 **once**, last, on a tree nobody is still editing: running it earlier means
