@@ -1,27 +1,15 @@
-/* PrBriefCard — SPEC-04: the PR's "why + risk" brief. Sits on the Overview
-   tab beside IntentCard and BlastTab as a third, independent card (AC-30);
-   none of the other two change.
+/* PrBriefCard — SPEC-04 follow-up: region 1 of the Overview tab's three
+   regions, full width (AC-56, AC-59). Prop-driven: `OverviewTab` reads the
+   brief once through `usePrBriefSection` (AC-62) and hands this card the
+   resulting view model — no hook call lives here anymore. Review Focus
+   (region 3) has moved out entirely to `ReviewFocusPanel`, a sibling folder;
+   this card carries the section header + Regenerate button, the generation
+   error, the loading/error/empty states, the risk badge + stale badge +
+   score, and the `what`/`why`/`risks[]` blocks — nothing else (AC-59, AC-60).
 
-   Two independent data sources, on purpose:
-    - `useBrief`/`useGenerateBrief` (this PR's stored/generated brief).
-    - `usePrReviews` for the score — `reviews.score` of the newest row with
-      `kind === 'review'` is the SINGLE source of truth (AC-47, AC-54); there
-      is no `score` field on the brief contract, and regenerating the brief
-      never moves it (AC-53) because the two hooks don't touch each other.
-
-   `what`, `why`, `risks[].explanation` and `review_focus[].reason` are
-   untrusted model text — rendered as plain React text nodes only, never
-   through a Markdown/HTML renderer (AC-44). Review Focus rows are real
-   `<button>`s (keyboard-operable, AC-33) when `onOpenFile` is supplied AND
-   the row's path is in `navigablePaths` (or `navigablePaths` is omitted
-   entirely — the card has no opinion about which paths are navigable until
-   the caller tells it). A row whose path the caller marked as not navigable
-   — e.g. it fell outside the Diff tab's current file list (AC-36) — renders
-   as the SAME static, non-interactive markup used when `onOpenFile` is
-   absent: never a button, not even a disabled one, so it is never announced,
-   focusable or clickable. `onOpenFile` is optional so this card is fully
-   self-contained until the caller wires the Diff tab navigation (SPEC-04
-   step 11, lane B2). */
+   `what`, `why` and `risks[].explanation` are untrusted model text —
+   rendered as plain React text nodes only, never through a Markdown/HTML
+   renderer (AC-44). */
 "use client";
 
 import React from "react";
@@ -29,15 +17,14 @@ import { useTranslations } from "next-intl";
 import {
   Badge,
   Button,
+  CircularScore,
   EmptyState,
   ErrorState,
   Icon,
   SectionLabel,
   Skeleton,
 } from "@devdigest/ui";
-import type { Risk, RiskSeverity } from "@devdigest/shared";
-import { useBrief, useGenerateBrief } from "@/lib/hooks/brief";
-import { usePrReviews } from "@/lib/hooks/reviews";
+import type { PrWhyBrief, Risk, RiskSeverity } from "@devdigest/shared";
 import { ApiError } from "@/lib/api";
 import { CARD_SKELETON_HEIGHT, RISK_LEVEL_TONE } from "./constants";
 import { s } from "./styles";
@@ -62,31 +49,32 @@ function RiskRow({ risk }: { risk: Risk }) {
 }
 
 export function PrBriefCard({
-  prId,
-  onOpenFile,
-  navigablePaths,
+  brief,
+  isLoading,
+  isError,
+  refetch,
+  score,
+  generate,
 }: {
-  prId: string | null;
-  /** Opens the Diff tab with this repo-relative path expanded and scrolled
-      into view (AC-34). Optional: absent it, Review Focus rows render as
-      non-interactive text instead of controls with nowhere to go. */
-  onOpenFile?: (path: string) => void;
-  /** Paths the Diff tab can actually show — the caller's current PR file
-      list. A Review Focus row renders as a `<button>` only when its path is
-      in this set; when the set is omitted, every row with `onOpenFile` is
-      treated as navigable (the card's pre-AC-36 default, kept so callers
-      that don't yet know their file list still get working buttons). A row
-      outside the set is never a button — not even a disabled-looking one —
-      because the path it names cannot be shown (AC-36). */
-  navigablePaths?: ReadonlySet<string>;
+  /** The stored brief, `null` before the first generation, `undefined`
+      while the initial GET is still in flight — mirrors `useBrief`'s own
+      states, read once by `OverviewTab` via `usePrBriefSection` (AC-62). */
+  brief: PrWhyBrief | null | undefined;
+  isLoading: boolean;
+  isError: boolean;
+  refetch: () => void;
+  /** `reviews.score` of the newest `kind === 'review'` row, or `null` when
+      the PR has no review yet (AC-47, AC-54). Independent of `brief` on
+      purpose — regenerating the brief never moves it (AC-53). */
+  score: number | null;
+  generate: {
+    mutate: () => void;
+    isPending: boolean;
+    isError: boolean;
+    error: unknown;
+  };
 }) {
   const t = useTranslations("brief");
-  const { data: brief, isLoading, isError, refetch } = useBrief(prId);
-  const generate = useGenerateBrief(prId);
-  // Independent of `brief` on purpose — see module doc above.
-  const { data: reviews } = usePrReviews(prId);
-  const latestReview = (reviews ?? []).find((r) => r.kind === "review");
-  const score = latestReview?.score ?? null;
 
   const generateError = generate.isError
     ? `${t("card.generateFailed")}${generate.error instanceof ApiError ? ` — ${generate.error.message}` : ""}`
@@ -148,16 +136,19 @@ export function PrBriefCard({
               </Badge>
             )}
             {/* Subtitled and visually separate from what/why/risk_level —
-                this number is the reviewer agent's score, not part of the
-                brief model's own output (AC-55). */}
+                this donut is the reviewer agent's score, not part of the
+                brief model's own output (AC-55). Same primitive, same
+                dimensions as the PR list's score column (AC-68). When there
+                is no score yet, the donut doesn't render at all — no empty
+                ring, no zero (AC-48). */}
             <div style={s.scoreWrap}>
               {score == null ? (
                 <span style={s.scoreMuted}>{t("card.noScore")}</span>
               ) : (
-                <span>
-                  <span style={s.scoreValue}>{score}</span>
+                <>
+                  <CircularScore score={score} size={34} stroke={3} />
                   <span style={s.scoreLabel}>{t("card.scoreLabel")}</span>
-                </span>
+                </>
               )}
             </div>
           </div>
@@ -181,47 +172,6 @@ export function PrBriefCard({
               </ul>
             </div>
           )}
-
-          <div>
-            <div style={s.blockLabel}>{t("card.reviewFocus")}</div>
-            {brief.review_focus.length === 0 ? (
-              <div style={s.muted}>{t("card.reviewFocusEmpty")}</div>
-            ) : (
-              <ul style={s.focusList}>
-                {brief.review_focus.map((item, i) => {
-                  const canOpen =
-                    onOpenFile != null &&
-                    (navigablePaths == null || navigablePaths.has(item.path));
-                  return (
-                    <li key={i}>
-                      {canOpen ? (
-                        <button
-                          type="button"
-                          style={{ ...s.focusRowBase, ...s.focusRowInteractive }}
-                          onClick={() => onOpenFile(item.path)}
-                        >
-                          <Icon.FileText size={14} style={s.focusIcon} />
-                          <span className="mono" style={s.focusPath}>
-                            {item.path}
-                          </span>
-                          <span style={s.focusReason}>{item.reason}</span>
-                          <Icon.ArrowRight size={14} style={s.focusArrow} />
-                        </button>
-                      ) : (
-                        <div style={{ ...s.focusRowBase, ...s.focusRowStatic }}>
-                          <Icon.FileText size={14} style={s.focusIcon} />
-                          <span className="mono" style={s.focusPath}>
-                            {item.path}
-                          </span>
-                          <span style={s.focusReason}>{item.reason}</span>
-                        </div>
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </div>
         </div>
       )}
     </section>
