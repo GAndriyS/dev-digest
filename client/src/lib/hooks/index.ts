@@ -10,3 +10,4 @@ export * from "./skills";
 export { useConventions, useExtractConventions, useUpdateConvention } from "./conventions";
 export { usePrBlast, useBlastSummary, useCachedBlastSummary } from "./blast";
 export { useOnboardingTour, useGenerateOnboardingTour } from "./onboarding";
+export { useBrief, useGenerateBrief } from "./brief";

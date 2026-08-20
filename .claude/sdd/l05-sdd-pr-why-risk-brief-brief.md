@@ -122,6 +122,27 @@ Spec: `specs/SPEC-04-pr-why-risk-brief-20-08-2026.md` (approved) · Plan:
 | E | 13 | `e2e/specs/12-pr-why-risk-brief.flow.json`, `e2e/README.md` | `server/**`, `client/**` |
 | INT | 14 | — (перевіряє, не переписує; правки за знахідками — у смузі-власнику шляху) | — |
 
+### Шов B1 → B2 (кроки 10 → 11) — зафіксовано після звіту B1
+
+B1 **зроблено**. Що вона лишила смузі B2, дослівно:
+
+- Єдиний новий проп на `OverviewTabProps`, прокинутий далі в `PrBriefCard`:
+  ```ts
+  onOpenFile?: (path: string) => void
+  ```
+  Коли пропа **немає** — рядки Review Focus рендеряться як неінтерактивний
+  `<div>`. Коли є — кожен рядок це справжній `<button type="button">`, чий
+  `onClick` кличе `onOpenFile(item.path)` з **сирим** рядком
+  `review_focus[].path`; URL-кодування — обов'язок викликача (Open question 8).
+- **AC-36 навмисно не реалізований у B1** і належить B2: «файл, якого немає у
+  вкладці змін, не є клікабельним». B1 не має списку файлів PR; `page.tsx` має
+  (`pr.files`). B2 фільтрує саме там — інакше AC-36 провалиться між смугами і
+  `plan-verifier` поставить NOT MET.
+- `PrBriefCard` **не** приймає `headSha` (на відміну від `IntentCard`/`BlastTab`):
+  `stale` рахує сервер, клієнт лише показує.
+- `PrBriefCard` сам читає оцінку через `usePrReviews` (перший рядок
+  `kind === 'review'`), пропом її передавати **не** треба.
+
 ## Amendments in force
 
 Прийнято людиною після написання плану (2026-08-20). **Перекривають рядки кроків
@@ -168,6 +189,22 @@ Spec: `specs/SPEC-04-pr-why-risk-brief-20-08-2026.md` (approved) · Plan:
   `pull_requests.head_sha`). Клієнт лише показує.
 - Порожній `review_focus[]` — валідний стан, не помилка.
 - `score` у контракті **немає** і не буде: єдине джерело — `reviews.score`.
+
+## Сіяна фікстура для e2e (крок 12, смуга A3 — зроблено)
+
+Детермінований рядок `pr_brief` для **PR #482** уже в `server/src/db/seed.ts`
+(`onConflictDoNothing`, вставляється **після** блоку `if (!pr)`, тож базі,
+засіяній до цієї зміни, brief добивається на наступному `pnpm db:seed`).
+Значення — дослівно, флоу має посилатися саме на них:
+
+- `review_focus[].path`: **`src/config.ts`** (перший у списку), `src/middleware/ratelimit.ts`
+- `head_sha`: `a1b2c3d4e5f6` — читається з `pr!.headSha` при вставці, тож не
+  може розійтися з головою PR #482 ⇒ рядок **не** застарілий, бейджа stale немає
+- `risk_level`: `high` · `model`: `gpt-4.1` · `generated_at`: `2026-08-19T12:00:00.000Z`
+- `inputs[]`: `intent` unavailable, `blast` degraded, `diff` used,
+  `linked_issue` unavailable, записів `context_doc` немає
+- Оцінка `61` приходить **не** з brief, а з наявного сіяного рядка `reviews`
+  (`kind='review'`) для PR #482
 
 ## Known pre-existing failures
 

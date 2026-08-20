@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path';
 import { createDb, type Db } from './client.js';
 import * as t from './schema.js';
 import { eq, and } from 'drizzle-orm';
+import type { PrWhyBrief } from '@devdigest/shared';
 import {
   GENERAL_REVIEWER_PROMPT,
   SECURITY_REVIEWER_PROMPT,
@@ -386,6 +387,76 @@ export async function seed(db: Db): Promise<{ workspaceId: string; userId: strin
       },
     ]);
   }
+
+  // ---- L05: seeded PR Why + Risk Brief for PR #482 (SPEC-04 step 12) ----
+  // A deterministic, pre-generated `pr_brief` row so the e2e flow (plan step
+  // 13) has a Why + Risk Brief card to click without ever triggering a model
+  // call (`e2e/AGENTS.md` forbids flows that do). `head_sha` matches PR #482's
+  // own seeded `headSha` exactly, so the server's staleness check
+  // (`pr_brief.head_sha` vs `pull_requests.head_sha`) never marks this row
+  // stale. `review_focus[].path` and `risks[].file_refs` only name paths that
+  // are actually among PR #482's seeded `pr_files` above (`src/config.ts`,
+  // `src/middleware/ratelimit.ts`) — the same grounding rule the real
+  // generator enforces (AC-18/AC-20) — and `src/config.ts` is the file the
+  // e2e flow expects the diff tab to open on.
+  const prWhyBrief: PrWhyBrief = {
+    what:
+      'Adds a token-bucket rate limiter in front of the public API routes and wires it into the shared request config, touching the webhook and user-list endpoints along the way.',
+    why:
+      'The public endpoints currently accept unlimited requests from unauthenticated clients; this closes that gap before the next release.',
+    risk_level: 'high',
+    risks: [
+      {
+        kind: 'security',
+        title: 'Changed file already carries a flagged secret',
+        explanation:
+          'src/config.ts is touched by this PR and a prior review already flagged a hardcoded Stripe secret key on line 12 of that file — confirm the new lines do not add to that exposure before merging.',
+        severity: 'high',
+        file_refs: ['src/config.ts'],
+      },
+      {
+        kind: 'reliability',
+        title: 'New middleware has no accompanying test file',
+        explanation:
+          'src/middleware/ratelimit.ts is new in this diff and none of the other changed files is a test for it — the token-bucket edge cases (burst, reset, concurrent requests) are unverified.',
+        severity: 'medium',
+        file_refs: ['src/middleware/ratelimit.ts'],
+      },
+    ],
+    review_focus: [
+      {
+        path: 'src/config.ts',
+        reason:
+          'Already flagged for a hardcoded secret in an earlier review — check whether this PR touches that same region.',
+        line: null,
+      },
+      {
+        path: 'src/middleware/ratelimit.ts',
+        reason: 'New rate-limiting logic with no test coverage in this diff — review the token-bucket behaviour directly.',
+        line: null,
+      },
+    ],
+    inputs: [
+      { type: 'intent', ref: null, status: 'unavailable' },
+      { type: 'blast', ref: null, status: 'degraded' },
+      { type: 'diff', ref: null, status: 'used' },
+      { type: 'linked_issue', ref: null, status: 'unavailable' },
+    ],
+    head_sha: pr!.headSha,
+    generated_at: '2026-08-19T12:00:00.000Z',
+    model: 'gpt-4.1',
+    stale: false,
+  };
+  await db
+    .insert(t.prBrief)
+    .values({
+      prId: pr!.id,
+      json: prWhyBrief,
+      headSha: pr!.headSha,
+      generatedAt: new Date(prWhyBrief.generated_at),
+      model: prWhyBrief.model,
+    })
+    .onConflictDoNothing();
 
   // ---- PR #483 (breaking API contract change) ----
   // The control-experiment fixture: a diff that breaks a published contract
