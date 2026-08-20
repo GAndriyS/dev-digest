@@ -47,16 +47,26 @@ export interface BriefFacts {
   inputs: BriefInput[];
 }
 
-/** What one `generate()` call reports for the server log line (AC-45, amendment A4). */
+/**
+ * What one `generate()` attempt reports for the server log line (AC-45,
+ * amendment A4). ONE shape for both outcomes — `outcome` is the field a log
+ * query filters on — because `inputs` (the whole point of A4) is identical
+ * provenance data whether the model call that followed it succeeded or not;
+ * splitting into two types would just duplicate that field under two names.
+ * `attempts`/`tokensIn`/`tokensOut`/`droppedRisks`/`droppedReviewFocus` are
+ * `null` on a failed attempt — `completeStructured` threw before returning
+ * anything to read them from.
+ */
 export interface BriefTelemetry {
+  outcome: 'success' | 'failed';
   provider: string;
   model: string;
-  /** Provider round-trips — 1 for an attempted generation. */
+  /** Provider round-trips — 1 for an attempted generation, success or failure. */
   calls: number;
-  /** `completeStructured`'s attempt count (retries collapse into ONE call). */
-  attempts: number;
-  tokensIn: number;
-  tokensOut: number;
+  /** `completeStructured`'s attempt count (retries collapse into ONE call); `null` on failure. */
+  attempts: number | null;
+  tokensIn: number | null;
+  tokensOut: number | null;
   costUsd: number | null;
   prId: string;
   durationMs: number;
@@ -64,11 +74,12 @@ export interface BriefTelemetry {
    * Amendment A4 — the FULL provenance list, one entry per source with its
    * own status, not a summary count: "the model found nothing" and "the
    * source was unavailable" must stay distinguishable in a postmortem that
-   * only has logs.
+   * only has logs. Collected BEFORE the model call, so it is populated on
+   * both outcomes.
    */
   inputs: BriefInput[];
-  /** Risks the model proposed that were dropped by grounding/truncation. */
-  droppedRisks: number;
-  /** Review-focus items the model proposed that were dropped by grounding/truncation. */
-  droppedReviewFocus: number;
+  /** Risks the model proposed that were dropped by grounding/truncation; `null` on failure. */
+  droppedRisks: number | null;
+  /** Review-focus items the model proposed that were dropped by grounding/truncation; `null` on failure. */
+  droppedReviewFocus: number | null;
 }

@@ -26,7 +26,8 @@ if (!hasDocker) {
  * (AC-16, AC-28, AC-50); the per-route 429 (AC-5); a PR with zero `pr_files`
  * rows producing `inputs[].diff === 'unavailable'` rather than a silent
  * empty result (`server/INSIGHTS.md:106-114`); and the single generation log
- * line carrying `inputs[]` in FULL (amendment A4).
+ * line carrying `inputs[]` in FULL on BOTH outcomes — success and a failed
+ * generation alike (amendment A4, closed for the failure path too).
  *
  * `container.blast` is overridden with `MockBlast` (structurally compatible,
  * never `implements Blast` — `adapters/**` cannot import `modules/**`,
@@ -269,11 +270,17 @@ d('PR Why + Risk Brief (Testcontainers pg)', () => {
     const secondGenerate = await app2.inject({ method: 'POST', url: `/pulls/${pr.id}/brief` });
     expect(secondGenerate.statusCode).toBe(502);
     expect(secondGenerate.json().error.code).toBe('external_service_error');
+    // The 502 body is unchanged by A4 — telemetry travels on the thrown
+    // error's own `.telemetry` property, never into `details`.
+    expect(secondGenerate.json().error.details).not.toHaveProperty('inputs');
 
-    // No log line at all for a failed generation (`service.generate` throws
-    // BEFORE `routes.ts` ever reaches its one `app.log.info` call).
-    const ourCalls = infoSpy.mock.calls.filter(([, msg]) => msg === 'pr brief generated');
-    expect(ourCalls).toHaveLength(0);
+    // No SUCCESS log line — but amendment A4 closes the failure gap: exactly
+    // one FAILURE log line, carrying the same full inputs[] provenance a
+    // success would (see the dedicated test below for its contents).
+    const successCalls = infoSpy.mock.calls.filter(([, msg]) => msg === 'pr brief generated');
+    expect(successCalls).toHaveLength(0);
+    const failureCalls = infoSpy.mock.calls.filter(([, msg]) => msg === 'pr brief generation failed');
+    expect(failureCalls).toHaveLength(1);
 
     const after = await app1.inject({ method: 'GET', url: `/pulls/${pr.id}/brief` });
     expect(after.statusCode).toBe(200);
@@ -313,9 +320,9 @@ d('PR Why + Risk Brief (Testcontainers pg)', () => {
 
   // ---------------------------------------------------------------------
   // Amendment A4 — the one generation log line carries inputs[] in FULL,
-  // not a summary count.
+  // not a summary count, on a SUCCESSFUL generation.
   // ---------------------------------------------------------------------
-  it('writes exactly one server log line whose inputs[] carries every source with its own status (amendment A4, AC-45)', async () => {
+  it('writes exactly one server log line whose inputs[] carries every source with its own status on success (amendment A4, AC-45)', async () => {
     const llm = new MockLLMProvider('openai', { structured: draftFixture() });
     const app = await makeApp({ llm });
     const { pr } = await setupRepoAndPr();
@@ -338,7 +345,60 @@ d('PR Why + Risk Brief (Testcontainers pg)', () => {
       diff: 'used', // insertPrFile seeded one row
       linked_issue: 'unavailable', // no #N in the PR body
     });
-    expect(fields).toMatchObject({ provider: 'openai', model: 'gpt-4.1', calls: 1, prId: pr.id });
+    expect(fields).toMatchObject({
+      outcome: 'success',
+      provider: 'openai',
+      model: 'gpt-4.1',
+      calls: 1,
+      prId: pr.id,
+    });
+
+    await app.close();
+  });
+
+  // ---------------------------------------------------------------------
+  // Amendment A4 (failure-path closure) — a FAILED generation still writes
+  // exactly one log line carrying inputs[] in FULL, so a postmortem holding
+  // only logs can tell "the model found nothing" apart from "the source was
+  // unavailable" for the one attempt that never wrote a row.
+  // ---------------------------------------------------------------------
+  it('writes exactly one server log line whose inputs[] carries every source with its own status when generation FAILS (amendment A4, AC-16, AC-45)', async () => {
+    // Fails BriefDraft's schema — same shape `completeStructured` throws
+    // after exhausting retries on invalid JSON.
+    const badLlm = new MockLLMProvider('openai', { structured: { not: 'a valid draft' } });
+    const app = await makeApp({ llm: badLlm });
+    const { pr } = await setupRepoAndPr();
+    await insertPrFile(pr.id);
+    const infoSpy = vi.spyOn(app.log, 'info');
+
+    const res = await app.inject({ method: 'POST', url: `/pulls/${pr.id}/brief` });
+    expect(res.statusCode).toBe(502);
+
+    // No success line, exactly one failure line.
+    const successCalls = infoSpy.mock.calls.filter(([, msg]) => msg === 'pr brief generated');
+    expect(successCalls).toHaveLength(0);
+    const failureCalls = infoSpy.mock.calls.filter(([, msg]) => msg === 'pr brief generation failed');
+    expect(failureCalls).toHaveLength(1);
+
+    const [fields] = failureCalls[0]!;
+    const inputs = (fields as { inputs: { type: string; status: string }[] }).inputs;
+    const byType = Object.fromEntries(inputs.map((i) => [i.type, i.status]));
+
+    // Same source-status provenance a success would log — collected BEFORE
+    // the model call, so it survives the model call's own failure.
+    expect(byType).toMatchObject({
+      intent: 'unavailable',
+      blast: 'used',
+      diff: 'used',
+      linked_issue: 'unavailable',
+    });
+    expect(fields).toMatchObject({
+      outcome: 'failed',
+      provider: 'openai',
+      model: 'gpt-4.1',
+      calls: 1,
+      prId: pr.id,
+    });
 
     await app.close();
   });

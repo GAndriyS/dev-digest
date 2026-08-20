@@ -252,13 +252,19 @@ export function groundBrief(draft: BriefDraft, facts: BriefFacts): GroundedBrief
 // ---------------------------------------------------------------------------
 
 /**
- * One structured-log fields object per generation. `inputs` carries the FULL
- * per-source provenance list (amendment A4) — never summarized to a count —
- * so "the model found nothing" and "the source was unavailable" stay
- * distinguishable in a postmortem that only has logs.
+ * One structured-log fields object per generation ATTEMPT — success or
+ * failure (`t.outcome`, amendment A4). `inputs` carries the FULL per-source
+ * provenance list — never summarized to a count — so "the model found
+ * nothing" and "the source was unavailable" stay distinguishable in a
+ * postmortem that only has logs, on EITHER outcome; `attempts`/`tokensIn`/
+ * `tokensOut`/`droppedRisks`/`droppedReviewFocus` are `null` on a failed
+ * attempt (`completeStructured` threw before returning anything to read
+ * them from) rather than omitted, so a log query can rely on the field
+ * always being present.
  */
 export function briefLogFields(t: BriefTelemetry): Record<string, unknown> {
   return {
+    outcome: t.outcome,
     provider: t.provider,
     model: t.model,
     calls: t.calls,

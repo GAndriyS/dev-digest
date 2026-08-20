@@ -341,6 +341,7 @@ describe('buildBriefMessages', () => {
 describe('briefLogFields (amendment A4 — full inputs[] provenance, not a summary)', () => {
   it('carries the complete inputs array, one entry per source with its own status', () => {
     const telemetry: BriefTelemetry = {
+      outcome: 'success',
       provider: 'openai',
       model: 'gpt-4.1',
       calls: 1,

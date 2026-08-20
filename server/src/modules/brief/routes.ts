@@ -4,7 +4,7 @@ import { PrWhyBrief } from '@devdigest/shared';
 import { getContext } from '../_shared/context.js';
 import { IdParams } from '../_shared/schemas.js';
 import { briefLogFields } from './helpers.js';
-import { BriefService } from './service.js';
+import { BriefGenerationError, BriefService } from './service.js';
 
 /**
  * PR Why + Risk Brief module (L05/SPEC-04).
@@ -23,10 +23,15 @@ import { BriefService } from './service.js';
  * leaves the process, so a handler drifting from the contract fails loudly
  * instead of silently widening the public API (Zod-first, `AGENTS.md:36-38`).
  *
- * Exactly ONE `app.log.info` per successful generation (AC-45, amendment
- * A4) — `service.generate` throws on a genuine model failure (AC-16)
- * before ever reaching this line, mirroring `onboarding/routes.ts:59`'s
- * precedent for the success path.
+ * Exactly ONE `app.log.info` per generation ATTEMPT (AC-45, amendment A4),
+ * success or failure — the success line mirrors `onboarding/routes.ts:59`'s
+ * precedent; the failure line exists because A4's whole point is telling
+ * "the model found nothing" apart from "the source was unavailable" from
+ * logs alone, and that question matters most for the attempt that never
+ * wrote a row. `service.generate` throws `BriefGenerationError` (carrying
+ * the SAME `BriefTelemetry` a success returns) on a genuine model failure
+ * (AC-16) — the route logs it here, then rethrows unchanged so the 502
+ * still reaches the caller exactly as before.
  */
 export default async function briefRoutes(appBase: FastifyInstance) {
   const app = appBase.withTypeProvider<ZodTypeProvider>();
@@ -50,9 +55,16 @@ export default async function briefRoutes(appBase: FastifyInstance) {
     },
     async (req) => {
       const { workspaceId } = await getContext(container, req);
-      const { brief, telemetry } = await service.generate(workspaceId, req.params.id);
-      app.log.info(briefLogFields(telemetry), 'pr brief generated');
-      return brief;
+      try {
+        const { brief, telemetry } = await service.generate(workspaceId, req.params.id);
+        app.log.info(briefLogFields(telemetry), 'pr brief generated');
+        return brief;
+      } catch (err) {
+        if (err instanceof BriefGenerationError) {
+          app.log.info(briefLogFields(err.telemetry), 'pr brief generation failed');
+        }
+        throw err;
+      }
     },
   );
 }
