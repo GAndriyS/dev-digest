@@ -1,14 +1,15 @@
 # Spec: PR Why + Risk Brief — картка «що/навіщо змінює PR, який ризик і що дивитись першим»
 Spec ID: SPEC-04
-Status: approved
+Status: implemented
 Source: L05 · PR Brief (запит користувача + мокап сторінки Pull Request)
 Supersedes: none
 Follow-up 20/08/2026 — розкладка вкладки Overview: **нові** AC-56…AC-69 ·
 **амендовані** AC-21, AC-30, AC-33 (номери збережено) · решта AC-1…AC-55 без
-змін і вже реалізовані. `Status` повернуто з `implemented` у `approved`, бо
-додано ще не побудовану поведінку, яку людина прочитала й погодила
-20/08/2026 разом із трьома follow-up open questions; після побудови й
-`plan-verifier` → `COMPLETE` він знову стає `implemented`. Нового `SPEC-NN` немає навмисно:
+змін і вже реалізовані. `Status` тимчасово повертався в `approved`, поки
+follow-up не був побудований; 20/08/2026 `plan-verifier` дав 31 MET / 0 NOT
+MET по плану `.claude/plans/l05-sdd-pr-why-risk-brief-overview-layout.md`,
+єдиний UNVERIFIABLE (e2e) знято прогоном `./scripts/e2e.sh` → 12/12, і
+статус знову `implemented`. Нового `SPEC-NN` немає навмисно:
 `specs/README.md` → **Naming** → «One feature — one spec».
 
 ## Problem and user

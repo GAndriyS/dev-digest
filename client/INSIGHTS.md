@@ -78,6 +78,17 @@ append-only. Entry format and promotion rules → root `INSIGHTS.md`.
   or the header markup changes. Add `data-file-path` to `FileCard`'s root the
   next time that component is touched, and retire the text match — it is
   vendored-adjacent but not under `vendor/ui/`, so it is editable.
+- **2026-08-20** — Moving logic out of a component into a composing hook in
+  `src/lib/hooks/*` silently drops it out of every test in the repo, because
+  route-level suites mock that module wholesale
+  (`vi.mock("@/lib/hooks/brief", …)`) and the component itself now only sees a
+  finished value. Splitting the Overview brief card into two regions moved
+  "score = newest `kind === 'review'` row" from `PrBriefCard` into
+  `usePrBriefSection`; replacing the selector with `reviews?.[0]` left all 428
+  frontend tests green. Write the hook-level test in the same change —
+  `client/src/lib/hooks/<name>.test.tsx`, `QueryClientProvider` + a `fetch`
+  stub matched by URL suffix, pattern in `hooks/onboarding.test.tsx` — not
+  after a reviewer notices.
 
 ## Tool & Library Notes
 
@@ -160,7 +171,23 @@ append-only. Entry format and promotion rules → root `INSIGHTS.md`.
   into the client, which is exactly the duplication `@devdigest/shared` exists
   to prevent. Diagnostic tell: one route compiles and another fails on the same
   barrel — the failing one is the only route reaching a value.
+- **2026-08-20** — `No "usePrBriefSection" export is defined on the mock` and
+  the whole suite dies mid-render, including cases that were green a moment
+  ago. The component suites here mock hook modules with a plain factory
+  (`vi.mock("@/lib/hooks/brief", () => ({ … }))`), not `importOriginal`, so a
+  new export added to that module is simply absent for every test rendering a
+  component that imports it — and vitest raises it as a hard mock error, not an
+  assertion failure, which reads like the new code crashed. Add the stub to the
+  factory in the same change that adds the export.
 
 ## Session Notes
+
+- **2026-08-20** — SPEC-04 follow-up: the PR Overview tab went from one
+  `auto-fit` grid holding three cards to three stacked regions (brief at full
+  width, `IntentCard` | `BlastTab` in the only grid, Review Focus in its own
+  full-width `ReviewFocusPanel`), with the brief read lifted into
+  `usePrBriefSection` and the reviewer score drawn with the pulls-list
+  `CircularScore`. Run in three implementer waves; the two findings worth
+  keeping are recorded above.
 
 ## Open Questions
