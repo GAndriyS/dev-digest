@@ -39,7 +39,8 @@ Notes:
 | 3b review loop | PASS після 1 циклу | 65k | усі 3 знахідки закриті; ре-ревʼю не запускалось — arch не мав жодної знахідки, а fix-пас торкнувся тесту, ключа й коментарів |
 | 4 verify | 31 MET · 0 NOT MET · 1 UNVERIFIABLE | 85k | UNVERIFIABLE = e2e (агент read-only); знято головною сесією: `E2E_PG_PORT=5440 ./scripts/e2e.sh` → 12/12 |
 | 5 docs | `client/README.md`, `server/README.md` | 93k | без нового файла й без діаграми — оновлені наявні описи |
-| 6 pr | — | — | |
+| 6 pr | push, без PR (рішення людини) | — | `/pr-self-review` свідомо пропущено: він дивиться весь L05-SDD проти main, а цей диф уже пройшов три ревʼюери; SPEC-04 → `implemented` руками |
+| 7 wrap-up | 2 записи в `client/INSIGHTS.md` + session note | — | `/engineering-insights`; кандидат про порт 5433 не писався — уже є в `e2e/INSIGHTS.md` (2026-08-04) |
 
 ## Known pre-existing failures
 
