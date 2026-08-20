@@ -12,9 +12,16 @@
    `what`, `why`, `risks[].explanation` and `review_focus[].reason` are
    untrusted model text — rendered as plain React text nodes only, never
    through a Markdown/HTML renderer (AC-44). Review Focus rows are real
-   `<button>`s (keyboard-operable, AC-33) when `onOpenFile` is supplied;
-   `onOpenFile` is optional so this card is fully self-contained until the
-   caller wires the Diff tab navigation (SPEC-04 step 11, lane B2). */
+   `<button>`s (keyboard-operable, AC-33) when `onOpenFile` is supplied AND
+   the row's path is in `navigablePaths` (or `navigablePaths` is omitted
+   entirely — the card has no opinion about which paths are navigable until
+   the caller tells it). A row whose path the caller marked as not navigable
+   — e.g. it fell outside the Diff tab's current file list (AC-36) — renders
+   as the SAME static, non-interactive markup used when `onOpenFile` is
+   absent: never a button, not even a disabled one, so it is never announced,
+   focusable or clickable. `onOpenFile` is optional so this card is fully
+   self-contained until the caller wires the Diff tab navigation (SPEC-04
+   step 11, lane B2). */
 "use client";
 
 import React from "react";
@@ -57,12 +64,21 @@ function RiskRow({ risk }: { risk: Risk }) {
 export function PrBriefCard({
   prId,
   onOpenFile,
+  navigablePaths,
 }: {
   prId: string | null;
   /** Opens the Diff tab with this repo-relative path expanded and scrolled
       into view (AC-34). Optional: absent it, Review Focus rows render as
       non-interactive text instead of controls with nowhere to go. */
   onOpenFile?: (path: string) => void;
+  /** Paths the Diff tab can actually show — the caller's current PR file
+      list. A Review Focus row renders as a `<button>` only when its path is
+      in this set; when the set is omitted, every row with `onOpenFile` is
+      treated as navigable (the card's pre-AC-36 default, kept so callers
+      that don't yet know their file list still get working buttons). A row
+      outside the set is never a button — not even a disabled-looking one —
+      because the path it names cannot be shown (AC-36). */
+  navigablePaths?: ReadonlySet<string>;
 }) {
   const t = useTranslations("brief");
   const { data: brief, isLoading, isError, refetch } = useBrief(prId);
@@ -172,32 +188,37 @@ export function PrBriefCard({
               <div style={s.muted}>{t("card.reviewFocusEmpty")}</div>
             ) : (
               <ul style={s.focusList}>
-                {brief.review_focus.map((item, i) => (
-                  <li key={i}>
-                    {onOpenFile ? (
-                      <button
-                        type="button"
-                        style={{ ...s.focusRowBase, ...s.focusRowInteractive }}
-                        onClick={() => onOpenFile(item.path)}
-                      >
-                        <Icon.FileText size={14} style={s.focusIcon} />
-                        <span className="mono" style={s.focusPath}>
-                          {item.path}
-                        </span>
-                        <span style={s.focusReason}>{item.reason}</span>
-                        <Icon.ArrowRight size={14} style={s.focusArrow} />
-                      </button>
-                    ) : (
-                      <div style={{ ...s.focusRowBase, ...s.focusRowStatic }}>
-                        <Icon.FileText size={14} style={s.focusIcon} />
-                        <span className="mono" style={s.focusPath}>
-                          {item.path}
-                        </span>
-                        <span style={s.focusReason}>{item.reason}</span>
-                      </div>
-                    )}
-                  </li>
-                ))}
+                {brief.review_focus.map((item, i) => {
+                  const canOpen =
+                    onOpenFile != null &&
+                    (navigablePaths == null || navigablePaths.has(item.path));
+                  return (
+                    <li key={i}>
+                      {canOpen ? (
+                        <button
+                          type="button"
+                          style={{ ...s.focusRowBase, ...s.focusRowInteractive }}
+                          onClick={() => onOpenFile(item.path)}
+                        >
+                          <Icon.FileText size={14} style={s.focusIcon} />
+                          <span className="mono" style={s.focusPath}>
+                            {item.path}
+                          </span>
+                          <span style={s.focusReason}>{item.reason}</span>
+                          <Icon.ArrowRight size={14} style={s.focusArrow} />
+                        </button>
+                      ) : (
+                        <div style={{ ...s.focusRowBase, ...s.focusRowStatic }}>
+                          <Icon.FileText size={14} style={s.focusIcon} />
+                          <span className="mono" style={s.focusPath}>
+                            {item.path}
+                          </span>
+                          <span style={s.focusReason}>{item.reason}</span>
+                        </div>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </div>

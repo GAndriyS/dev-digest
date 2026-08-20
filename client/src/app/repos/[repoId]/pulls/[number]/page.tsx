@@ -118,9 +118,10 @@ export default function PRDetailPage() {
 
   // AC-36: a Review Focus path outside the Diff tab's CURRENT file list — a
   // brief generated against an older `head_sha` can still name a path the PR
-  // has since renamed or dropped — must never navigate there: the button
-  // stays present (PrBriefCard owns that render, not this page) but the
-  // click becomes a no-op instead of opening a Diff tab with nothing to show.
+  // has since renamed or dropped — must never be offered as a click at all.
+  // Handed to PrBriefCard (via OverviewTab) as `navigablePaths` so it renders
+  // that row as static text instead of a button; `onOpenFile` below keeps the
+  // same guard as defense in depth, not as the mechanism AC-36 relies on.
   const changedFilePaths = React.useMemo(
     () => new Set((pr?.files ?? []).map((f) => f.path)),
     [pr],
@@ -200,6 +201,7 @@ export default function PRDetailPage() {
             headSha={pr.head_sha}
             repoFullName={repoFullName}
             onOpenFile={onOpenFile}
+            navigablePaths={changedFilePaths}
           />
         )}
 

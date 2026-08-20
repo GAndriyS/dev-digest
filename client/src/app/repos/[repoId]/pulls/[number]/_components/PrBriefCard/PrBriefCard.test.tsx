@@ -85,10 +85,20 @@ function review(over: Partial<ReviewRecord> = {}): ReviewRecord {
   };
 }
 
-function renderCard(props: { prId?: string | null; onOpenFile?: (path: string) => void } = {}) {
+function renderCard(
+  props: {
+    prId?: string | null;
+    onOpenFile?: (path: string) => void;
+    navigablePaths?: ReadonlySet<string>;
+  } = {},
+) {
   return render(
     <NextIntlClientProvider locale="en" messages={{ brief: messages }}>
-      <PrBriefCard prId={props.prId ?? "pr-1"} onOpenFile={props.onOpenFile} />
+      <PrBriefCard
+        prId={props.prId ?? "pr-1"}
+        onOpenFile={props.onOpenFile}
+        navigablePaths={props.navigablePaths}
+      />
     </NextIntlClientProvider>,
   );
 }
@@ -158,6 +168,32 @@ describe("PrBriefCard", () => {
 
     expect(screen.getByText("src/middleware/ratelimit.ts")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /ratelimit\.ts/ })).not.toBeInTheDocument();
+  });
+
+  it("renders a row as a real button and calls back with the raw path when the path is in navigablePaths (AC-33, AC-34, AC-36)", () => {
+    state.brief = brief();
+    const onOpenFile = vi.fn();
+    renderCard({ onOpenFile, navigablePaths: new Set(["src/middleware/ratelimit.ts"]) });
+
+    const row = screen.getByRole("button", { name: /ratelimit\.ts.*New limiter logic\./ });
+    fireEvent.click(row);
+    expect(onOpenFile).toHaveBeenCalledWith("src/middleware/ratelimit.ts");
+  });
+
+  it("renders a row as static, non-interactive text — never a disabled button — when its path is outside navigablePaths, even though onOpenFile is supplied (AC-36)", () => {
+    state.brief = brief();
+    const onOpenFile = vi.fn();
+    renderCard({ onOpenFile, navigablePaths: new Set(["some/other/file.ts"]) });
+
+    expect(screen.getByText("src/middleware/ratelimit.ts")).toBeInTheDocument();
+    expect(screen.getByText("New limiter logic.")).toBeInTheDocument();
+    const row = screen.queryByRole("button", { name: /ratelimit\.ts/ });
+    expect(row).not.toBeInTheDocument();
+
+    // Not merely unclickable via role query — there is no button element at
+    // all to click, so onOpenFile can never fire for this path.
+    fireEvent.click(screen.getByText("src/middleware/ratelimit.ts"));
+    expect(onOpenFile).not.toHaveBeenCalled();
   });
 
   it("shows an honest empty message when review_focus is empty — not an error, not a fabricated path (AC-21)", () => {
