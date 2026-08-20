@@ -162,8 +162,12 @@ flowchart LR
 ```
 
 `brief` (`modules/brief/`, L05/SPEC-04) generates the "PR Why + Risk Brief" —
-the Overview tab's third card. `GET /pulls/:id/brief` never calls the model or
-GitHub: it returns the stored `pr_brief` row (`PrWhyBrief | null`) with
+region 1 of the Overview tab's three horizontal regions (`PrBriefCard`; region
+3, `ReviewFocusPanel`, renders the same response's `review_focus[]` as a
+separate full-width block below region 2, SPEC-04 follow-up — see client's
+[UI route map](../client/README.md#ui-route-map)). `GET /pulls/:id/brief`
+never calls the model or GitHub: it returns the stored `pr_brief` row
+(`PrWhyBrief | null`) with
 `stale` recomputed on **every** read by comparing the row's `head_sha` column
 against the PR's current `head_sha` — never trusted out of the stored JSON.
 `POST /pulls/:id/brief` makes **at most one** structured LLM call (feature-model

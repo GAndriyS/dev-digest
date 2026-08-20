@@ -51,29 +51,51 @@ Agent runs tab), and falls back to the plain diff-viewer on any fetch error.
 A header toggle swaps to `Original order`, the unranked plain diff with no
 annotations — see [`../docs/smart-diff.md`](../docs/smart-diff.md).
 
-`PrBriefCard` (`.../pulls/[number]/_components/PrBriefCard/`) is the Overview
-tab's third card (SPEC-04), sitting beside the existing `IntentCard` and
-`BlastTab` without changing either. `useBrief`/`useGenerateBrief`
-(`src/lib/hooks/brief.ts`) read/write `GET`/`POST /pulls/:id/brief`; the
-card's states are empty (`brief === null`, a Generate CTA), loading, error
-(Retry, previous brief still on screen), and stale (`brief.stale`, a badge
-next to the Regenerate button) — a second click while a generation is pending
-is a no-op (`generate.isPending` disables the button). **The score shown next
-to the brief is read independently**, from `usePrReviews`'s newest row with
-`kind === 'review'` — never from the brief response — so regenerating the
-brief never moves the score, and a new agent run never regenerates the brief.
-Review Focus rows render as real `<button>`s only for paths present in the
-PR's current file list (`navigablePaths`, computed in `page.tsx` from
-`pr.files`); activating one calls `onOpenFile`, which writes
-`?tab=diff&file=<path>` in a single `setParams` update and hands `DiffTab` a
-`targetPath` that expands and scrolls to that file (`targetFileMeta`,
-`SmartDiffViewer/helpers.ts` — the sole owner of a file's `defaultOpen`
-override, so `DiffTab` renders the flat `DiffViewer` directly instead of
-`SmartDiffViewer` whenever a target is set). The URL alone drives this:
-reloading `?tab=diff&file=…` reproduces the same expanded file. A Review
-Focus row's `line` is never part of this navigation — the contract carries it
-as reason text only, since blast-derived line numbers resolve against the
-index's `indexed_sha`, not the PR's `head_sha`.
+The Overview tab (`OverviewTab.tsx`) lays out three horizontal regions in DOM
+order, SPEC-04 follow-up AC-56/AC-69: region 1 is `PrBriefCard`
+(`.../pulls/[number]/_components/PrBriefCard/`) at full width; region 2 is the
+existing `IntentCard` | `BlastTab` pair, the only `auto-fit` grid on the tab
+(`OverviewTab/constants.ts`'s `OVERVIEW_GRID_COLS`, a 420px-per-card floor,
+AC-57/AC-58); region 3 is `ReviewFocusPanel`
+(`.../pulls/[number]/_components/ReviewFocusPanel/`) at full width, rendered
+only once a brief is actually loaded — not during the initial load, not on a
+load error, not before the first generation (AC-63). While a regenerate is
+pending, region 3 keeps showing the previous `review_focus[]` list, since the
+underlying query doesn't touch its cached data until the mutation resolves
+(AC-66).
+
+Both regions read the brief through one call site: `usePrBriefSection(prId)`
+(`src/lib/hooks/brief.ts`) composes `useBrief`/`useGenerateBrief`/
+`usePrReviews` into a single view model that `OverviewTab` reads once and
+hands down as props to both regions — splitting the card into two regions adds
+no second network request or independent loading/error state (AC-62).
+`PrBriefCard`'s states are empty (`brief === null`, a Generate CTA), loading,
+error (Retry, previous brief still on screen), and stale (`brief.stale`, a
+badge next to the Regenerate button) — a second click while a generation is
+pending is a no-op (`generate.isPending` disables the button). **The score
+shown in `PrBriefCard` is read independently**, from `usePrReviews`'s newest
+row with `kind === 'review'` — never from the brief response — so
+regenerating the brief never moves the score, and a new agent run never
+regenerates the brief. It renders as
+`<CircularScore score={score} size={34} stroke={3} />`, the same vendored
+primitive and dimensions as the PR list's score column (`PRRow.tsx`); when
+there is no score yet the donut doesn't render at all, just the muted "not yet
+reviewed" text (AC-48, AC-68).
+
+`ReviewFocusPanel` carries only the Review Focus header (with a shown-item
+count) and the `review_focus[]` list — no Regenerate button, no stale badge,
+no generation error; those stay in `PrBriefCard` (AC-61, AC-65, AC-67). Its
+rows render as real `<button>`s only for paths present in the PR's current
+file list (`navigablePaths`, computed in `page.tsx` from `pr.files`);
+activating one calls `onOpenFile`, which writes `?tab=diff&file=<path>` in a
+single `setParams` update and hands `DiffTab` a `targetPath` that expands and
+scrolls to that file (`targetFileMeta`, `SmartDiffViewer/helpers.ts` — the
+sole owner of a file's `defaultOpen` override, so `DiffTab` renders the flat
+`DiffViewer` directly instead of `SmartDiffViewer` whenever a target is set).
+The URL alone drives this: reloading `?tab=diff&file=…` reproduces the same
+expanded file. A Review Focus row's `line` is never part of this navigation —
+the contract carries it as reason text only, since blast-derived line numbers
+resolve against the index's `indexed_sha`, not the PR's `head_sha`.
 
 `/repos/:repoId/context` (`ProjectContextView`) is a read-only list + search +
 markdown preview of the active repo's docs (`GET /repos/:id/context`) — no
