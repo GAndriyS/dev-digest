@@ -1,0 +1,29 @@
+{
+  "name": "PR Overview shows the seeded Why + Risk Brief; clicking a Review Focus row addresses the diff tab, and reloading reproduces it",
+  "description": "From PR #482's Overview tab, confirms the seeded PrBriefCard (SPEC-04) renders: card title, and the agent review score (61, from the seeded reviews row with kind='review' — independent of the brief itself, AC-47/AC-54). Clicking the first Review Focus row (src/config.ts) exercises AC-34/AC-35: it switches to the Files changed tab AND targets that file via ?file=. Reloading the resulting URL reproduces the same state, proving the query param — not component state — is the source of truth. The Regenerate button is never clicked (would spend real money and needs a provider key); the seeded pr_brief row (server/src/db/seed.ts) is the only brief state this flow ever sees. Deterministic locators only, no chat, no model call — read-only seeded data throughout.",
+  "steps": [
+    { "cmd": ["set", "viewport", "1280", "2000"], "label": "PrBriefCard's Review Focus rows sit well below the 900px fold used by other PR-detail flows — a shorter viewport leaves `find role button click` reporting success while hitting whatever sits at that point instead (e2e/INSIGHTS.md, same bug class as 11-onboarding-tour/08-skills)" },
+    { "cmd": ["open", "{BASE}/"], "label": "load the app root" },
+    { "cmd": ["wait", "--url", "/pulls"], "label": "land on the PR list" },
+    { "cmd": ["find", "text", "Add rate limiting to public API endpoints", "click"], "label": "open PR #482's row" },
+    { "cmd": ["wait", "--url", "/pulls/482"], "label": "navigate to the PR detail route" },
+    { "cmd": ["wait", "--load", "networkidle"], "label": "PR detail data settles (Overview is the default tab)" },
+    { "cmd": ["wait", "--text", "WHY + RISK BRIEF"], "label": "PrBriefCard renders on the Overview tab (AC-30) — SectionLabel renders this uppercased via CSS text-transform, so the visible text is not the messages.json casing" },
+    { "cmd": ["wait", "--text", "61"], "label": "the seeded reviews row's score (kind='review', server/src/db/seed.ts) renders on the brief card" },
+    { "cmd": ["wait", "--text", "AGENT REVIEW SCORE"], "label": "the score has its own label, subtitled separately from the brief's own what/why/risk_level (AC-47, AC-55) — it comes from usePrReviews, not from the brief; score and brief are independent (AC-53)" },
+    { "cmd": ["wait", "--text", "src/config.ts"], "label": "the first seeded Review Focus row (src/config.ts) renders" },
+    { "cmd": ["find", "role", "button", "click", "--name", "src/config.ts"], "label": "activate the first Review Focus row — a real <button> since PrBriefCard was given onOpenFile + navigablePaths (AC-33); accessible name is the row's full text (path + reason)" },
+    { "cmd": ["wait", "--url", "tab=diff"], "label": "the click switched to the Files changed (diff) tab (AC-34)" },
+    { "cmd": ["wait", "--url", "file=src%2Fconfig.ts"], "label": "the click also wrote ?file= with the URL-encoded target path in the SAME navigation (AC-34/AC-35, Open question 8) — a raw repo-relative path is percent-encoded by URLSearchParams, the caller never encodes it itself" },
+    { "cmd": ["wait", "--load", "networkidle"], "label": "diff tab data settles" },
+    { "cmd": ["wait", "--text", "Original order"], "label": "the order toggle renders — a targeted navigation lazily initializes DiffTab's view to 'original' on mount (DiffTab.tsx), unlike the untargeted Smart-order default flows 05/09 exercise" },
+    { "cmd": ["wait", "--text", "src/config.ts"], "label": "the targeted file's FileCard renders in the diff tab" },
+    { "cmd": ["wait", "--text", "No diff text available (binary or unfetched patch)."], "label": "the targeted file's body is expanded (open) — PR #482's seeded pr_files carry no patch text, so an OPEN FileCard renders this empty-body message; a collapsed card would not render it at all" },
+    { "cmd": ["reload"], "label": "reload the exact same URL (?tab=diff&file=src%2Fconfig.ts) — the query param is the source of truth, not component state (AC-35)" },
+    { "cmd": ["wait", "--url", "tab=diff"], "label": "reload reproduces the diff tab" },
+    { "cmd": ["wait", "--url", "file=src%2Fconfig.ts"], "label": "reload reproduces the targeted file in the URL" },
+    { "cmd": ["wait", "--load", "networkidle"], "label": "diff tab data settles again after reload" },
+    { "cmd": ["wait", "--text", "src/config.ts"], "label": "the targeted file's FileCard renders again after reload, driven by the URL alone" },
+    { "cmd": ["wait", "--text", "No diff text available (binary or unfetched patch)."], "label": "the file is still expanded after reload — same query-param-driven state, not remembered component state" }
+  ]
+}
