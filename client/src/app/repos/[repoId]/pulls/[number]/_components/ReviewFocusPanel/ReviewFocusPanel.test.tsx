@@ -106,4 +106,22 @@ describe("ReviewFocusPanel", () => {
     expect(document.querySelector("img")).toBeNull();
     expect(screen.getByText(/onerror/)).toBeInTheDocument();
   });
+
+  it("shows a long explanation in full, wrapped rather than truncated (AC-70)", () => {
+    const reason =
+      "The 429 branch omits the Retry-After header the PR description promises, so a client that honours it backs off blindly and the limiter reads as broken from the outside.";
+    renderPanel({
+      reviewFocus: [{ path: "src/middleware/ratelimit.ts", reason, line: null }],
+    });
+
+    // The whole sentence is in the DOM — no ellipsis, no clipped substring.
+    const explanation = screen.getByText(reason);
+    expect(explanation).toBeInTheDocument();
+    // jsdom has no layout engine, so the guarantee is asserted on the declared
+    // style: a single nowrap line with `text-overflow: ellipsis` is exactly
+    // what AC-70 forbids.
+    expect(explanation.style.whiteSpace).not.toBe("nowrap");
+    expect(explanation.style.textOverflow).toBe("");
+    expect(explanation.style.overflow).toBe("");
+  });
 });

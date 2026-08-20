@@ -103,6 +103,19 @@ skill, append-only. Entry format and promotion rules → root `INSIGHTS.md`.
   on 3001 (see root `INSIGHTS.md`). Override the whole port set rather than
   stopping their stack:
   `E2E_PG_PORT=5443 E2E_API_PORT=3101 E2E_WEB_PORT=3100 ./scripts/e2e.sh`.
+- **2026-08-20** — The e2e stack's default web port (`E2E_WEB_PORT`, 3100,
+  `scripts/e2e.sh:33`) is the SAME port `.claude/launch.json`'s `web` preview
+  server uses, so running flows while the preview stack is up puts the flows on
+  the dev server and the dev database. The failure looks nothing like a port
+  clash: the stack boots, flows 02/04/05/08/10/12 die at
+  `find text "Add rate limiting to public API endpoints" click` or
+  `wait --url /skills/`, because those flows follow the home redirect to the
+  FIRST repo and the dev DB has other repos (`e2e/AGENTS.md:24`). 5/12 passed
+  with the preview up, 12/12 with
+  `E2E_PG_PORT=5440 E2E_API_PORT=3201 E2E_WEB_PORT=3200 ./scripts/e2e.sh` and
+  the identical tree. Move the whole port set when a preview is running — and
+  note the reverse direction too: with no override, e2e takes 3100 and the
+  preview `web` server dies mid-run.
 
 - **2026-08-20** — `wait --text` / `get text` match the browser's **rendered**
   text, after CSS. This repo's `SectionLabel` and score-label spans are
