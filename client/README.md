@@ -33,7 +33,7 @@ flowchart TD
   ROOT -.->|"sidebar nav g o"| ONBOARDING["/repos/:repoId/onboarding<br/>Onboarding Tour"]
 
   PULLS -->|"GET /repos/:id/pulls · /repos/:id/index-state"| API
-  PR -->|"GET /pulls/:id · /reviews · /pulls/:id/comments · /pulls/:id/smart-diff<br/>POST /pulls/:id/review · /findings/:id/(accept|dismiss)"| API
+  PR -->|"GET /pulls/:id · /reviews · /pulls/:id/comments · /pulls/:id/smart-diff · /pulls/:id/brief<br/>POST /pulls/:id/review · /findings/:id/(accept|dismiss) · /pulls/:id/brief"| API
   AGENTS -->|"/agents · /agents/:id"| API
   SETTINGS -->|"/settings · /providers"| API
   CONTEXT -->|"GET /repos/:id/context · /repos/:id/context/doc"| API
@@ -50,6 +50,30 @@ as a chip on its diff line (clicking one jumps to that finding's card in the
 Agent runs tab), and falls back to the plain diff-viewer on any fetch error.
 A header toggle swaps to `Original order`, the unranked plain diff with no
 annotations — see [`../docs/smart-diff.md`](../docs/smart-diff.md).
+
+`PrBriefCard` (`.../pulls/[number]/_components/PrBriefCard/`) is the Overview
+tab's third card (SPEC-04), sitting beside the existing `IntentCard` and
+`BlastTab` without changing either. `useBrief`/`useGenerateBrief`
+(`src/lib/hooks/brief.ts`) read/write `GET`/`POST /pulls/:id/brief`; the
+card's states are empty (`brief === null`, a Generate CTA), loading, error
+(Retry, previous brief still on screen), and stale (`brief.stale`, a badge
+next to the Regenerate button) — a second click while a generation is pending
+is a no-op (`generate.isPending` disables the button). **The score shown next
+to the brief is read independently**, from `usePrReviews`'s newest row with
+`kind === 'review'` — never from the brief response — so regenerating the
+brief never moves the score, and a new agent run never regenerates the brief.
+Review Focus rows render as real `<button>`s only for paths present in the
+PR's current file list (`navigablePaths`, computed in `page.tsx` from
+`pr.files`); activating one calls `onOpenFile`, which writes
+`?tab=diff&file=<path>` in a single `setParams` update and hands `DiffTab` a
+`targetPath` that expands and scrolls to that file (`targetFileMeta`,
+`SmartDiffViewer/helpers.ts` — the sole owner of a file's `defaultOpen`
+override, so `DiffTab` renders the flat `DiffViewer` directly instead of
+`SmartDiffViewer` whenever a target is set). The URL alone drives this:
+reloading `?tab=diff&file=…` reproduces the same expanded file. A Review
+Focus row's `line` is never part of this navigation — the contract carries it
+as reason text only, since blast-derived line numbers resolve against the
+index's `indexed_sha`, not the PR's `head_sha`.
 
 `/repos/:repoId/context` (`ProjectContextView`) is a read-only list + search +
 markdown preview of the active repo's docs (`GET /repos/:id/context`) — no

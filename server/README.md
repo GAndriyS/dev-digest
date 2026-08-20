@@ -84,6 +84,9 @@ flowchart TB
   subgraph Onboarding["Onboarding Tour (L05)"]
     onboarding["onboarding<br/>/repos/:id/onboarding<br/>/repos/:id/onboarding/generate"]
   end
+  subgraph Brief["PR Why + Risk Brief (L05)"]
+    brief["brief<br/>/pulls/:id/brief"]
+  end
   subgraph Platform["Platform"]
     settings["settings<br/>/settings · /providers"]
     workspace["workspace<br/>/workspace"]
@@ -156,6 +159,44 @@ flowchart LR
   LLM --> VALID["post-validate<br/>filterToKnownPaths"]
   VALID --> CACHE[("onboarding table<br/>full overwrite")]
   CACHE --> PAGE["GET /repos/:id/onboarding<br/>(zero model calls)"]
+```
+
+`brief` (`modules/brief/`, L05/SPEC-04) generates the "PR Why + Risk Brief" —
+the Overview tab's third card. `GET /pulls/:id/brief` never calls the model or
+GitHub: it returns the stored `pr_brief` row (`PrWhyBrief | null`) with
+`stale` recomputed on **every** read by comparing the row's `head_sha` column
+against the PR's current `head_sha` — never trusted out of the stored JSON.
+`POST /pulls/:id/brief` makes **at most one** structured LLM call (feature-model
+key `risk_brief`, rate limited 10/min like every other money-spending route)
+and replaces the stored brief only on success; a failed generation leaves the
+previous row untouched. Facts are collected from exactly five sources: PR
+intent (`pr_intent`), the blast-radius map — reached through a new
+`container.blast` facade (`modules/blast/types.ts`) because
+`no-cross-module-internals` forbids importing `modules/blast/service.ts`
+directly — diff stats (changed-file paths, `additions`/`deletions` and `@@`
+hunk headers only, never hunk bodies), the linked issue, and Project Context
+documents sharing a leading path segment with a changed file (capped by count
+and character budget). A degraded source (no intent yet, a `partial`/
+`degraded` blast index, no linked issue, no clone) is recorded in `inputs[]`
+rather than failing the generation. The model's draft is grounded before it is
+stored: `risks[].file_refs` is filtered to paths that actually appeared in
+this call's facts, a `risks[]` item mentioning an endpoint outside blast's
+`endpoints_affected` is dropped whole, and `review_focus[]` is restricted to
+this PR's own changed files — which is also why `review_focus[].path` doubles
+as the client's navigation target while `review_focus[].line` is text-only and
+never a jump target: blast-derived line numbers resolve against `indexed_sha`,
+not the PR's `head_sha`, so the same `file:line` pair could point at a line
+that has since moved. **The brief and the PR's review score are independent
+artifacts** — the card's score is the newest `reviews` row with `kind =
+'review'` (the same figure the PR list shows), the brief carries no `score`
+field of its own, and regenerating one never touches the other.
+
+```mermaid
+flowchart LR
+  FACTS["collectBriefFacts<br/>intent · blast · diff stats · linked issue · context docs"] --> LLM["one completeStructured call<br/>BriefDraft"]
+  LLM --> GROUND["groundBrief<br/>drop unknown paths/endpoints, cap 5 + 5"]
+  GROUND --> CACHE2[("pr_brief row<br/>head_sha · generated_at · model")]
+  CACHE2 --> READ["GET /pulls/:id/brief<br/>(zero model calls; stale = head_sha mismatch)"]
 ```
 
 ## Environment
