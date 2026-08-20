@@ -290,6 +290,111 @@ describe('groundBrief', () => {
     expect(grounded.reviewFocus).toEqual([]);
     expect(grounded.droppedReviewFocus).toBe(1);
   });
+
+  // -------------------------------------------------------------------
+  // Code review fix pass 1, item 1 — trailing punctuation/markdown must not
+  // make a grounded endpoint mention look ungrounded.
+  // -------------------------------------------------------------------
+  it('keeps a grounded risk when the endpoint mention ends in a sentence period (item 1)', () => {
+    const facts = baseFacts();
+    const draft: BriefDraft = {
+      what: 'x',
+      why: 'y',
+      risk_level: 'high',
+      risks: [
+        {
+          kind: 'security',
+          title: 'grounded, ends a sentence',
+          explanation: 'This changes the response of POST /api/public.',
+          severity: 'high',
+          file_refs: [],
+        },
+      ],
+      review_focus: [],
+    };
+    const grounded = groundBrief(draft, facts);
+    expect(grounded.risks.map((r) => r.title)).toEqual(['grounded, ends a sentence']);
+    expect(grounded.droppedRisks).toBe(0);
+  });
+
+  it('keeps a grounded risk when the endpoint mention is wrapped in markdown backticks (item 1)', () => {
+    const facts = baseFacts();
+    const draft: BriefDraft = {
+      what: 'x',
+      why: 'y',
+      risk_level: 'high',
+      risks: [
+        {
+          kind: 'security',
+          title: 'grounded, backtick-wrapped',
+          explanation: 'Directly touches `POST /api/public` in the handler.',
+          severity: 'high',
+          file_refs: [],
+        },
+      ],
+      review_focus: [],
+    };
+    const grounded = groundBrief(draft, facts);
+    expect(grounded.risks.map((r) => r.title)).toEqual(['grounded, backtick-wrapped']);
+    expect(grounded.droppedRisks).toBe(0);
+  });
+
+  // -------------------------------------------------------------------
+  // Code review fix pass 1, item 2 — a degraded blast (no endpoints known)
+  // must not make grounding maximally aggressive and empty the risk list.
+  // -------------------------------------------------------------------
+  it('does not drop a risk mentioning an endpoint when blast supplied zero endpoints (item 2, AC-9)', () => {
+    const facts = baseFacts({
+      blast: {
+        changed_symbols: [],
+        downstream: [],
+        summary: 'no changed files detected for this pull request',
+        status: 'degraded',
+        reason: 'no_changed_files',
+        indexed_sha: null,
+      },
+    });
+    const draft: BriefDraft = {
+      what: 'x',
+      why: 'y',
+      risk_level: 'high',
+      risks: [
+        {
+          kind: 'security',
+          title: 'route risk from diff facts alone',
+          explanation: 'The diff touches POST /api/public directly.',
+          severity: 'high',
+          file_refs: ['src/config.ts'],
+        },
+      ],
+      review_focus: [],
+    };
+    const grounded = groundBrief(draft, facts);
+    expect(grounded.risks).toHaveLength(1);
+    expect(grounded.droppedRisks).toBe(0);
+  });
+
+  it('still drops a risk naming an invented endpoint when blast DID supply endpoints (item 2 stays strict)', () => {
+    const facts = baseFacts();
+    const draft: BriefDraft = {
+      what: 'x',
+      why: 'y',
+      risk_level: 'high',
+      risks: [
+        {
+          kind: 'security',
+          title: 'invented',
+          explanation: 'Also touches DELETE /api/invented, which the blast map never listed.',
+          severity: 'high',
+          file_refs: [],
+        },
+      ],
+      review_focus: [],
+    };
+    const grounded = groundBrief(draft, facts);
+    expect(grounded.risks).toHaveLength(0);
+    expect(grounded.droppedRisks).toBe(1);
+  });
 });
 
 // ---------------------------------------------------------------------------

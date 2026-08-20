@@ -7,6 +7,8 @@ import { loadConfig } from '../src/platform/config.js';
 import { seed } from '../src/db/seed.js';
 import { MockLLMProvider, MockBlast } from '../src/adapters/mocks.js';
 import * as t from '../src/db/schema.js';
+import type { ProjectContext } from '../src/modules/context/types.js';
+import type { ContextListing, ContextPaths, SpecFile } from '@devdigest/shared';
 
 const hasDocker = await dockerAvailable();
 const d = hasDocker ? describe : describe.skip;
@@ -120,6 +122,45 @@ d('PR Why + Risk Brief (Testcontainers pg)', () => {
   }
 
   /**
+   * A `ProjectContext` fake for item 3's regression test — structurally
+   * compatible, never `implements` the real `ContextService` (mirrors the
+   * `MockBlast` precedent above): `listContext` returns `count` documents all
+   * sharing the `src/` leading segment with `insertPrFile`'s default
+   * `src/config.ts`, so `relevantContextDocs` matches every one of them —
+   * proving the bound on `inputs[]`'s `context_doc` entries applies even when
+   * the real relevance filter would let hundreds through.
+   */
+  class ManyDocsProjectContext implements ProjectContext {
+    constructor(private readonly count: number) {}
+    async listContext(): Promise<ContextListing> {
+      return {
+        files: Array.from({ length: this.count }, (_, i) => ({
+          path: `src/doc-${i}.md`,
+          content: null,
+        })),
+      };
+    }
+    async readDoc(_workspaceId: string, _repoId: string, path: string): Promise<SpecFile> {
+      return { path, content: `content of ${path}` };
+    }
+    async agentDocs(): Promise<ContextPaths | undefined> {
+      return undefined;
+    }
+    async setAgentDocs(): Promise<ContextPaths | undefined> {
+      return undefined;
+    }
+    async skillDocs(): Promise<ContextPaths | undefined> {
+      return undefined;
+    }
+    async setSkillDocs(): Promise<ContextPaths | undefined> {
+      return undefined;
+    }
+    async resolveForRun() {
+      return { specs: [], attached: [], specsRead: [], skipped: [] };
+    }
+  }
+
+  /**
    * `NODE_ENV: 'test'` (the default here) disables the GLOBAL rate-limit
    * plugin registration entirely (`app.ts:106-110`) — without it,
    * `@fastify/rate-limit`'s `onRoute` hook never runs, so a route's own
@@ -128,7 +169,13 @@ d('PR Why + Risk Brief (Testcontainers pg)', () => {
    * a SEPARATE app with the plugin actually registered (`nodeEnv:
    * 'development'`, silenced logging) — see the dedicated 429 test below.
    */
-  function makeApp(opts: { llm?: MockLLMProvider; nodeEnv?: 'test' | 'development' } = {}) {
+  function makeApp(
+    opts: {
+      llm?: MockLLMProvider;
+      nodeEnv?: 'test' | 'development';
+      projectContext?: ProjectContext;
+    } = {},
+  ) {
     const config = loadConfig({
       ...process.env,
       NODE_ENV: opts.nodeEnv ?? 'test',
@@ -139,6 +186,7 @@ d('PR Why + Risk Brief (Testcontainers pg)', () => {
       db: pg.handle.db,
       overrides: {
         blast: new MockBlast(),
+        ...(opts.projectContext ? { projectContext: opts.projectContext } : {}),
         ...(opts.llm ? { llm: { openai: opts.llm } } : {}),
       },
     });
@@ -399,6 +447,51 @@ d('PR Why + Risk Brief (Testcontainers pg)', () => {
       calls: 1,
       prId: pr.id,
     });
+
+    await app.close();
+  });
+
+  // ---------------------------------------------------------------------
+  // Code review fix pass 1, item 3 — `inputs[]`'s `context_doc` entries stay
+  // bounded even when many documents share a leading directory segment with
+  // a changed file.
+  // ---------------------------------------------------------------------
+  it('bounds context_doc entries in inputs[] when many documents match, rolling the remainder into one entry', async () => {
+    const llm = new MockLLMProvider('openai', { structured: draftFixture({ review_focus: [] }) });
+    const app = await makeApp({ llm, projectContext: new ManyDocsProjectContext(30) });
+    const { pr } = await setupRepoAndPr();
+    await insertPrFile(pr.id); // src/config.ts — shares the `src` leading segment with every fake doc.
+
+    const posted = await app.inject({ method: 'POST', url: `/pulls/${pr.id}/brief` });
+    expect(posted.statusCode).toBe(200);
+    const body = posted.json();
+
+    const contextDocInputs = (
+      body.inputs as { type: string; ref: string | null; status: string }[]
+    ).filter((i) => i.type === 'context_doc');
+
+    // 30 relevant documents, but the report never lists all 30 individually:
+    // 8 `used` (MAX_BRIEF_CONTEXT_DOCS) + at most 12 individually-named
+    // `unavailable` drops (MAX_BRIEF_CONTEXT_DOC_DROPPED_INPUTS) + exactly one
+    // rollup entry accounting for the rest (30 - 8 - 12 = 10 more).
+    expect(contextDocInputs.length).toBeLessThan(30);
+    expect(contextDocInputs.filter((i) => i.status === 'used')).toHaveLength(8);
+
+    const named = contextDocInputs.filter(
+      (i) => i.status === 'unavailable' && i.ref?.startsWith('src/doc-'),
+    );
+    expect(named.length).toBeLessThanOrEqual(12);
+
+    const rollup = contextDocInputs.find(
+      (i) => i.status === 'unavailable' && !i.ref?.startsWith('src/doc-'),
+    );
+    expect(rollup).toBeDefined();
+    expect(rollup!.ref).toContain('10 more');
+
+    // Bound applies to the persisted/returned row and to the generation log
+    // line alike (amendment A4 forbids summarizing `inputs[]` — the shape
+    // chosen here bounds entry COUNT, not the array's presence).
+    expect(contextDocInputs).toHaveLength(8 + named.length + 1);
 
     await app.close();
   });

@@ -2,7 +2,11 @@ import type { BriefInput } from '@devdigest/shared';
 import type { Container } from '../../platform/container.js';
 import type { PullRow } from '../../db/rows.js';
 import { linkedIssueNumber } from '../_shared/linked-issue.js';
-import { MAX_BRIEF_CONTEXT_CHARS, MAX_BRIEF_CONTEXT_DOCS } from './constants.js';
+import {
+  MAX_BRIEF_CONTEXT_CHARS,
+  MAX_BRIEF_CONTEXT_DOCS,
+  MAX_BRIEF_CONTEXT_DOC_DROPPED_INPUTS,
+} from './constants.js';
 import { diffFactsFromPrFiles, relevantContextDocs } from './helpers.js';
 import type { BriefFacts, ContextDocFacts, LinkedIssueFacts } from './types.js';
 
@@ -76,10 +80,30 @@ export async function collectBriefFacts(
     const listing = await container.projectContext.listContext(workspaceId, pull.repoId);
     const relevant = relevantContextDocs(listing.files, changedPaths);
     let usedChars = 0;
+    // Individually-listed DROPPED entries only — `used` entries are already
+    // bounded by `MAX_BRIEF_CONTEXT_DOCS` above and always get their own
+    // entry. `relevant` can run into the hundreds (any leading-segment match
+    // counts, `relevantContextDocs`), so listing every drop by name would
+    // make `inputs[]` — persisted in `pr_brief.json`, returned on every
+    // `GET /pulls/:id/brief`, and written in full into the generation log
+    // line (amendment A4) — unbounded. Anything past the bound rolls up into
+    // ONE synthetic entry below rather than being omitted, so "documents
+    // were dropped" survives even though the individual paths do not
+    // (code review fix pass 1, item 3).
+    let listedDrops = 0;
+    let rolledUpDrops = 0;
+    const recordDropped = (path: string) => {
+      if (listedDrops < MAX_BRIEF_CONTEXT_DOC_DROPPED_INPUTS) {
+        contextInputs.push({ type: 'context_doc', ref: path, status: 'unavailable' });
+        listedDrops++;
+      } else {
+        rolledUpDrops++;
+      }
+    };
     for (const f of relevant) {
       if (contextDocs.length >= MAX_BRIEF_CONTEXT_DOCS) {
         // Dropped by the count budget — silent to the model, visible in `inputs` (AC-12).
-        contextInputs.push({ type: 'context_doc', ref: f.path, status: 'unavailable' });
+        recordDropped(f.path);
         continue;
       }
       try {
@@ -88,7 +112,7 @@ export async function collectBriefFacts(
         // though a single-doc read always populates it — guard rather than trust.
         const content = doc.content ?? '';
         if (usedChars + content.length > MAX_BRIEF_CONTEXT_CHARS) {
-          contextInputs.push({ type: 'context_doc', ref: f.path, status: 'unavailable' });
+          recordDropped(f.path);
           continue;
         }
         contextDocs.push({ path: f.path, content });
@@ -96,8 +120,23 @@ export async function collectBriefFacts(
         usedChars += content.length;
       } catch {
         // Unreadable (over the per-doc byte limit, vanished, escapes the clone) — AC-12.
-        contextInputs.push({ type: 'context_doc', ref: f.path, status: 'unavailable' });
+        recordDropped(f.path);
       }
+    }
+    if (rolledUpDrops > 0) {
+      // Bounded shape chosen for item 3: keep every `used` entry plus up to
+      // `MAX_BRIEF_CONTEXT_DOC_DROPPED_INPUTS` individually-named drops, then
+      // ONE rollup entry carrying the remainder count in `ref` (the wire
+      // `BriefInput` shape is frozen — no count field to add). This keeps
+      // amendment A4's guarantee intact: "the model found nothing" (zero
+      // `context_doc` entries because `relevant` was empty) stays
+      // distinguishable from "the source was unavailable" (an `unavailable`
+      // entry — individually named or rolled up — is present either way).
+      contextInputs.push({
+        type: 'context_doc',
+        ref: `+${rolledUpDrops} more relevant document(s) dropped, not listed individually`,
+        status: 'unavailable',
+      });
     }
   } catch {
     // `clone_path = null` (`RepoNotClonedError`), or the repo lookup failed —

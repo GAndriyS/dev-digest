@@ -17,6 +17,19 @@ export const MAX_BRIEF_REVIEW_FOCUS = 5;
  */
 export const MAX_BRIEF_CONTEXT_DOCS = 8;
 
+/**
+ * Most `context_doc` entries `inputs[]` lists INDIVIDUALLY with status
+ * `unavailable` (dropped by the count/char budget or an unreadable doc) — a
+ * separate bound from `MAX_BRIEF_CONTEXT_DOCS` (docs actually read). Without
+ * this, `relevantContextDocs` matching hundreds of documents (any repo with
+ * AGENTS.md/INSIGHTS.md/README.md scattered through `src/`) would push one
+ * `inputs[]` entry per match, making the persisted `pr_brief.json` row, the
+ * `GET /pulls/:id/brief` response and the generation log line all unbounded
+ * (code review fix pass 1, item 3). Anything beyond this bound collapses
+ * into ONE rollup entry — see `facts.ts`'s Project Context section.
+ */
+export const MAX_BRIEF_CONTEXT_DOC_DROPPED_INPUTS = 12;
+
 /** Total characters across every Project Context doc packed into the prompt (AC-12). */
 export const MAX_BRIEF_CONTEXT_CHARS = 20_000;
 

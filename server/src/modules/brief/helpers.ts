@@ -195,10 +195,26 @@ function knownPathsOf(facts: BriefFacts): Set<string> {
 /** `METHOD /path` tokens, matching the exact shape blast's `endpoints_affected` uses. */
 const ENDPOINT_MENTION_RE = /\b(GET|POST|PUT|PATCH|DELETE)\s+(\/[^\s,;)]+)/gi;
 
+/**
+ * Trailing punctuation/markdown delimiters a model sentence or backtick-wrap
+ * leaves stuck to a captured path (`ENDPOINT_MENTION_RE`'s path class only
+ * excludes whitespace/comma/semicolon/close-paren) — "...GET /api/public/items."
+ * or "`POST /pulls/:id/brief`" — so the raw capture never equals the clean
+ * `METHOD /path` string `endpoints_affected` uses (code review fix pass 1,
+ * item 1). Stripped from BOTH sides of the comparison in
+ * `mentionsUngroundedEndpoint` so a stray trailing mark can never itself be
+ * the reason a grounded risk is dropped.
+ */
+const TRAILING_ENDPOINT_PUNCTUATION_RE = /[.,;:!?)\]}'"`]+$/;
+
+function normalizeEndpointPath(path: string): string {
+  return path.replace(TRAILING_ENDPOINT_PUNCTUATION_RE, '');
+}
+
 /** `true` when `text` names an endpoint (`METHOD /path` shaped) that isn't in `known` (AC-19). */
 function mentionsUngroundedEndpoint(text: string, known: Set<string>): boolean {
   for (const m of text.matchAll(ENDPOINT_MENTION_RE)) {
-    const mentioned = `${m[1]!.toUpperCase()} ${m[2]}`;
+    const mentioned = `${m[1]!.toUpperCase()} ${normalizeEndpointPath(m[2]!)}`;
     if (!known.has(mentioned)) return true;
   }
   return false;
@@ -213,16 +229,35 @@ function mentionsUngroundedEndpoint(text: string, known: Set<string>): boolean {
  * `review_focus[]` items are restricted to THIS PR's changed files (AC-20,
  * stricter than `risks[].file_refs`'s wider known-paths set) since `path` is
  * also the client's navigation target (AC-21: an empty result is valid).
+ *
+ * The endpoint-mention check only RUNS when `facts.blast` actually supplied
+ * at least one endpoint (`knownEndpoints.size > 0`) — AC-19 exists to catch a
+ * model INVENTING an endpoint the facts contradict, not to punish a risk for
+ * mentioning a real route when blast had nothing to check it against. A
+ * degraded blast (`no_changed_files` is the common case, `blast/service.ts`)
+ * yields zero `endpoints_affected`, and the model — working from the diff
+ * facts it WAS given — will reasonably write risks about the routes the PR
+ * touches; with an unconditional check every one of those is dropped and the
+ * card renders `risks: []` on a PR that plainly carries risk, exactly what
+ * AC-9 forbids ("must not let the card claim the change affects nothing").
+ * Do not "restore" the unconditional check — that regresses to the AC-9
+ * violation this comment documents (code review fix pass 1, item 2).
  */
 export function groundBrief(draft: BriefDraft, facts: BriefFacts): GroundedBrief {
   const knownPaths = knownPathsOf(facts);
-  const knownEndpoints = new Set(facts.blast.downstream.flatMap((d) => d.endpoints_affected));
+  const knownEndpoints = new Set(
+    facts.blast.downstream.flatMap((d) => d.endpoints_affected).map(normalizeEndpointPath),
+  );
+  const hasKnownEndpoints = knownEndpoints.size > 0;
   const prFilePaths = new Set(facts.diffFiles.map((f) => f.path));
 
   let droppedRisks = 0;
   const risks: Risk[] = [];
   for (const r of draft.risks) {
-    if (mentionsUngroundedEndpoint(`${r.title} ${r.explanation}`, knownEndpoints)) {
+    if (
+      hasKnownEndpoints &&
+      mentionsUngroundedEndpoint(`${r.title} ${r.explanation}`, knownEndpoints)
+    ) {
       droppedRisks++;
       continue;
     }
