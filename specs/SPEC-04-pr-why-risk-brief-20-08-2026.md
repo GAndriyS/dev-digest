@@ -1,6 +1,6 @@
 # Spec: PR Why + Risk Brief — картка «що/навіщо змінює PR, який ризик і що дивитись першим»
 Spec ID: SPEC-04
-Status: approved
+Status: implemented
 Source: L05 · PR Brief (запит користувача + мокап сторінки Pull Request)
 Supersedes: none
 
