@@ -4,6 +4,7 @@ import React from "react";
 import { IntentCard } from "./_components/IntentCard";
 import { BlastTab } from "./_components/BlastTab";
 import { PrBriefCard } from "../PrBriefCard";
+import { usePrBriefSection } from "@/lib/hooks/brief";
 import { s } from "./styles";
 
 interface OverviewTabProps {
@@ -36,11 +37,27 @@ interface OverviewTabProps {
  * signal, not the raw prose.
  */
 export function OverviewTab({ prId, headSha, repoFullName, onOpenFile, navigablePaths }: OverviewTabProps) {
+  // Single call site for the brief + score view model (SPEC-04 AC-62,
+  // follow-up 20/08/2026). Not yet wired into either region: `PrBriefCard`
+  // still reads its own `useBrief`/`useGenerateBrief`/`usePrReviews` and
+  // still renders Review Focus itself until it becomes prop-driven in a
+  // later step. Calling it here now proves the composition and readies the
+  // call site without touching `PrBriefCard`'s props ahead of that step.
+  usePrBriefSection(prId);
+
   return (
-    <div style={s.grid}>
-      <IntentCard prId={prId} headSha={headSha} />
-      <BlastTab prId={prId} repoFullName={repoFullName} headSha={headSha} />
+    <div style={s.container}>
+      {/* Region 1: Why + Risk Brief, full width (SPEC-04 AC-56). */}
       <PrBriefCard prId={prId} onOpenFile={onOpenFile} navigablePaths={navigablePaths} />
+      {/* Region 2: IntentCard | BlastTab, the only auto-fit grid on this tab
+          (SPEC-04 AC-57, AC-58). */}
+      <div style={s.pairGrid}>
+        <IntentCard prId={prId} headSha={headSha} />
+        <BlastTab prId={prId} repoFullName={repoFullName} headSha={headSha} />
+      </div>
+      {/* Region 3 (Review Focus) lands here in a later step (SPEC-04
+          follow-up) — PrBriefCard still renders its own Review Focus block
+          internally until then. */}
     </div>
   );
 }

@@ -15,6 +15,17 @@ vi.mock("@/lib/hooks/reviews", () => ({
 vi.mock("@/lib/hooks/brief", () => ({
   useBrief: () => ({ data: null, isLoading: false, isError: false, refetch: vi.fn() }),
   useGenerateBrief: () => ({ mutate: vi.fn(), isPending: false, isError: false, error: null }),
+  // Stubbed so OverviewTab's own usePrBriefSection() call doesn't crash the
+  // mock module — not yet consumed by OverviewTab's render output (that
+  // wiring lands in a later step); kept quiet/neutral like the other stubs.
+  usePrBriefSection: () => ({
+    brief: null,
+    isLoading: false,
+    isError: false,
+    refetch: vi.fn(),
+    score: null,
+    generate: { mutate: vi.fn(), isPending: false, isError: false, error: null },
+  }),
 }));
 vi.mock("@/lib/hooks/blast", () => ({
   usePrBlast: () => ({
