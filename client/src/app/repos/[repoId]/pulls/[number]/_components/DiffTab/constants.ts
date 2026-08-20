@@ -14,3 +14,13 @@ export const DIFF_VIEWS: readonly [DiffView, DiffView] = ["smart", "original"];
 /** Any arrow moves to the other segment — with exactly two options "next" and
     "previous" are the same hop, so the radiogroup pattern collapses to a flip. */
 export const SEGMENT_ARROW_KEYS = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"];
+
+/** Frames the `?file=` scroll-to-target loop will chase a still-settling
+    layout before giving up — same value and same reason as FindingsPanel's
+    own constant of the same name (`client/INSIGHTS.md`): a `scrollIntoView`
+    fired once lands short because the target `FileCard` (and any neighbours
+    above it) are still expanding for several frames after mount. ~0.5s at
+    60fps. Duplicated rather than imported: DiffTab and FindingsPanel are
+    independent siblings, and the pattern — not the constant — is what's
+    shared. */
+export const SCROLL_SETTLE_MAX_FRAMES = 30;

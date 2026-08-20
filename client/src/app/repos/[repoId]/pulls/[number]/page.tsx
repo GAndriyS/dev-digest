@@ -75,7 +75,10 @@ export default function PRDetailPage() {
   // "Agent runs" — that means writing BOTH `tab` and `finding` in the same
   // navigation. Two sequential setParam calls would each read the same
   // `search` snapshot and clobber one another, so every multi-key update goes
-  // through this single router.replace.
+  // through this single router.replace. `URLSearchParams.set`/`.toString()`
+  // percent-encodes the value itself, so a raw repo-relative path in `patch`
+  // already comes out as `?file=<url-encoded>` (SPEC-04 Open question 8) —
+  // callers never encode it themselves.
   const setParams = (patch: Record<string, string | null>) => {
     const sp = new URLSearchParams(search.toString());
     for (const [key, val] of Object.entries(patch)) {
@@ -85,10 +88,14 @@ export default function PRDetailPage() {
     router.replace(`/repos/${repoId}/pulls/${number}${sp.toString() ? `?${sp.toString()}` : ""}`);
   };
   const setParam = (key: string, val: string | null) => setParams({ [key]: val });
-  // Leaving the Diff tab for any other tab drops a stale `?finding=` target —
-  // otherwise reopening Diff later re-triggers Findings' auto-scroll.
-  const setTab = (t: string) => setParams({ tab: t, finding: null });
+  // Leaving the Diff tab for any other tab drops a stale `?finding=`/`?file=`
+  // target — otherwise reopening Diff later re-triggers the auto-scroll (or,
+  // for `?file=`, lands on a file from a PREVIOUS Review Focus click).
+  const setTab = (t: string) => setParams({ tab: t, finding: null, file: null });
   const targetFindingId = search.get("finding");
+  // `?file=` — the file a PrBriefCard Review Focus row targeted (SPEC-04
+  // AC-34/AC-35), decoded by `URLSearchParams.get` automatically.
+  const targetFile = search.get("file");
 
   // Severity filter lives in the query too, so the PR list can deep-link
   // straight into a pre-filtered findings view. An unknown value reads as
@@ -108,6 +115,24 @@ export default function PRDetailPage() {
   );
   const lethalTrifecta = allFindings.filter((f) => f.kind === "lethal_trifecta");
   const findingsCount = allFindings.length;
+
+  // AC-36: a Review Focus path outside the Diff tab's CURRENT file list — a
+  // brief generated against an older `head_sha` can still name a path the PR
+  // has since renamed or dropped — must never navigate there: the button
+  // stays present (PrBriefCard owns that render, not this page) but the
+  // click becomes a no-op instead of opening a Diff tab with nothing to show.
+  const changedFilePaths = React.useMemo(
+    () => new Set((pr?.files ?? []).map((f) => f.path)),
+    [pr],
+  );
+  const onOpenFile = (path: string) => {
+    if (!changedFilePaths.has(path)) return;
+    setParams({ tab: "diff", file: path });
+  };
+  // Defends the same edge case on the READ side: a stale/hand-edited `?file=`
+  // naming a path outside the current diff must not be handed to DiffTab as
+  // a scroll/expand target either.
+  const validTargetFile = targetFile != null && changedFilePaths.has(targetFile) ? targetFile : null;
 
   const repoName = activeRepo?.full_name ?? repoId;
   // The real "owner/repo" (null until the repo is loaded) — used to build
@@ -170,7 +195,12 @@ export default function PRDetailPage() {
           cap so Intent and Blast each keep a readable width side by side. */}
       <div style={{ padding: "24px 32px 44px", display: "flex", flexDirection: "column", gap: 24, maxWidth: tab === "overview" ? 1440 : 1080, margin: "0 auto" }}>
         {tab === "overview" && (
-          <OverviewTab prId={prId} headSha={pr.head_sha} repoFullName={repoFullName} />
+          <OverviewTab
+            prId={prId}
+            headSha={pr.head_sha}
+            repoFullName={repoFullName}
+            onOpenFile={onOpenFile}
+          />
         )}
 
         {tab === "findings" && (
@@ -209,6 +239,7 @@ export default function PRDetailPage() {
             canComment={pr.status === "open"}
             findings={allFindings}
             onOpenFinding={(id) => setParams({ tab: "findings", finding: id })}
+            targetPath={validTargetFile}
           />
         )}
       </div>
