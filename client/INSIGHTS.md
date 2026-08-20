@@ -68,6 +68,17 @@ append-only. Entry format and promotion rules → root `INSIGHTS.md`.
   exporting `DiffFileMeta` next to `DiffCommentApi`, which is the same call
   made for the same reason.
 
+- **2026-08-20** — `FileCard`/`DiffViewer` (`src/components/diff-viewer/**`)
+  expose **no `data-*` anchor** for an individual file, and `DiffFileMeta
+  { defaultOpen?, annotations? }` is the only lever that exists — there is no
+  scroll target and no id. A feature that has to open one specific file (SPEC-04's
+  `?file=` Review Focus navigation) therefore matches the rendered path text
+  (`span.mono`, exact `textContent`) inside a local container ref. It works and
+  is tested, but it breaks silently the day two files render the same path text
+  or the header markup changes. Add `data-file-path` to `FileCard`'s root the
+  next time that component is touched, and retire the text match — it is
+  vendored-adjacent but not under `vendor/ui/`, so it is editable.
+
 ## Tool & Library Notes
 
 - **2026-08-11** — Scrolling to an element that a sibling's effect is about to

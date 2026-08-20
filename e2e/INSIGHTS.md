@@ -104,6 +104,15 @@ skill, append-only. Entry format and promotion rules → root `INSIGHTS.md`.
   stopping their stack:
   `E2E_PG_PORT=5443 E2E_API_PORT=3101 E2E_WEB_PORT=3100 ./scripts/e2e.sh`.
 
+- **2026-08-20** — `wait --text` / `get text` match the browser's **rendered**
+  text, after CSS. This repo's `SectionLabel` and score-label spans are
+  uppercased with `text-transform`, so a flow asserting the string from
+  `client/messages/en/*.json` — `"Why + Risk Brief"`, `"Agent review score"` —
+  fails with "text not found" while the label is plainly on screen. Match the
+  uppercased form (`WHY + RISK BRIEF`). Applies to any styled label, and it is a
+  false "the feature is broken" signal, not a flake: found while writing
+  `12-pr-why-risk-brief.flow.json`.
+
 ## Session Notes
 
 ## Open Questions
