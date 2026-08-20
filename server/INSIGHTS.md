@@ -194,6 +194,21 @@ promotion rules → root `INSIGHTS.md`.
   constraint: grep the module's pure helpers for unreferenced exports before
   writing your own tally.
 
+- **2026-08-20** — A second module cannot reach blast's facts at all:
+  `src/modules/blast/` ships only `constants.ts`, `routes.ts`, `service.ts` — no
+  `index.ts`, no `types.ts` — and `no-cross-module-internals`
+  (`.dependency-cruiser.cjs:83-95`) publishes only `constants|types|index.ts`,
+  so `blast/service.ts` is private and there is nothing legal left to import.
+  The rule's own comment names the way out ("shared state belongs in the
+  container"), and the repo already has the worked example: `ProjectContext` is
+  an interface in `modules/context/types.ts:61`, implemented by `ContextService`
+  (`modules/context/service.ts:181`), exposed as the `container.projectContext`
+  lazy getter (`platform/container.ts:143-146`) with a test override slot on
+  `ContainerOverrides` (`:55`). Any feature needing another module's facts adds
+  that trio — interface in the owner's `types.ts`, getter on the container,
+  override slot — rather than an import; a plan step that says "import blast's
+  service" fails depcruise in CI, not at review.
+
 ## Tool & Library Notes
 
 - **2026-08-19** — A Fastify route whose `schema.body` is a plain zod object

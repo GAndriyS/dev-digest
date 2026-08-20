@@ -110,6 +110,19 @@ live in `<package>/INSIGHTS.md`. Maintained by the `engineering-insights` skill.
   are the reference implementations; the older skills predate this and carry no
   version at all, so absence of a version does not mean "v1".
 
+- **2026-08-20** — A spec's `· verify:` hint can name an **e2e flow for a path
+  that spends money**, which `e2e/AGENTS.md:22-23` forbids outright ("Flows
+  target read-only seeded data, so nothing ever triggers a model call. Keep it
+  that way."). SPEC-04's AC-27 (the brief's Regenerate button) arrived that way:
+  clicking it in a browser flow issues a real provider call. The resolution is
+  not to relax the e2e rule but to move the AC's lane — `*.it.test.ts` with the
+  provider mocked through the container override slot — and let e2e assert only
+  the states reachable *without* generating. `e2e/specs/11-onboarding-tour.flow.json`
+  is the worked precedent: it verifies the onboarding skeleton empty state
+  because the service's reason ladder returns `not_indexed` "before ever calling
+  a model". Planners: read `verify: e2e flow` on a model-spending surface as a
+  spec finding to re-lane, never as an instruction to write the flow.
+
 ## Tool & Library Notes
 
 - **2026-08-05** — Every CI workflow pins `pnpm` **10** via
