@@ -68,7 +68,7 @@ export function buildFileMeta(
 }
 
 /** Builds `fileMeta` for exactly one target file — `defaultOpen: true`, no
-    annotations. SPEC-04 (`?file=` navigation from PrBriefCard's Review Focus,
+    annotations. SPEC-04 (`?file=` navigation from a ReviewFocusPanel row,
     AC-34) needs the SAME `defaultOpen` lever this module already owns for
     Smart order (`buildFileMeta` above), but Amendment A3 forbids a second
     writer of `defaultOpen` for the same path. Rather than reach into

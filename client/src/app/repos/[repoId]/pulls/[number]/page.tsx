@@ -93,7 +93,7 @@ export default function PRDetailPage() {
   // for `?file=`, lands on a file from a PREVIOUS Review Focus click).
   const setTab = (t: string) => setParams({ tab: t, finding: null, file: null });
   const targetFindingId = search.get("finding");
-  // `?file=` — the file a PrBriefCard Review Focus row targeted (SPEC-04
+  // `?file=` — the file a ReviewFocusPanel row targeted (SPEC-04
   // AC-34/AC-35), decoded by `URLSearchParams.get` automatically.
   const targetFile = search.get("file");
 
@@ -119,9 +119,10 @@ export default function PRDetailPage() {
   // AC-36: a Review Focus path outside the Diff tab's CURRENT file list — a
   // brief generated against an older `head_sha` can still name a path the PR
   // has since renamed or dropped — must never be offered as a click at all.
-  // Handed to PrBriefCard (via OverviewTab) as `navigablePaths` so it renders
-  // that row as static text instead of a button; `onOpenFile` below keeps the
-  // same guard as defense in depth, not as the mechanism AC-36 relies on.
+  // Handed to ReviewFocusPanel (via OverviewTab) as `navigablePaths` so it
+  // renders that row as static text instead of a button; `onOpenFile` below
+  // keeps the same guard as defense in depth, not as the mechanism AC-36
+  // relies on.
   const changedFilePaths = React.useMemo(
     () => new Set((pr?.files ?? []).map((f) => f.path)),
     [pr],

@@ -88,8 +88,8 @@ interface DiffTabProps {
       than silently drop clicks. */
   onOpenFinding: (findingId: string) => void;
   /** Repo-relative path to expand and scroll into view on mount — the page's
-      `?file=` (SPEC-04 AC-34/AC-35), forwarded from a PrBriefCard Review
-      Focus row via `OverviewTab`. When set, this tab renders the flat
+      `?file=` (SPEC-04 AC-34/AC-35), forwarded from a ReviewFocusPanel row
+      via `OverviewTab`. When set, this tab renders the flat
       `DiffViewer` directly instead of `SmartDiffViewer` (R3/Amendment A3 —
       see `targetFileMeta` in `SmartDiffViewer/helpers.ts`), so Smart order's
       own grouped `fileMeta` is never a second writer of `defaultOpen` for
