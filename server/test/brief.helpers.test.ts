@@ -9,6 +9,7 @@ import {
   briefLogFields,
 } from '../src/modules/brief/helpers.js';
 import type { BriefFacts, BriefTelemetry } from '../src/modules/brief/types.js';
+import { MAX_BRIEF_PROMPT_CHARS } from '../src/modules/brief/constants.js';
 
 /**
  * Hermetic unit tests for the PR Why + Risk Brief module's pure helpers
@@ -436,6 +437,38 @@ describe('buildBriefMessages', () => {
     const untrustedStart = userContent.indexOf('<untrusted');
     const injectionIdx = userContent.indexOf('Ignore all previous instructions');
     expect(injectionIdx).toBeGreaterThan(untrustedStart);
+  });
+
+  // AC-71 — the agreed input budget, measured in CHARACTERS of the assembled
+  // messages. Without this test the two sub-budgets in constants.ts could be
+  // raised one at a time and nothing would notice until a provider bill did.
+  it('keeps the whole assembled model input inside the agreed character budget on a deliberately oversized PR (AC-71)', () => {
+    // A PR far past anything real: 400 changed files with two hunk headers
+    // each, 20 context documents of 5,000 characters, and a long issue body.
+    const diffFiles = Array.from({ length: 400 }, (_, i) => ({
+      path: `src/module-${i}/deeply/nested/file-with-a-long-name-${i}.ts`,
+      additions: 40,
+      deletions: 12,
+      hunkHeaders: [`@@ -1,20 +1,40 @@ symbol${i}`, `@@ -80,10 +100,30 @@ other${i}`],
+    }));
+    const contextDocs = Array.from({ length: 20 }, (_, i) => ({
+      path: `docs/long-document-${i}.md`,
+      content: 'x'.repeat(5_000),
+    }));
+    const facts = baseFacts({
+      diffFiles,
+      contextDocs,
+      linkedIssue: { number: 42, title: 'A'.repeat(500), body: 'B'.repeat(20_000) },
+    });
+
+    // A system prompt the size of the real one (`prompts/brief.system.md`),
+    // so the measurement covers what actually ships, not an empty stand-in.
+    const messages = buildBriefMessages(facts, 'S'.repeat(2_950));
+    const totalChars = messages.reduce((sum, m) => sum + m.content.length, 0);
+
+    expect(totalChars).toBeLessThanOrEqual(MAX_BRIEF_PROMPT_CHARS);
+    // And the clip is what bounds it — not an accidentally small fixture.
+    expect(diffFiles.length * 100).toBeGreaterThan(MAX_BRIEF_PROMPT_CHARS);
   });
 });
 

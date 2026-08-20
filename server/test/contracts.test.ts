@@ -222,7 +222,11 @@ describe('AI contracts parse fixtures', () => {
     // resource, kept server-only until a client hook needs it (see the
     // comment on that export in the server copy).
     const extractOnboardingBlock = (src: string): string => {
-      const match = src.match(/\/\/ ---- Onboarding ----\n([\s\S]*?)\n\/\/ ---- Eval ----/);
+      // `\r?\n`, not `\n`: with `core.autocrlf=true` and no `.gitattributes`,
+      // a Windows checkout has CRLF on disk, and an `\n`-only marker regex
+      // then finds nothing in either copy — the test failed for every Windows
+      // contributor while CI (LF) stayed green.
+      const match = src.match(/\/\/ ---- Onboarding ----\r?\n([\s\S]*?)\r?\n\/\/ ---- Eval ----/);
       if (!match) throw new Error('Onboarding block marker not found');
       return match[1]!
         .replace(

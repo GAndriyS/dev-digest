@@ -30,16 +30,38 @@ export const MAX_BRIEF_CONTEXT_DOCS = 8;
  */
 export const MAX_BRIEF_CONTEXT_DOC_DROPPED_INPUTS = 12;
 
-/** Total characters across every Project Context doc packed into the prompt (AC-12). */
-export const MAX_BRIEF_CONTEXT_CHARS = 20_000;
+/**
+ * The agreed budget for ONE generation's model input, measured in CHARACTERS
+ * of the assembled messages — system prompt, wrapped Project Context docs,
+ * facts block and task instruction together (AC-71).
+ *
+ * Characters, not tokens, because a character count is exact and free while a
+ * token count depends on the provider's tokenizer. The repo's own estimate is
+ * 4 characters per token (`BYTES_PER_TOKEN_EST`,
+ * `server/src/modules/context/constants.ts`), so this ceiling is ~8,000
+ * tokens. Pinned by a unit test that assembles a deliberately oversized PR —
+ * without one, the two sub-budgets below could drift apart from this number
+ * and nothing would notice.
+ */
+export const MAX_BRIEF_PROMPT_CHARS = 32_000;
+
+/**
+ * Total characters across every Project Context doc packed into the prompt
+ * (AC-12). A sub-budget of `MAX_BRIEF_PROMPT_CHARS`: docs are evidence, not
+ * the brief's subject, so they get the smaller share.
+ */
+export const MAX_BRIEF_CONTEXT_CHARS = 10_000;
 
 /**
  * Total characters of the assembled facts block (intent + blast + diff stats
  * + linked issue), clipped AFTER assembly — same "build then clip once"
  * strategy as `onboarding/helpers.ts`'s `MAX_PROMPT_TOTAL_CHARS`, so a PR with
  * hundreds of changed files still produces a bounded prompt (NFR-2, EC-7).
+ * The other sub-budget of `MAX_BRIEF_PROMPT_CHARS`: the facts ARE the brief's
+ * evidence, so they get the larger share, and what is left over from both is
+ * the fixed system prompt plus assembly wrappers.
  */
-export const MAX_BRIEF_FACTS_CHARS = 40_000;
+export const MAX_BRIEF_FACTS_CHARS = 16_000;
 
 /** `completeStructured`'s reprompt-on-error budget; `attempts` never exceeds this + 1. */
 export const MAX_STRUCTURED_RETRIES = 2;

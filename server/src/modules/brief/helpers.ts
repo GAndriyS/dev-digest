@@ -3,7 +3,12 @@ import type { ChatMessage, Risk, ReviewFocusItem, PrWhyBrief } from '@devdigest/
 import { RiskSeverity, PrWhyBrief as PrWhyBriefSchema } from '@devdigest/shared';
 import { assemblePrompt } from '../../platform/prompt.js';
 import { clipHead } from '../_shared/prompt-text.js';
-import { MAX_BRIEF_FACTS_CHARS, MAX_BRIEF_RISKS, MAX_BRIEF_REVIEW_FOCUS } from './constants.js';
+import {
+  MAX_BRIEF_CONTEXT_CHARS,
+  MAX_BRIEF_FACTS_CHARS,
+  MAX_BRIEF_RISKS,
+  MAX_BRIEF_REVIEW_FOCUS,
+} from './constants.js';
 import type { BriefFacts, BriefTelemetry, DiffFileFacts } from './types.js';
 
 /**
@@ -159,9 +164,23 @@ export function buildBriefMessages(facts: BriefFacts, systemPrompt: string): Cha
     MAX_BRIEF_FACTS_CHARS,
   );
 
+  // AC-71 — the context block is packed to the same budget here as in
+  // `facts.ts`, so the total input ceiling holds at the ONE place that
+  // assembles the prompt, whoever built the facts. On the real path this is a
+  // no-op (facts.ts already packed them); it is what keeps a future caller —
+  // or a test fixture — from quietly pushing the input over the budget.
+  const specs: string[] = [];
+  let specChars = 0;
+  for (const doc of facts.contextDocs) {
+    const block = `### ${doc.path}\n\n${doc.content}`;
+    if (specChars + block.length > MAX_BRIEF_CONTEXT_CHARS) continue;
+    specs.push(block);
+    specChars += block.length;
+  }
+
   const { messages } = assemblePrompt({
     system: systemPrompt,
-    specs: facts.contextDocs.map((d) => `### ${d.path}\n\n${d.content}`),
+    specs,
     diff: factsText,
     task:
       'Write a why/risk brief for this PR from the evidence below (PR intent, ' +
