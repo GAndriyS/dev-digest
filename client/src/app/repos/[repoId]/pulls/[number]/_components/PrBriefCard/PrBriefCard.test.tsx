@@ -1,42 +1,9 @@
-import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import { NextIntlClientProvider } from "next-intl";
-import type { PrWhyBrief, ReviewRecord } from "@devdigest/shared";
+import type { PrWhyBrief } from "@devdigest/shared";
 import messages from "../../../../../../../../messages/en/brief.json";
 import { ApiError } from "@/lib/api";
-
-const generateMutate = vi.fn();
-const refetchMock = vi.fn();
-
-const state = {
-  brief: null as PrWhyBrief | null | undefined,
-  isLoading: false,
-  isError: false,
-  generatePending: false,
-  generateError: false,
-  generateErrorObj: null as unknown,
-  reviews: [] as ReviewRecord[] | undefined,
-};
-
-// Same technique IntentCard.test.tsx uses: mock the data hooks directly so
-// this suite stays free of a QueryClientProvider.
-vi.mock("@/lib/hooks/brief", () => ({
-  useBrief: () => ({
-    data: state.brief,
-    isLoading: state.isLoading,
-    isError: state.isError,
-    refetch: refetchMock,
-  }),
-  useGenerateBrief: () => ({
-    mutate: generateMutate,
-    isPending: state.generatePending,
-    isError: state.generateError,
-    error: state.generateErrorObj,
-  }),
-}));
-vi.mock("@/lib/hooks/reviews", () => ({
-  usePrReviews: () => ({ data: state.reviews, isLoading: false, isError: false }),
-}));
 
 import { PrBriefCard } from "./PrBriefCard";
 
@@ -66,85 +33,73 @@ function brief(over: Partial<PrWhyBrief> = {}): PrWhyBrief {
   };
 }
 
-function review(over: Partial<ReviewRecord> = {}): ReviewRecord {
+function generateState(
+  over: Partial<{ isPending: boolean; isError: boolean; error: unknown }> = {},
+) {
   return {
-    id: "rev-1",
-    pr_id: "pr-1",
-    agent_id: "agent-1",
-    run_id: "run-1",
-    agent_name: "Reviewer",
-    kind: "review",
-    verdict: "approve",
-    summary: "Looks good.",
-    score: 61,
-    model: "deepseek/deepseek-v4-flash",
-    grounding: null,
-    created_at: "2026-08-20T00:00:00.000Z",
-    findings: [],
+    mutate: vi.fn(),
+    isPending: false,
+    isError: false,
+    error: null,
     ...over,
   };
 }
 
 function renderCard(
-  props: {
-    prId?: string | null;
-    onOpenFile?: (path: string) => void;
-    navigablePaths?: ReadonlySet<string>;
-  } = {},
+  props: Partial<{
+    brief: PrWhyBrief | null | undefined;
+    isLoading: boolean;
+    isError: boolean;
+    refetch: () => void;
+    score: number | null;
+    generate: ReturnType<typeof generateState>;
+  }> = {},
 ) {
   return render(
     <NextIntlClientProvider locale="en" messages={{ brief: messages }}>
       <PrBriefCard
-        prId={props.prId ?? "pr-1"}
-        onOpenFile={props.onOpenFile}
-        navigablePaths={props.navigablePaths}
+        brief={props.brief ?? null}
+        isLoading={props.isLoading ?? false}
+        isError={props.isError ?? false}
+        refetch={props.refetch ?? vi.fn()}
+        score={props.score ?? null}
+        generate={props.generate ?? generateState()}
       />
     </NextIntlClientProvider>,
   );
 }
 
-beforeEach(() => {
-  state.brief = null;
-  state.isLoading = false;
-  state.isError = false;
-  state.generatePending = false;
-  state.generateError = false;
-  state.generateErrorObj = null;
-  state.reviews = [];
-  generateMutate.mockReset();
-  refetchMock.mockReset();
-});
 afterEach(cleanup);
 
 describe("PrBriefCard", () => {
   it("shows a loading skeleton while the brief is being fetched", () => {
-    state.isLoading = true;
-    const { container } = renderCard();
+    const { container } = renderCard({ isLoading: true });
     expect(container.querySelector(".skeleton")).toBeInTheDocument();
   });
 
   it("shows a load-failed state with a retry action when the initial fetch errors", () => {
-    state.isError = true;
-    renderCard();
+    const refetch = vi.fn();
+    renderCard({ isError: true, refetch });
 
     const alert = screen.getByRole("alert");
     expect(alert).toHaveTextContent("Could not load this PR's brief.");
     expect(screen.queryByText("No brief yet")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByText("Retry"));
-    expect(refetchMock).toHaveBeenCalledOnce();
+    expect(refetch).toHaveBeenCalledOnce();
   });
 
   it("offers to generate when nothing has been generated yet (AC-37), and generates on click", () => {
-    renderCard();
+    const generate = generateState();
+    renderCard({ brief: null, generate });
+
     expect(screen.getByText("No brief yet")).toBeInTheDocument();
     fireEvent.click(screen.getByText("Generate brief"));
-    expect(generateMutate).toHaveBeenCalledOnce();
+    expect(generate.mutate).toHaveBeenCalledOnce();
   });
 
   it("renders what/why as separate labeled blocks, and the risk level as both text and colour (AC-31, AC-32)", () => {
-    state.brief = brief({ risk_level: "high" });
-    renderCard();
+    renderCard({ brief: brief({ risk_level: "high" }) });
 
     expect(screen.getByText("Adds rate limiting to the public API.")).toBeInTheDocument();
     expect(screen.getByText("Prevent a single client from exhausting shared capacity.")).toBeInTheDocument();
@@ -152,122 +107,90 @@ describe("PrBriefCard", () => {
     expect(screen.getByText("High risk")).toBeInTheDocument();
   });
 
-  it("renders Review Focus rows as keyboard-operable buttons that call onOpenFile with the item's path (AC-33, AC-34)", () => {
-    state.brief = brief();
-    const onOpenFile = vi.fn();
-    renderCard({ onOpenFile });
-
-    const row = screen.getByRole("button", { name: /ratelimit\.ts.*New limiter logic\./ });
-    fireEvent.click(row);
-    expect(onOpenFile).toHaveBeenCalledWith("src/middleware/ratelimit.ts");
-  });
-
-  it("renders Review Focus rows as non-interactive text when onOpenFile is not supplied", () => {
-    state.brief = brief();
-    renderCard();
-
-    expect(screen.getByText("src/middleware/ratelimit.ts")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /ratelimit\.ts/ })).not.toBeInTheDocument();
-  });
-
-  it("renders a row as a real button and calls back with the raw path when the path is in navigablePaths (AC-33, AC-34, AC-36)", () => {
-    state.brief = brief();
-    const onOpenFile = vi.fn();
-    renderCard({ onOpenFile, navigablePaths: new Set(["src/middleware/ratelimit.ts"]) });
-
-    const row = screen.getByRole("button", { name: /ratelimit\.ts.*New limiter logic\./ });
-    fireEvent.click(row);
-    expect(onOpenFile).toHaveBeenCalledWith("src/middleware/ratelimit.ts");
-  });
-
-  it("renders a row as static, non-interactive text — never a disabled button — when its path is outside navigablePaths, even though onOpenFile is supplied (AC-36)", () => {
-    state.brief = brief();
-    const onOpenFile = vi.fn();
-    renderCard({ onOpenFile, navigablePaths: new Set(["some/other/file.ts"]) });
-
-    expect(screen.getByText("src/middleware/ratelimit.ts")).toBeInTheDocument();
-    expect(screen.getByText("New limiter logic.")).toBeInTheDocument();
-    const row = screen.queryByRole("button", { name: /ratelimit\.ts/ });
-    expect(row).not.toBeInTheDocument();
-
-    // Not merely unclickable via role query — there is no button element at
-    // all to click, so onOpenFile can never fire for this path.
-    fireEvent.click(screen.getByText("src/middleware/ratelimit.ts"));
-    expect(onOpenFile).not.toHaveBeenCalled();
-  });
-
-  it("shows an honest empty message when review_focus is empty — not an error, not a fabricated path (AC-21)", () => {
-    state.brief = brief({ review_focus: [] });
-    renderCard();
-
-    expect(screen.getByText("No files flagged for priority review.")).toBeInTheDocument();
-  });
-
   it("shows the stale badge when the brief is marked stale, and nothing otherwise (AC-26, AC-40)", () => {
-    state.brief = brief({ stale: true });
-    renderCard();
+    renderCard({ brief: brief({ stale: true }) });
     expect(screen.getByText("PR has new commits since this was generated")).toBeInTheDocument();
 
     cleanup();
-    state.brief = brief({ stale: false });
-    renderCard();
+    renderCard({ brief: brief({ stale: false }) });
     expect(screen.queryByText("PR has new commits since this was generated")).not.toBeInTheDocument();
   });
 
   it("escapes HTML embedded in model text — never rendered as markup (AC-44)", () => {
-    state.brief = brief({ what: 'Adds <img src=x onerror="alert(1)"> a limiter.' });
-    renderCard();
+    renderCard({ brief: brief({ what: 'Adds <img src=x onerror="alert(1)"> a limiter.' }) });
 
     expect(document.querySelector("img")).toBeNull();
     expect(screen.getByText(/onerror/)).toBeInTheDocument();
   });
 
-  it("shows the reviewer agent's score, subtitled separately from the brief content (AC-47, AC-55)", () => {
-    state.brief = brief();
-    state.reviews = [review({ score: 61 })];
-    renderCard();
+  it("shows the reviewer agent's score as a donut, subtitled separately from the brief content (AC-47, AC-55, AC-68)", () => {
+    renderCard({ brief: brief(), score: 61 });
 
     expect(screen.getByText("61")).toBeInTheDocument();
     expect(screen.getByText("Agent review score")).toBeInTheDocument();
   });
 
-  it("shows 'not yet reviewed' instead of a zero or blank when there is no review, or the latest score is null (AC-48)", () => {
-    state.brief = brief();
-    state.reviews = [];
-    renderCard();
-    expect(screen.getByText("Not yet reviewed by an agent")).toBeInTheDocument();
+  it("shows 'not yet reviewed' instead of a zero or blank when there is no score, and never draws the donut (AC-48)", () => {
+    renderCard({ brief: brief(), score: null });
 
-    cleanup();
-    state.reviews = [review({ score: null })];
-    renderCard();
     expect(screen.getByText("Not yet reviewed by an agent")).toBeInTheDocument();
-  });
-
-  it("skips a kind:'summary' row and picks the first kind:'review' row's score (AC-47, EC-18)", () => {
-    state.brief = brief();
-    state.reviews = [
-      review({ id: "rev-summary", kind: "summary", score: null }),
-      review({ id: "rev-review", kind: "review", score: 61 }),
-    ];
-    renderCard();
-    expect(screen.getByText("61")).toBeInTheDocument();
+    expect(screen.queryByText("0")).not.toBeInTheDocument();
   });
 
   it("shows the disabled, relabelled regenerate button while a generation is in flight, and keeps the previous brief on screen (AC-29, AC-38)", () => {
-    state.brief = brief();
-    state.generatePending = true;
-    renderCard();
+    renderCard({ brief: brief(), generate: generateState({ isPending: true }) });
 
     const button = screen.getByRole("button", { name: "Regenerating…" });
     expect(button).toBeDisabled();
     expect(screen.getByText("Adds rate limiting to the public API.")).toBeInTheDocument();
   });
 
+  it("shows exactly one regenerate button, in this card's header (AC-61)", () => {
+    renderCard({ brief: brief() });
+    expect(screen.getAllByRole("button", { name: "Regenerate" })).toHaveLength(1);
+  });
+
+  it("keeps the shown score unchanged across a regenerate (AC-53)", () => {
+    const { rerender } = render(
+      <NextIntlClientProvider locale="en" messages={{ brief: messages }}>
+        <PrBriefCard
+          brief={brief()}
+          isLoading={false}
+          isError={false}
+          refetch={vi.fn()}
+          score={61}
+          generate={generateState()}
+        />
+      </NextIntlClientProvider>,
+    );
+    expect(screen.getByText("61")).toBeInTheDocument();
+
+    // Regenerating the brief (isPending flips, brief content could change)
+    // must not be able to move `score` — it is read from a wholly separate
+    // source (`usePrReviews`) and only ever arrives as an unchanged prop.
+    rerender(
+      <NextIntlClientProvider locale="en" messages={{ brief: messages }}>
+        <PrBriefCard
+          brief={brief({ what: "Adds rate limiting to the public API, revised." })}
+          isLoading={false}
+          isError={false}
+          refetch={vi.fn()}
+          score={61}
+          generate={generateState({ isPending: true })}
+        />
+      </NextIntlClientProvider>,
+    );
+    expect(screen.getByText("61")).toBeInTheDocument();
+  });
+
   it("surfaces a generation failure without losing the already-loaded brief (AC-39)", () => {
-    state.brief = brief();
-    state.generateError = true;
-    state.generateErrorObj = new ApiError("No API key configured", 409, "config_error");
-    renderCard();
+    renderCard({
+      brief: brief(),
+      generate: generateState({
+        isError: true,
+        error: new ApiError("No API key configured", 409, "config_error"),
+      }),
+    });
 
     expect(screen.getByText("Generation failed — No API key configured")).toBeInTheDocument();
     expect(screen.getByText("Adds rate limiting to the public API.")).toBeInTheDocument();
