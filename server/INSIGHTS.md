@@ -309,6 +309,24 @@ promotion rules → root `INSIGHTS.md`.
   `noUncheckedIndexedAccess` types it `string | undefined`). Any new tsx CLI
   entrypoint must use the same form.
 
+- **2026-08-20** — Five server unit tests fail **on macOS only** and pass in CI,
+  which reads for hours as "this branch broke something": 3 in
+  `test/context-walk.test.ts` (clone-root classification) and 2 in
+  `test/depgraph-adapter.test.ts` (POSIX path resolution, root outside cwd).
+  Cause: both suites build fixtures with `mkdtemp(join(tmpdir(), …))`, and on
+  macOS `os.tmpdir()` is `/var/folders/…` while `realpathSync` of it is
+  `/private/var/folders/…` (`/var` is a symlink). The code under test realpaths
+  its root and compares path prefixes — correctly, that check is the
+  symlink-escape guard from the 2026-08-06 entry above — so the un-realpathed
+  fixture path never matches and the test reads it as an escape. On Linux
+  `/tmp` is real, both strings are equal, all 22 pass. Proof in one command:
+  `cd server && TMPDIR=$(node -e "console.log(require('fs').realpathSync(require('os').tmpdir()))") pnpm exec vitest run test/depgraph-adapter.test.ts test/context-walk.test.ts`
+  → 22 passed. **Do not "fix" the production prefix check** — the bug is in the
+  fixtures. And do not let a red `--slice backend` on a Mac be attributed to the
+  branch under review: check whether the failing suite uses `tmpdir()` first.
+  This cost an entire SPEC-04 implementation run's worth of agents each
+  re-encountering the same five reds and being told to ignore them.
+
 ## Session Notes
 
 - **2026-08-13** — Audited Blast Radius against the L04 requirements after PR #8
