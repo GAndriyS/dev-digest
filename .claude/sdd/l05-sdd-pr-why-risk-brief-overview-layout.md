@@ -34,13 +34,30 @@ Notes:
 | 0 spec | SPEC-04 +AC-56…AC-69, ~AC-21/30/33 | 101k | `spec-creator`; 3 open questions закриті людиною, Status → approved руками |
 | 0 plan | 9 кроків · single-agent | 114k | `implementation-planner`; заголовок регіону 3 переписано на мокап рішенням людини |
 | 1 read plan | 3 хвилі · 1 смуга | — | DAG stated in plan |
-| 2 implement | — | — | |
-| 3 find | — | — | |
-| 3b review loop | — | — | |
-| 4 verify | — | — | |
-| 5 docs | — | — | |
+| 2 implement | 8/8 | 106k + 115k + 143k | три делегації, кожна `Steps: N/N`, без ре-делегацій |
+| 3 find | arch: PASS 0 · cr: 3 · sec: 0 | 85k ∥ — ∥ — | `/code-review` high; `/security-review` на дифі прогону — чисто |
+| 3b review loop | PASS після 1 циклу | 65k | усі 3 знахідки закриті; ре-ревʼю не запускалось — arch не мав жодної знахідки, а fix-пас торкнувся тесту, ключа й коментарів |
+| 4 verify | 31 MET · 0 NOT MET · 1 UNVERIFIABLE | 85k | UNVERIFIABLE = e2e (агент read-only); знято головною сесією: `E2E_PG_PORT=5440 ./scripts/e2e.sh` → 12/12 |
+| 5 docs | `client/README.md`, `server/README.md` | 93k | без нового файла й без діаграми — оновлені наявні описи |
 | 6 pr | — | — | |
+
+## Known pre-existing failures
+
+Не знадобилось: смуга `frontend` була зелена на базі й лишилась зеленою; жодне падіння прогону не було чужим (усі — очікувані наслідки кроків 1–6, закриті кроком 7).
 
 ## Reports
 
-_(поки порожньо — заповнюється після кожної стадії)_
+### Stage 3 — `/code-review` (high), 3 findings, усі закриті `cf1eb4d`
+
+1. `client/src/lib/hooks/brief.ts` — вибір рядка оцінки (`newest kind==='review'`) втратив єдиний тест, коли `PrBriefCard` став prop-driven: заміна на `reviews?.[0]` лишала всі 428 тестів зеленими. → новий `client/src/lib/hooks/brief.test.tsx`.
+2. `client/messages/en/brief.json` — ключ `card.reviewFocus` більше не рендериться ніде. → видалений.
+3. `page.tsx:96,122`, `DiffTab.tsx:91`, `SmartDiffViewer/helpers.ts:71` — коментарі називали власником рядків Review Focus `PrBriefCard`. → перенаправлені на `ReviewFocusPanel`.
+
+### Stage 3 — `architecture-reviewer`: PASS
+
+0 CRITICAL / 0 WARNING / 0 SUGGESTION. Клієнтський depcruise (453 модулі, 969 залежностей) і `check-ui-conventions` — exit 0. Перевірено окремо: місце `usePrBriefSection` (`src/lib/hooks/`, не route-local), `ReviewFocusPanel/` як сусід `PrBriefCard/` у тому ж route-дереві, барель без `export *`, рівно один комплект стилів `focus*` після переносу, жодного дотику до `vendor/shared`, `vendor/ui`, `server/**`, `IntentCard/**`, `BlastTab/**`.
+
+### Stage 4 — `plan-verifier`: 31 MET, 0 PARTIAL, 0 NOT MET, 1 UNVERIFIABLE
+
+Незапитаних змін немає; `client/src/lib/hooks/brief.test.tsx` — задеклароване відхилення fix-пасу, не незапитана зміна. Єдиний UNVERIFIABLE — edge case «флоу 12 перевірити цілком»: агент read-only не піднімає докер-стек. Головна сесія прогнала `E2E_PG_PORT=5440 ./scripts/e2e.sh` → **12/12 flows passed**, включно з флоу 12 і незміненим флоу 02, тож пункт закритий і conformance читається як COMPLETE.
+
