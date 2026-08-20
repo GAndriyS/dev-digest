@@ -13,7 +13,7 @@ import type {
   SkillVersion,
 } from '@devdigest/shared';
 import { reviewPullRequest } from '@devdigest/reviewer-core';
-import { AppError, ConfigError, NotFoundError } from '../../platform/errors.js';
+import { AppError, ConfigError, NotFoundError, NoProviderKeyError } from '../../platform/errors.js';
 import { parseUnifiedDiff } from '../../adapters/git/diff-parser.js';
 import type { EvalCaseRow, SkillRow, SkillsRepository } from './repository.js';
 import {
@@ -21,7 +21,6 @@ import {
   EVAL_FALLBACK_PROVIDER,
   EVAL_HARNESS_PROMPT,
   EVAL_STRATEGY,
-  NO_PROVIDER_KEY_CODE,
   STATS_WINDOW_DAYS,
 } from './constants.js';
 import {
@@ -42,21 +41,7 @@ import { buildSkillImportPreview, decodeImportPayload } from './import.js';
  * harness that scores a skill against a stored diff with a REAL model call.
  */
 
-/**
- * 409, not 500: "you have not configured a key yet" is a state the UI is
- * expected to render (Run buttons disabled), not a server fault. The code is
- * part of the contract with the client — see `NO_PROVIDER_KEY_CODE`.
- */
-export class NoProviderKeyError extends AppError {
-  constructor(provider: string) {
-    super(
-      NO_PROVIDER_KEY_CODE,
-      `No API key configured for provider "${provider}" — add one in Settings to run evals.`,
-      409,
-      { provider },
-    );
-  }
-}
+export { NoProviderKeyError } from '../../platform/errors.js';
 
 export interface CreateSkillInput {
   name: string;
@@ -435,7 +420,7 @@ export class SkillsService {
     try {
       return await this.container.llm(provider);
     } catch (err) {
-      if (err instanceof ConfigError) throw new NoProviderKeyError(provider);
+      if (err instanceof ConfigError) throw new NoProviderKeyError(provider, 'run evals');
       throw err;
     }
   }

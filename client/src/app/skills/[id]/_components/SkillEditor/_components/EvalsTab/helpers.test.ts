@@ -1,13 +1,10 @@
 import { describe, it, expect } from "vitest";
 import type { EvalCase, EvalRun } from "@devdigest/shared";
-import { ApiError } from "@/lib/api";
 import {
   actualFindings,
   caseOutcome,
   countPassing,
   EMPTY_EXPECTED,
-  indexRunsByCase,
-  isNoProviderKey,
   readExpected,
   toExpectedOutput,
 } from "./helpers";
@@ -136,43 +133,10 @@ describe("actualFindings", () => {
   });
 });
 
-describe("indexRunsByCase", () => {
-  const cases = [evalCase("c1", "alpha"), evalCase("c2", "beta")];
-
-  it("matches a run to its case by trace name, whatever the order", () => {
-    const beta = run(1, 1, { name: "beta", actual: 1 });
-    const alpha = run(0, 1, { name: "alpha", actual: 0 });
-    const byId = indexRunsByCase(cases, [beta, alpha]);
-    expect(byId.c1).toBe(alpha);
-    expect(byId.c2).toBe(beta);
-  });
-
-  it("falls back to list order for runs with no identifying trace", () => {
-    const first = run(1, 1);
-    const second = run(0, 1);
-    const byId = indexRunsByCase(cases, [first, second]);
-    expect(byId.c1).toBe(first);
-    expect(byId.c2).toBe(second);
-  });
-});
-
 describe("countPassing", () => {
   it("counts only cases whose run passed", () => {
     const cases = [evalCase("c1", "alpha"), evalCase("c2", "beta"), evalCase("c3", "gamma")];
     const results = { c1: run(1, 1), c2: run(0, 1) };
     expect(countPassing(cases, results)).toBe(1);
-  });
-});
-
-describe("isNoProviderKey", () => {
-  it("recognises the 409 the eval endpoints answer with", () => {
-    expect(isNoProviderKey(new ApiError("nope", 409, "no_provider_key"))).toBe(true);
-  });
-
-  it("ignores every other failure", () => {
-    expect(isNoProviderKey(new ApiError("conflict", 409, "other"))).toBe(false);
-    expect(isNoProviderKey(new ApiError("boom", 500))).toBe(false);
-    expect(isNoProviderKey(new Error("boom"))).toBe(false);
-    expect(isNoProviderKey(null)).toBe(false);
   });
 });

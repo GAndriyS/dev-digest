@@ -42,6 +42,26 @@ export class ConfigError extends AppError {
   }
 }
 
+/** Wire code the client keys its disabled "run/generate" actions off. */
+export const NO_PROVIDER_KEY_CODE = 'no_provider_key';
+
+/**
+ * 409, not 500 — "no key configured yet" is a UI state, not a server fault.
+ * One class for every LLM feature (conventions, skills evals, onboarding) so
+ * the code, status and message shape cannot drift per module; `action`
+ * finishes the sentence ("… add one in Settings to <action>.").
+ */
+export class NoProviderKeyError extends AppError {
+  constructor(provider: string, action: string) {
+    super(
+      NO_PROVIDER_KEY_CODE,
+      `No API key configured for provider "${provider}" — add one in Settings to ${action}.`,
+      409,
+      { provider },
+    );
+  }
+}
+
 /**
  * Compact an error for logging. Pino serializes a thrown object in full, and
  * Octokit hangs the entire request AND response — every header — off its

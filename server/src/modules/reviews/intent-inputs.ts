@@ -31,19 +31,13 @@ export function hunkHeaderDigest(diff: UnifiedDiff): string {
   return lines.join('\n');
 }
 
-/** Same shape as the (private) regex in `adapters/github/octokit.ts:128` — that
- *  method isn't reusable (correction 1: private, and reaching it directly
- *  would trip `no-direct-adapter-clients`), so the pattern is duplicated here. */
-const LINKED_ISSUE_RE = /(?:closes|fixes|resolves)?\s*#(\d+)/i;
-
-/** The first `#N` referenced in a PR body (optionally preceded by a closing
- *  keyword), or `undefined` for an absent/empty body or no match. */
-export function linkedIssueNumber(body: string | null | undefined): number | undefined {
-  if (!body) return undefined;
-  const m = body.match(LINKED_ISSUE_RE);
-  if (!m?.[1]) return undefined;
-  return Number(m[1]);
-}
+/**
+ * PROMOTED to `modules/_shared/linked-issue.ts` (L05 amendment A2) so
+ * `modules/brief/**` can read the same linked-issue number without importing
+ * this module's internals (`no-cross-module-internals`). Re-exported here
+ * under the same name — no behavioural change to L03.
+ */
+export { linkedIssueNumber } from '../_shared/linked-issue.js';
 
 /** A path-shaped token ending in `.md`, loose enough to catch bare mentions
  *  and markdown-link destinations alike; filtering below does the real work. */

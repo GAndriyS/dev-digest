@@ -11,6 +11,8 @@ const runAllMutate = vi.fn();
 const state = {
   cases: [] as EvalCase[],
   runError: null as unknown,
+  runOnePending: false,
+  runAllPending: false,
 };
 
 vi.mock("@/lib/hooks/skills", () => ({
@@ -23,11 +25,16 @@ vi.mock("@/lib/hooks/skills", () => ({
   useCreateEvalCase: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useUpdateEvalCase: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useDeleteEvalCase: () => ({ mutate: vi.fn(), isPending: false }),
-  useRunEvalCase: () => ({ mutate: runOneMutate, isPending: false, error: state.runError }),
-  useRunAllEvals: () => ({ mutate: runAllMutate, isPending: false, error: null }),
+  useRunEvalCase: () => ({
+    mutate: runOneMutate,
+    isPending: state.runOnePending,
+    error: state.runError,
+  }),
+  useRunAllEvals: () => ({ mutate: runAllMutate, isPending: state.runAllPending, error: null }),
 }));
 
 import { EvalsTab } from "./EvalsTab";
+import { SkillEvalRunProvider } from "../../../SkillEvalRun";
 
 const SKILL: Skill = {
   id: "sk1",
@@ -71,7 +78,9 @@ const RUN: EvalRun = {
 function renderTab() {
   return render(
     <NextIntlClientProvider locale="en" messages={{ skills: messages }}>
-      <EvalsTab skill={SKILL} />
+      <SkillEvalRunProvider skill={SKILL}>
+        <EvalsTab skill={SKILL} />
+      </SkillEvalRunProvider>
     </NextIntlClientProvider>,
   );
 }
@@ -79,6 +88,8 @@ function renderTab() {
 beforeEach(() => {
   state.cases = [];
   state.runError = null;
+  state.runOnePending = false;
+  state.runAllPending = false;
   runOneMutate.mockReset();
   runAllMutate.mockReset();
 });
@@ -126,6 +137,20 @@ describe("EvalsTab", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("No LLM provider key is configured");
     expect(screen.getByText("Run").closest("button")).toBeDisabled();
     expect(screen.getByText("Run all").closest("button")).toBeDisabled();
+  });
+
+  it("disables Run all during a single-case run without relabeling it as running", () => {
+    // Seam regression (L05 step 10): `running` (shared across runOne/runAll,
+    // used to disable every Run button) and the Run-all button's own label
+    // are not the same flag. A single case running must not make the Run all
+    // button claim it is the one running.
+    state.cases = [evalCase("c1", "secret in config")];
+    state.runOnePending = true;
+    renderTab();
+    const runAllButton = screen.getByText("Run all").closest("button")!;
+    expect(runAllButton).toBeDisabled();
+    expect(runAllButton).toHaveTextContent("Run all");
+    expect(screen.queryByText("Running…")).not.toBeInTheDocument();
   });
 
   it("opens the case modal from Add case", () => {

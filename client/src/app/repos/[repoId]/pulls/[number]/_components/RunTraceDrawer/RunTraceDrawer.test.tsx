@@ -19,8 +19,13 @@ const TRACE: RunTrace = {
   ],
 };
 
+// Mutable so a test can swap in a trace WITH attached specs (AC-22/AC-23)
+// without re-mocking the module — vi.mock's factory is hoisted and evaluated
+// once, so the mock reads this field live rather than closing over a fixed value.
+const state = { trace: TRACE };
+
 vi.mock("../../../../../../../lib/hooks/trace", () => ({
-  useRunTrace: () => ({ data: TRACE, isLoading: false }),
+  useRunTrace: () => ({ data: state.trace, isLoading: false }),
 }));
 vi.mock("../../../../../../../lib/hooks/reviews", () => ({
   useRunEvents: () => ({ events: [], running: false }),
@@ -28,7 +33,10 @@ vi.mock("../../../../../../../lib/hooks/reviews", () => ({
 
 import RunTraceDrawer from "./RunTraceDrawer";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  state.trace = TRACE;
+});
 
 function renderWithIntl(ui: React.ReactElement) {
   return render(
@@ -52,5 +60,21 @@ describe("A5 Run Trace drawer (smoke)", () => {
     fireEvent.click(screen.getByText("log"));
     // LiveLogStream renders its filter input
     expect(screen.getByPlaceholderText("Filter log…")).toBeInTheDocument();
+  });
+
+  it("labels the Prompt assembly's project-context block as untrusted attached specs (AC-23) and lists specs_read under Configuration (AC-22)", () => {
+    state.trace = {
+      ...TRACE,
+      specs_read: ["specs/SPEC-01-project-context.md", "docs/README.md"],
+      prompt_assembly: { ...TRACE.prompt_assembly, specs: '<untrusted source="spec-0">…</untrusted>' },
+    };
+    renderWithIntl(<RunTraceDrawer runId="r1" agentName="Security" prNumber={482} onClose={() => {}} />);
+
+    expect(screen.getByText("specs/SPEC-01-project-context.md")).toBeInTheDocument();
+    expect(screen.getByText("docs/README.md")).toBeInTheDocument();
+
+    // Prompt assembly is collapsed by default — open it to reach the block.
+    fireEvent.click(screen.getByText("Prompt assembly"));
+    expect(screen.getByText("Project context — attached specs (untrusted)")).toBeInTheDocument();
   });
 });

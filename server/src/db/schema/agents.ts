@@ -61,3 +61,23 @@ export const agentSkills = pgTable(
   },
   (t) => ({ pk: primaryKey({ columns: [t.agentId, t.skillId] }) }),
 );
+
+/**
+ * Project Context documents attached directly to an agent (Project Context
+ * feature). `path` is the repo-relative `.md` path validated at the contract
+ * edge (`ContextPaths`); it is never sufficient license to open the file —
+ * the run path re-checks it against the live clone with the guarded reader.
+ * PK `(agent_id, path)` mirrors `agentSkills`'s composite-PK shape and doubles
+ * as the FK index, so no separate index is needed.
+ */
+export const agentContextDocs = pgTable(
+  'agent_context_docs',
+  {
+    agentId: uuid('agent_id')
+      .notNull()
+      .references(() => agents.id, { onDelete: 'cascade' }),
+    path: text('path').notNull(),
+    position: integer('position').notNull().default(0),
+  },
+  (t) => ({ pk: primaryKey({ columns: [t.agentId, t.path] }) }),
+);

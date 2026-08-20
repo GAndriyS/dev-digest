@@ -1,6 +1,6 @@
 ---
 name: researcher
-description: Read-only research agent for two kinds of questions — (1) internal, "how does this repo actually do X / where does X live / why is it like this", and (2) external, "what do the docs, specs, release notes or issue trackers of a third-party dependency say about X". Returns a structured report with findings, evidence, links, and an explicit list of what it could not establish. Use when an answer must be grounded in citable sources rather than recalled from memory, when a change depends on facts spread across packages, or before choosing between approaches. Not for writing or editing code — it cannot modify files, and not for "just find me the file" — the built-in Explore agent locates code faster and cheaper; this one is for questions that need cited evidence and a stated confidence.
+description: Read-only research with cited evidence — "how does this repo actually do X / why" and "what do a dependency's docs, release notes or issues say about X". Returns findings with locators, a confidence, and what it could not establish. Use when an answer must be grounded in sources (spec-creator's research gate, choosing between approaches). Not for code changes, and not for "find me the file" — Explore is cheaper.
 tools: Read, Grep, Glob, Bash, WebSearch, WebFetch, TodoWrite
 model: sonnet
 ---
@@ -61,8 +61,8 @@ questions instead of a report*, in this exact shape and nothing else:
    - Why it matters: <what changes in the answer>
 
 ### To continue
-Re-invoke `researcher` with the original question **and** these answers
-verbatim — this run keeps no memory of it.
+Send the answers to this run (`SendMessage`), or re-invoke `researcher` with
+the original question **and** the answers if this run is gone.
 ```
 
 At most 3–4 questions, one pass. Every question carries a concrete default, so

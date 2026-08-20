@@ -163,3 +163,78 @@ export const PrBrief = z.object({
   history: PrHistory,
 });
 export type PrBrief = z.infer<typeof PrBrief>;
+
+// ---- PR Why/Risk Brief (pr_brief.head_sha / generated_at / model) ----
+/**
+ * One item the model was told to look at while reviewing. `path` is the ONLY
+ * navigation target — it must be a path from this PR's changed files, and the
+ * client opens exactly that `FileCard` via `?file=`. `line` is text-only
+ * context (e.g. "around line 42" in the reason), never a jump target and
+ * never an anchor: blast-radius line numbers resolve against `indexed_sha`,
+ * not `head_sha` (see BlastRadius.indexed_sha), so a `file:line` pair here
+ * could point at a line that has since moved. `null` means the model did not
+ * name a line, not "line 0".
+ */
+export const ReviewFocusItem = z.object({
+  path: z.string(),
+  reason: z.string(),
+  line: z.number().int().nullable(),
+});
+export type ReviewFocusItem = z.infer<typeof ReviewFocusItem>;
+
+/**
+ * Provenance for one input the brief generator tried to use. `ref` and the
+ * legal `status` values differ by `type`:
+ *  - `intent`       — `ref: null`; `status` `used` | `unavailable`.
+ *  - `blast`        — `ref` is `indexed_sha` or `null`; `status` `used` |
+ *                      `partial` | `degraded` — the only variant where
+ *                      `partial`/`degraded` are legal, and the reason a brief
+ *                      may not claim "nothing depends on this".
+ *  - `diff`         — `ref: null`; `unavailable` when `pr_files` is empty
+ *                      (a PR nobody has opened yet).
+ *  - `linked_issue`  — `ref` is `#<number>` as a string; `unavailable` when
+ *                      there is no linked issue or GitHub did not respond.
+ *  - `context_doc`  — one entry PER DOCUMENT, `ref` is the repo-relative
+ *                      POSIX path; `used` for docs that made it into the
+ *                      prompt, `unavailable` for ones dropped by the budget
+ *                      or unreadable.
+ */
+export const BriefInput = z.object({
+  type: z.enum(['intent', 'blast', 'diff', 'linked_issue', 'context_doc']),
+  ref: z.string().nullable(),
+  status: z.enum(['used', 'unavailable', 'partial', 'degraded']),
+});
+export type BriefInput = z.infer<typeof BriefInput>;
+
+/**
+ * "Why this PR, what to watch" brief — a separate, additive artifact from
+ * `PrBrief` above (not a replacement; both are stored under `pr_brief`).
+ * `what`/`why` and every `ReviewFocusItem.reason` are untrusted model text,
+ * rendered escaped. There is deliberately no `score` field here: the review
+ * score's single source of truth is `reviews.score`, read separately.
+ */
+export const PrWhyBrief = z.object({
+  /** What the PR does — never a paraphrase of the PR title. */
+  what: z.string(),
+  /** Why the change was made. */
+  why: z.string(),
+  /** Same severity scale as `Risk.severity` — intentionally not a new enum. */
+  risk_level: RiskSeverity,
+  /** At most 5 after server-side truncation; may be empty. */
+  risks: z.array(Risk),
+  /** At most 5 after server-side truncation; an empty array is valid. */
+  review_focus: z.array(ReviewFocusItem),
+  inputs: z.array(BriefInput),
+  /** The commit this brief was generated from. */
+  head_sha: z.string(),
+  /** ISO timestamp. */
+  generated_at: z.string(),
+  model: z.string().nullable(),
+  /**
+   * Computed by the server on every read by comparing this brief's
+   * `head_sha` against the PR's current `head_sha` — never computed by the
+   * client, which only displays it.
+   */
+  stale: z.boolean(),
+});
+export type PrWhyBrief = z.infer<typeof PrWhyBrief>;

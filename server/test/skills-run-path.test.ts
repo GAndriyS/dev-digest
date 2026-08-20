@@ -81,6 +81,10 @@ function harness(
   const traces: RunTrace[] = [];
   const recorded: { runId: string; entries: RunSkillEntry[] }[] = [];
 
+  const projectContext: Pick<Container, 'projectContext'>['projectContext'] = {
+    resolveForRun: async () => ({ specs: [], attached: [], specsRead: [], skipped: [] }),
+  };
+
   const container = {
     runBus,
     git: new MockGitClient(),
@@ -90,6 +94,17 @@ function harness(
         recorded.push({ runId, entries });
       },
     },
+    // L05 — every pre-work facade the run touches must be mocked, or the run
+    // fails BEFORE the model call and every llm.calls[] assertion below reads
+    // as "undefined" for the wrong reason (`server/INSIGHTS.md`, 2026-08-11).
+    // This suite is about skills, not Project Context, so an always-empty
+    // resolution is the correct stand-in.
+    //
+    // Typed against `Pick<Container, 'projectContext'>` (not folded into the
+    // `as unknown as Container` cast below) so the NEXT `ResolvedContextDocs`
+    // shape change fails `tsc` right here instead of surfacing as `undefined`
+    // at runtime mid-suite (plan Recommendations §4).
+    projectContext,
   } as unknown as Container;
 
   const repo = {

@@ -1,8 +1,12 @@
 import 'dotenv/config';
 import { pathToFileURL } from 'node:url';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import { dirname, join } from 'node:path';
 import { createDb, type Db } from './client.js';
 import * as t from './schema.js';
 import { eq, and } from 'drizzle-orm';
+import type { PrWhyBrief } from '@devdigest/shared';
 import {
   GENERAL_REVIEWER_PROMPT,
   SECURITY_REVIEWER_PROMPT,
@@ -30,6 +34,101 @@ import {
  * It has never been a live key. Do not "fix" this by inlining it.
  */
 const FIXTURE_STRIPE_KEY = ['sk', 'live', '51H8xQ2eZvKYlo2CkqPmNbVwX'].join('_');
+
+/**
+ * L05 — Project Context fixture docs. Written to disk under the demo repo's
+ * fixture "clone" (see `writeContextFixture` below) so `GET /repos/:id/context`
+ * and the seeded trace below have real content — no GitHub, no real clone.
+ * Two files, one per configured root (`specs`, `docs`), matches interview
+ * decision Q1 ("extend the seed — full e2e flow").
+ *
+ * SPEC-01 AC-36 adds a third: `INSIGHTS.md` at the fixture clone's ROOT (not
+ * under an `insights/` directory — the spec's own default), matched by the
+ * NEW file-name rule rather than by root, so the listing shows a badge that
+ * comes from a name match, not a root. `attachedToDemoRun: false` — the
+ * plan's Recommendations §1 was declined ("Default: as requested"): AC-36
+ * only asks for a listing entry and a page badge, not a doc reaching the
+ * seeded run's prompt, so this file is written and listed but deliberately
+ * left OUT of `specsRead`/`prompt_assembly.specs` below.
+ */
+const CONTEXT_FIXTURE_FILES: ReadonlyArray<{
+  relPath: string;
+  content: string;
+  attachedToDemoRun: boolean;
+}> = [
+  {
+    relPath: 'specs/overview.md',
+    content: [
+      '# Payments API — Overview',
+      '',
+      'Handles payment intents, webhooks, and the public rate-limited endpoints',
+      'for the acme storefront. See `docs/architecture.md` for the request path.',
+      '',
+    ].join('\n'),
+    attachedToDemoRun: true,
+  },
+  {
+    relPath: 'docs/architecture.md',
+    content: [
+      '# Architecture',
+      '',
+      '`src/middleware/ratelimit.ts` wraps every route under `src/api/public/**`',
+      'with a token-bucket limiter before the request reaches its handler.',
+      '',
+    ].join('\n'),
+    attachedToDemoRun: true,
+  },
+  {
+    relPath: 'INSIGHTS.md',
+    content: [
+      '# Payments API — Insights',
+      '',
+      'Rate limiting only guards `src/api/public/**` — internal routes still have',
+      'no per-IP budget. Revisit before opening any of them up externally.',
+      '',
+    ].join('\n'),
+    attachedToDemoRun: false,
+  },
+];
+
+/**
+ * Write the fixture docs to `root` (idempotent: always the same content, so a
+ * repeated `pnpm db:seed` overwrites in place rather than accumulating).
+ */
+async function writeContextFixture(root: string): Promise<void> {
+  for (const f of CONTEXT_FIXTURE_FILES) {
+    const abs = join(root, ...f.relPath.split('/'));
+    await mkdir(dirname(abs), { recursive: true });
+    await writeFile(abs, f.content, 'utf8');
+  }
+}
+
+/**
+ * Where the Project Context fixture clone goes — a directory the seed itself
+ * exclusively owns, independent of `AppConfig.cloneDir`/`DEVDIGEST_CLONE_DIR`.
+ *
+ * Fix pass 1 (l05-sdd-project-context), item 2: the original version derived
+ * this from `loadConfig().cloneDir` (falling back only when that landed
+ * inside `server/clones/**`) and called `writeContextFixture` unconditionally
+ * every `pnpm db:seed`. That broke two ways: (a) once `DEVDIGEST_CLONE_DIR`
+ * changed between seed runs, the fixture was written to the NEW path while
+ * `repos.clonePath` — set only once, when it was still null — kept pointing
+ * at the OLD one, so `GET /repos/:id/context` read an empty/missing
+ * directory; (b) when the computed path happened to already be a genuine
+ * checkout (`SimpleGitClient` uses this exact `<cloneDir>/<owner>/<repo>`
+ * layout for a real clone), every reseed overwrote real working-tree files
+ * with fixture content.
+ *
+ * Pinning this to a fixed, config-independent location under the user's home
+ * removes both failure modes: no real clone is ever placed here (a real
+ * clone always goes through `cloneDir`), so the only way `repos.clonePath`
+ * can equal this path is if a PRIOR seed run set it — see the call site
+ * below, which only ever writes when it is also deciding (or has already
+ * decided) that this is the repo's clone path.
+ */
+function contextFixtureRootFor(owner: string, name: string): string {
+  return join(homedir(), '.devdigest', 'context-fixtures', owner, name);
+}
 
 /** Default provider/model for the built-in reviewer agents. */
 const DEFAULT_PROVIDER = 'openrouter' as const;
@@ -187,6 +286,24 @@ export async function seed(db: Db): Promise<{ workspaceId: string; userId: strin
   }
   const repoId = repo!.id;
 
+  // ---- L05: Project Context fixture clone ----
+  // A directory this seed owns outright (see `contextFixtureRootFor`),
+  // written ONLY when it is also becoming — or has already become — this
+  // repo's `clonePath`, so the DB pointer and the written location can never
+  // drift apart, and a reseed never clobbers a genuine checkout that happens
+  // to live somewhere else.
+  const contextFixtureRoot = contextFixtureRootFor(repo!.owner, repo!.name);
+  if (!repo!.clonePath) {
+    await writeContextFixture(contextFixtureRoot);
+    await db.update(t.repos).set({ clonePath: contextFixtureRoot }).where(eq(t.repos.id, repoId));
+    repo!.clonePath = contextFixtureRoot;
+  } else if (repo!.clonePath === contextFixtureRoot) {
+    // Already pointing at our own fixture dir from a prior seed run — refresh
+    // idempotently (`writeContextFixture` always writes the same content).
+    await writeContextFixture(contextFixtureRoot);
+  }
+  // else: `clonePath` points somewhere else (a real clone) — never touched.
+
   // ---- PR #482 (rate limiting) ----
   let [pr] = await db
     .select()
@@ -270,6 +387,76 @@ export async function seed(db: Db): Promise<{ workspaceId: string; userId: strin
       },
     ]);
   }
+
+  // ---- L05: seeded PR Why + Risk Brief for PR #482 (SPEC-04 step 12) ----
+  // A deterministic, pre-generated `pr_brief` row so the e2e flow (plan step
+  // 13) has a Why + Risk Brief card to click without ever triggering a model
+  // call (`e2e/AGENTS.md` forbids flows that do). `head_sha` matches PR #482's
+  // own seeded `headSha` exactly, so the server's staleness check
+  // (`pr_brief.head_sha` vs `pull_requests.head_sha`) never marks this row
+  // stale. `review_focus[].path` and `risks[].file_refs` only name paths that
+  // are actually among PR #482's seeded `pr_files` above (`src/config.ts`,
+  // `src/middleware/ratelimit.ts`) — the same grounding rule the real
+  // generator enforces (AC-18/AC-20) — and `src/config.ts` is the file the
+  // e2e flow expects the diff tab to open on.
+  const prWhyBrief: PrWhyBrief = {
+    what:
+      'Adds a token-bucket rate limiter in front of the public API routes and wires it into the shared request config, touching the webhook and user-list endpoints along the way.',
+    why:
+      'The public endpoints currently accept unlimited requests from unauthenticated clients; this closes that gap before the next release.',
+    risk_level: 'high',
+    risks: [
+      {
+        kind: 'security',
+        title: 'Changed file already carries a flagged secret',
+        explanation:
+          'src/config.ts is touched by this PR and a prior review already flagged a hardcoded Stripe secret key on line 12 of that file — confirm the new lines do not add to that exposure before merging.',
+        severity: 'high',
+        file_refs: ['src/config.ts'],
+      },
+      {
+        kind: 'reliability',
+        title: 'New middleware has no accompanying test file',
+        explanation:
+          'src/middleware/ratelimit.ts is new in this diff and none of the other changed files is a test for it — the token-bucket edge cases (burst, reset, concurrent requests) are unverified.',
+        severity: 'medium',
+        file_refs: ['src/middleware/ratelimit.ts'],
+      },
+    ],
+    review_focus: [
+      {
+        path: 'src/config.ts',
+        reason:
+          'Already flagged for a hardcoded secret in an earlier review — check whether this PR touches that same region.',
+        line: null,
+      },
+      {
+        path: 'src/middleware/ratelimit.ts',
+        reason: 'New rate-limiting logic with no test coverage in this diff — review the token-bucket behaviour directly.',
+        line: null,
+      },
+    ],
+    inputs: [
+      { type: 'intent', ref: null, status: 'unavailable' },
+      { type: 'blast', ref: null, status: 'degraded' },
+      { type: 'diff', ref: null, status: 'used' },
+      { type: 'linked_issue', ref: null, status: 'unavailable' },
+    ],
+    head_sha: pr!.headSha,
+    generated_at: '2026-08-19T12:00:00.000Z',
+    model: 'gpt-4.1',
+    stale: false,
+  };
+  await db
+    .insert(t.prBrief)
+    .values({
+      prId: pr!.id,
+      json: prWhyBrief,
+      headSha: pr!.headSha,
+      generatedAt: new Date(prWhyBrief.generated_at),
+      model: prWhyBrief.model,
+    })
+    .onConflictDoNothing();
 
   // ---- PR #483 (breaking API contract change) ----
   // The control-experiment fixture: a diff that breaks a published contract
@@ -392,6 +579,104 @@ export async function seed(db: Db): Promise<{ workspaceId: string; userId: strin
       .from(t.agents)
       .where(and(eq(t.agents.workspaceId, workspaceId), eq(t.agents.name, a.name)));
     if (!existing) await db.insert(t.agents).values(a);
+  }
+
+  // ---- L05: seeded run + trace with a non-empty specs_read (Project Context
+  // e2e reachability, interview decision Q1) ----
+  // Without this row `AC-22`/`AC-23` (the Configuration card's "Specs read"
+  // and the Prompt assembly "Project context" section) have nothing to open
+  // in e2e — the demo repo's hand-seeded review above has no `agent_runs` row
+  // at all. Matched on (pr, agent, source) so a repeated `pnpm db:seed` finds
+  // its own fixture run instead of inserting a second one.
+  const [generalReviewer] = await db
+    .select()
+    .from(t.agents)
+    .where(and(eq(t.agents.workspaceId, workspaceId), eq(t.agents.name, 'General Reviewer')));
+  if (generalReviewer && pr) {
+    let [fixtureRun] = await db
+      .select()
+      .from(t.agentRuns)
+      .where(
+        and(
+          eq(t.agentRuns.prId, pr.id),
+          eq(t.agentRuns.agentId, generalReviewer.id),
+          eq(t.agentRuns.source, 'local'),
+        ),
+      );
+    if (!fixtureRun) {
+      [fixtureRun] = await db
+        .insert(t.agentRuns)
+        .values({
+          workspaceId,
+          agentId: generalReviewer.id,
+          prId: pr.id,
+          provider: generalReviewer.provider,
+          model: generalReviewer.model,
+          durationMs: 4200,
+          tokensIn: 1840,
+          tokensOut: 410,
+          status: 'done',
+          source: 'local',
+          findingsCount: 2,
+          grounding: '2/2 passed',
+          score: 61,
+          blockers: 1,
+          costUsd: 0.004,
+        })
+        .returning();
+    }
+    if (fixtureRun) {
+      // Only the SPEC-01 pair reaches the demo run's prompt — see
+      // `attachedToDemoRun`'s doc comment above `CONTEXT_FIXTURE_FILES`.
+      const demoRunFiles = CONTEXT_FIXTURE_FILES.filter((f) => f.attachedToDemoRun);
+      const specsRead = demoRunFiles.map((f) => f.relPath);
+      const specsBlock = demoRunFiles.map((f) => `### ${f.relPath}\n\n${f.content}`).join('\n\n');
+      await db
+        .insert(t.runTraces)
+        .values({
+          runId: fixtureRun.id,
+          trace: {
+            config: {
+              agent: generalReviewer.name,
+              version: String(generalReviewer.version),
+              provider: generalReviewer.provider,
+              model: generalReviewer.model,
+              pr: pr.number,
+              source: 'local',
+            },
+            stats: {
+              duration_ms: 4200,
+              tokens_in: 1840,
+              tokens_out: 410,
+              cost_usd: 0.004,
+              findings: 2,
+              grounding: '2/2 passed',
+            },
+            prompt_assembly: {
+              system: GENERAL_REVIEWER_PROMPT,
+              skills: null,
+              memory: null,
+              specs: specsBlock,
+              user: `Review PR #${pr.number} — ${pr.title}`,
+            },
+            tool_calls: [{ tool: 'review_file', args: 'all files', meta: 'single-pass', ms: 4200 }],
+            raw_output: 'Solid middleware approach; see findings for details.',
+            memory_pulled: [],
+            specs_read: specsRead,
+            log: [
+              { t: '00.00', kind: 'info', msg: `Starting review with agent "${generalReviewer.name}"` },
+              // SPEC-01 AC-37/AC-38/AC-44 — the summary line first (both docs
+              // are the agent's own, no linked skill in this fixture), then
+              // one attributed `attached` line per doc.
+              { t: '00.01', kind: 'info', msg: `Project context: ${specsRead.length} doc(s) attached, 0 skipped` },
+              { t: '00.01', kind: 'info', msg: `Project context: attached ${specsRead[0]} (agent, ~46 tokens)` },
+              { t: '00.01', kind: 'info', msg: `Project context: attached ${specsRead[1]} (agent, ~44 tokens)` },
+              { t: '04.20', kind: 'result', msg: `Citation grounding: 2/2 passed` },
+            ],
+          },
+        })
+        .onConflictDoNothing();
+    }
   }
 
   // ---- built-in skills ----

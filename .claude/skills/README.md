@@ -19,7 +19,9 @@ Reusable AI skills that provide specialized knowledge and workflows. Canonical l
 | [security](security/SKILL.md) | Full-stack | OWASP Top 10:2025, auth, injection, uploads, secrets |
 | [mermaid-diagram](mermaid-diagram/SKILL.md) | Shared | Mermaid diagrams in markdown (flowcharts, sequence, ERD, …) |
 | [engineering-insights](engineering-insights/SKILL.md) | Meta | Captures session findings into per-module INSIGHTS.md (append-only learnings loop) |
-| [pr-self-review](pr-self-review/SKILL.md) `v3.0.1` | Meta | Reviews the local diff with the routed skills before a PR is opened; run manually, CI enforces the mechanical half |
+| [pr-self-review](pr-self-review/SKILL.md) `v3.1.0` | Meta | Reviews the local diff with the routed skills before a PR is opened; run manually, CI enforces the mechanical half |
+| [implement](implement/SKILL.md) `v1.1.0` | Meta | `/implement <plan>` — runs an approved plan: implementer → architecture-reviewer ∥ /code-review ∥ /security-review → fix loop → plan-verifier → doc-writer → /pr-self-review, with human gates, a shared handoff brief and a per-stage cost log in `.claude/sdd/` |
+| [workflow-retro](workflow-retro/SKILL.md) `v0.1.0` | Meta | `/workflow-retro [slug] [--deep]` — retrospective of a multi-agent run from the current chat: agents, order, tokens, struggles, duplication, handoff losses, proposals; appends to `docs/retro/ledger/`. Manual only — no hook, not part of `/implement` |
 
 ## What Are Skills?
 

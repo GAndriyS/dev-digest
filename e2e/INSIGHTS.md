@@ -11,6 +11,34 @@ skill, append-only. Entry format and promotion rules → root `INSIGHTS.md`.
 
 ## Tool & Library Notes
 
+- **2026-08-19** — `find role link click --name "<label>"` does **not** resolve
+  the sidebar entries, even though they render as `<a>`: the hermetic run failed
+  with `Command failed: agent-browser find role link click --name Onboarding
+  Tour` while every other step passed, and switching to `find text "<label>"
+  click` (what `10-project-context.flow.json` already uses for Project Context)
+  made the same flow green. Prefer the text locator for nav items; keep
+  `find role button --name` for the in-page controls, where it does work
+  (`08-skills.flow.json`). Both still need the `set viewport 1280 900` first
+  step for the reason recorded above.
+
+- **2026-08-18** — `find text <text> click` can report `✓ Done` and change
+  nothing when the target sits UNDER a stacked sibling at the click point — the
+  default headless viewport here is 1264×569, short enough that
+  `RunTraceDrawer`'s fixed footer covers the "Prompt assembly" section header
+  once scrolled into view, so three consecutive CLI clicks toggled nothing
+  while a raw `element.click()` toggled it instantly. Confirm with
+  `document.elementFromPoint` at the reported coordinate. The fix is
+  `set viewport <w> <h>` as the flow's first step (1280×900 in
+  `10-project-context.flow.json`), **not** a `scrollintoview` retry — scrolling
+  does not correct for an overlay that is fixed. Second shape of the same bug
+  (2026-08-19, `08-skills.flow.json`, CI-only): a target inside an
+  independently-scrolling column (`overflowY: auto`, Skills Lab list) that lies
+  below the 569px fold — `document.elementFromPoint` at the click point is
+  `null`, the CLI still prints `✓`, and the flow times out on the NEXT step
+  (`wait --url /skills/`). It passed locally only because the local viewport was
+  taller; the tell is a flow green on a laptop and red only in CI at an
+  identical commit. Same fix: `set viewport` first.
+
 - **2026-08-04** — On Windows the runner dies with `spawn agent-browser ENOENT`
   on every step even when `agent-browser --version` works in the shell. `run.ts`
   uses `execFile`, which goes through CreateProcess and cannot execute the npm
@@ -21,6 +49,20 @@ skill, append-only. Entry format and promotion rules → root `INSIGHTS.md`.
   this happens — all seven fail identically on their first step.
 
 ## Recurring Errors & Fixes
+
+- **2026-08-18** — `scripts/e2e.sh` can run a whole suite against a **stale
+  server from an earlier interrupted run** and report the failures as flaky
+  flows. Its readiness check `curl`s the target port and does not verify the
+  responder is the process it just spawned, so an orphaned `node.exe` still
+  bound to 3100/3101 satisfies it while the script's own `next dev`/`tsx`
+  died a few lines earlier with `EADDRINUSE`. The tell: flows that assert on
+  seeded text (`Add rate limiting to public API endpoints`) fail while flows
+  with no seed-specific assertions pass — a stale differently-seeded app, not
+  a broken flow. Kill whatever listens on the configured `E2E_*_PORT`s before
+  rerunning. Related, same run: port 5433 was held by an unrelated project's
+  Postgres container, which the script's own `E2E_PG_PORT` override handles —
+  do not stop another project's container, and do not rely on the bare
+  defaults on a machine that runs more than one Postgres.
 
 - **2026-08-04** — Running `scripts/e2e.sh` while a dev `next dev` is up in the
   same checkout poisons BOTH: they share `client/.next`, and `NEXT_PUBLIC_*` is
@@ -61,6 +103,28 @@ skill, append-only. Entry format and promotion rules → root `INSIGHTS.md`.
   on 3001 (see root `INSIGHTS.md`). Override the whole port set rather than
   stopping their stack:
   `E2E_PG_PORT=5443 E2E_API_PORT=3101 E2E_WEB_PORT=3100 ./scripts/e2e.sh`.
+- **2026-08-20** — The e2e stack's default web port (`E2E_WEB_PORT`, 3100,
+  `scripts/e2e.sh:33`) is the SAME port `.claude/launch.json`'s `web` preview
+  server uses, so running flows while the preview stack is up puts the flows on
+  the dev server and the dev database. The failure looks nothing like a port
+  clash: the stack boots, flows 02/04/05/08/10/12 die at
+  `find text "Add rate limiting to public API endpoints" click` or
+  `wait --url /skills/`, because those flows follow the home redirect to the
+  FIRST repo and the dev DB has other repos (`e2e/AGENTS.md:24`). 5/12 passed
+  with the preview up, 12/12 with
+  `E2E_PG_PORT=5440 E2E_API_PORT=3201 E2E_WEB_PORT=3200 ./scripts/e2e.sh` and
+  the identical tree. Move the whole port set when a preview is running — and
+  note the reverse direction too: with no override, e2e takes 3100 and the
+  preview `web` server dies mid-run.
+
+- **2026-08-20** — `wait --text` / `get text` match the browser's **rendered**
+  text, after CSS. This repo's `SectionLabel` and score-label spans are
+  uppercased with `text-transform`, so a flow asserting the string from
+  `client/messages/en/*.json` — `"Why + Risk Brief"`, `"Agent review score"` —
+  fails with "text not found" while the label is plainly on screen. Match the
+  uppercased form (`WHY + RISK BRIEF`). Applies to any styled label, and it is a
+  false "the feature is broken" signal, not a flake: found while writing
+  `12-pr-why-risk-brief.flow.json`.
 
 ## Session Notes
 

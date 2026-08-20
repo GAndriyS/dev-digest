@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { render, screen, fireEvent, cleanup, within } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup, within, waitFor } from "@testing-library/react";
 import { NextIntlClientProvider } from "next-intl";
 import type { FindingRecord, PrFile, SmartDiff, SmartDiffFile } from "@devdigest/shared";
 // DiffTab and the SmartDiffViewer it renders read copy from two namespaces:
@@ -100,6 +100,7 @@ function renderTab(
     filesCount?: number;
     findings?: FindingRecord[];
     onOpenFinding?: (findingId: string) => void;
+    targetPath?: string | null;
   } = {},
 ) {
   const files = props.files ?? FILES;
@@ -111,6 +112,7 @@ function renderTab(
         files={files}
         findings={props.findings ?? []}
         onOpenFinding={props.onOpenFinding ?? vi.fn()}
+        targetPath={props.targetPath}
       />
     </NextIntlClientProvider>,
   );
@@ -180,5 +182,76 @@ describe("DiffTab", () => {
     expect(screen.getByText("3 files")).toBeInTheDocument();
     expect(screen.getByText("+4")).toBeInTheDocument();
     expect(screen.getByText("−2")).toBeInTheDocument();
+  });
+});
+
+// SPEC-04 AC-34/AC-35: a `targetPath` (the page's `?file=`, from a PrBriefCard
+// Review Focus click) opens the file expanded and scrolled into view, without
+// going through SmartDiffViewer's own grouped `fileMeta` (R3/Amendment A3 —
+// `targetFileMeta` in `SmartDiffViewer/helpers.ts` is the single assembly
+// point, DiffTab renders the flat DiffViewer directly instead of reaching
+// into SmartDiffViewer's).
+describe("DiffTab target file navigation (?file=)", () => {
+  // jsdom has no scrollIntoView implementation; the scroll-to-target effect
+  // calls it whenever `targetPath` resolves to a rendered file.
+  beforeEach(() => {
+    Element.prototype.scrollIntoView = vi.fn();
+  });
+
+  // Large enough that FileCard's own size heuristic would leave it collapsed
+  // absent `defaultOpen` — the only way `firstFindingId`-free content proves
+  // the override actually fired, not the heuristic coincidentally agreeing.
+  const LARGE_FILE = prFile({
+    path: "src/big.ts",
+    additions: 250,
+    deletions: 0,
+    patch: "@@ -1,1 +1,1 @@\n-old\n+new",
+  });
+
+  it("forces Original order and expands the target file via defaultOpen, bypassing Smart order's own fileMeta", () => {
+    state.smartDiff = {
+      groups: [{ role: "core", files: [smartDiffFile({ path: "src/big.ts", additions: 250, deletions: 0 })] }],
+      split_suggestion: { too_big: false, total_lines: 0, proposed_splits: [] },
+    };
+    renderTab({ files: [LARGE_FILE], filesCount: 1, targetPath: "src/big.ts" });
+
+    // Original order, not Smart order — SmartDiffViewer's "Core logic" group
+    // header never renders, confirming the direct-DiffViewer path was taken.
+    expect(screen.getByRole("radio", { name: "Original order" })).toBeChecked();
+    expect(screen.queryByText("Core logic")).not.toBeInTheDocument();
+    // FileCard's own heuristic (>200 changed lines) would leave this card
+    // COLLAPSED absent an override — its patch lines rendering at all is the
+    // observable proof `defaultOpen: true` (not the heuristic) opened it.
+    expect(screen.getByText("old")).toBeInTheDocument();
+    expect(screen.getByText("new")).toBeInTheDocument();
+  });
+
+  it("drives scrollIntoView off the requestAnimationFrame loop for the target file", async () => {
+    renderTab({ targetPath: "src/middleware/ratelimit.ts" });
+
+    await waitFor(() => {
+      expect(Element.prototype.scrollIntoView).toHaveBeenCalled();
+    });
+    const calls = (Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>).mock.calls;
+    expect(calls[0]?.[0]).toEqual({ block: "center" });
+  });
+
+  it("does not call scrollIntoView, and keeps the Smart order default, when there is no target", () => {
+    renderTab();
+
+    expect(screen.getByRole("radio", { name: "Smart order" })).toBeChecked();
+    expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
+  });
+
+  it("stays inert (no crash, no scroll) when the target path names a file outside this render's list", async () => {
+    renderTab({ targetPath: "src/does-not-exist.ts" });
+
+    // Original order is still forced (the page already filtered `?file=`
+    // against `pr.files` before this point — DiffTab has no opinion of its
+    // own on whether the path is real) — but nothing ever matches, so the
+    // scroll loop runs out its frame budget without ever finding a target.
+    expect(screen.getByRole("radio", { name: "Original order" })).toBeChecked();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
   });
 });

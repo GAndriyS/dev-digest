@@ -67,6 +67,19 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
   const container = new Container(config, db, opts.overrides);
   app.decorate('container', container);
 
+  // PROJECT_CONTEXT_FILES entries AC-5 dropped (not a bare `.md` name, or
+  // containing a path separator) — reported here, not in `loadConfig` itself,
+  // because `loadConfig()` runs before this `app.log` exists (`server.ts`
+  // calls it to pick `logLevel` before `buildApp` constructs Fastify). Makes
+  // an operator's typo visible instead of it silently landing on the default
+  // list (`code-review`, fix pass 1, item 2).
+  if (config.contextFilesDropped.length > 0) {
+    app.log.warn(
+      { dropped: config.contextFilesDropped, using: config.contextFiles },
+      'PROJECT_CONTEXT_FILES: dropped entries that are not a bare .md file name',
+    );
+  }
+
   // Reap runs left 'running' by a previous (now-dead) process — otherwise they
   // show as perpetually "running" in the UI and can't be cancelled (no runner).
   //

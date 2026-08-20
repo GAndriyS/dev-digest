@@ -1,0 +1,33 @@
+{
+  "name": "Project Context page lists the fixture docs; a seeded run's trace shows Specs read and the attached-specs prompt block",
+  "description": "From the PR list, follows the sidebar's 'Project Context' entry (nav.ts row, AC-4) to /repos/:repoId/context and confirms both L05 seed fixture docs (specs/overview.md, docs/architecture.md) render in the list, plus the fixture doc matched only by configured file name (INSIGHTS.md, badged 'insights' rather than a root — AC-27/AC-36), then selects the overview doc and confirms its rendered Markdown preview (AC-6). Returns to the PR list via the sidebar, opens PR #482's Agent runs tab, and opens the trace drawer for the seeded 'General Reviewer' run (server/src/db/seed.ts's L05 fixture: an agent_runs row with a non-empty specs_read + prompt_assembly.specs). Confirms the Configuration card's 'Specs read' row lists both attached paths (AC-22) and, after expanding Prompt assembly, the attached-specs block's label (AC-23). Deterministic locators only, no chat, no model call — everything here is seeded read-only data.",
+  "steps": [
+    { "cmd": ["set", "viewport", "1280", "900"], "label": "tall enough viewport — the trace drawer's fixed footer overlaps 'Prompt assembly' under the default (short) headless viewport, silently swallowing the click" },
+    { "cmd": ["open", "{BASE}/"], "label": "load the app root" },
+    { "cmd": ["wait", "--url", "/pulls"], "label": "land on the PR list" },
+    { "cmd": ["find", "text", "Project Context", "click"], "label": "sidebar nav — open Project Context (nav.ts, g x)" },
+    { "cmd": ["wait", "--url", "/context"], "label": "context route reached" },
+    { "cmd": ["wait", "--load", "networkidle"], "label": "context listing fetch settles" },
+    { "cmd": ["wait", "--text", "specs/overview.md"], "label": "seeded fixture doc under specs/ is listed" },
+    { "cmd": ["wait", "--text", "docs/architecture.md"], "label": "seeded fixture doc under docs/ is listed" },
+    { "cmd": ["wait", "--text", "INSIGHTS.md"], "label": "SPEC-01 AC-36 fixture doc, matched by configured file name at the clone root (not under a configured root), is listed" },
+    { "cmd": ["wait", "--text", "insights"], "label": "its badge reads the matched name's lowercased stem, not a root (AC-2) — the only 'insights' text on the page while files are listed" },
+    { "cmd": ["find", "text", "specs/overview.md", "click"], "label": "select the overview doc" },
+    { "cmd": ["wait", "--load", "networkidle"], "label": "single-doc preview fetch settles" },
+    { "cmd": ["wait", "--text", "Handles payment intents, webhooks"], "label": "preview renders the doc body as Markdown, not raw text" },
+    { "cmd": ["find", "text", "Pull Requests", "click"], "label": "sidebar nav — back to the PR list" },
+    { "cmd": ["wait", "--url", "/pulls"], "label": "PR list route reached" },
+    { "cmd": ["find", "text", "Add rate limiting to public API endpoints", "click"], "label": "open PR #482" },
+    { "cmd": ["wait", "--url", "/pulls/482"], "label": "navigate to the PR detail route" },
+    { "cmd": ["wait", "--load", "networkidle"], "label": "PR detail data settles" },
+    { "cmd": ["find", "role", "button", "click", "--name", "Agent runs"], "label": "switch to the Agent runs tab" },
+    { "cmd": ["wait", "--url", "tab=findings"], "label": "findings tab is active in the URL" },
+    { "cmd": ["wait", "--text", "General Reviewer"], "label": "seeded L05 fixture run appears in the Timeline" },
+    { "cmd": ["find", "role", "button", "click", "--name", "Open run trace & logs"], "label": "open the trace drawer for the fixture run" },
+    { "cmd": ["wait", "--text", "Specs read"], "label": "Configuration card's Specs read row renders (open by default)" },
+    { "cmd": ["wait", "--text", "specs/overview.md"], "label": "first attached path listed, in prompt order (AC-22)" },
+    { "cmd": ["wait", "--text", "docs/architecture.md"], "label": "second attached path listed" },
+    { "cmd": ["find", "text", "Prompt assembly", "click"], "label": "expand the Prompt assembly section (collapsed by default)" },
+    { "cmd": ["wait", "--text", "Project context — attached specs (untrusted)"], "label": "attached-specs block carries the AC-23 label" }
+  ]
+}

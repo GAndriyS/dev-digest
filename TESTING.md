@@ -68,7 +68,17 @@ No `chat`, no model key.
 ## Running locally
 
 ```sh
-# per package
+# the CI lanes, one command each — mirrors .github/workflows/*.yml, prints one
+# line per gate and the failing gate's output only (what agents and humans
+# should reach for first)
+node scripts/verify.mjs --slice frontend            # client: typecheck · depcruise · ui-conventions · vitest
+node scripts/verify.mjs --slice backend             # server: typecheck · depcruise · unit vitest
+node scripts/verify.mjs --slice reviewer-core
+node scripts/verify.mjs --slice mcp
+node scripts/verify.mjs --slice integration         # server *.it.test.ts, needs Docker + migrated DB
+node scripts/verify.mjs --slice backend --tests-only --only test/reviews   # iterate on one file
+
+# per package, raw
 cd client        && pnpm test           # + pnpm typecheck
 cd reviewer-core && npm test
 cd mcp           && npm test            # + npm run typecheck

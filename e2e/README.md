@@ -100,5 +100,8 @@ a CI artifact by `.github/workflows/e2e-web.yml`).
 | `05-pr-diff` | PR #482 → Files changed tab → seeded file renders in the diff viewer |
 | `06-onboarding` | `/onboarding` → add-repository form renders (no submit) |
 | `07-settings` | `/settings/api-keys` + `/settings/models` → section titles render |
-| `08-skills` | `/skills` lists the seeded skills → Preview renders a body; agent editor Skills tab shows the linked count |
+| `08-skills` | `/skills` lists the seeded skills in the master-detail left column → selecting a card navigates straight into `/skills/:id?tab=` (no side-preview step) → Context tab shows the shared picker; agent editor Skills tab shows the linked count |
 | `09-pr-smart-diff` | PR #482 → Files changed tab → Smart Diff groups by role ("Core logic"), seeded core file renders in its group, Smart/Original order toggle renders |
+| `10-project-context` | Sidebar → `/repos/:repoId/context` → seeded fixture docs listed (specs/overview.md, docs/architecture.md, plus the name-matched INSIGHTS.md (SPEC-01 AC-26) with its `insights` badge) + Markdown preview → PR #482 Agent runs tab → seeded run's trace drawer shows "Specs read" and the `Project context — attached specs (untrusted)` prompt block |
+| `11-onboarding-tour` | Sidebar → `/repos/:repoId/onboarding` → seeded repo has a clone but no repo-intel index, so the skeleton empty state renders ("Tour isn't ready yet" + "Try again" CTA) |
+| `12-pr-why-risk-brief` | PR #482 → Overview tab → seeded Why + Risk Brief card renders, plus the agent review score (61, from the seeded `reviews` row — independent of the brief) → click the first Review Focus row (src/config.ts) → Files changed tab opens targeted at that file (`?tab=diff&file=`) → reload reproduces the same state from the URL alone. Regenerate is never clicked (no model call) |

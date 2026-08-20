@@ -47,6 +47,15 @@ export interface IndexState extends IndexResult {
   /** True when the layer is running on the ripgrep fallback. */
   degraded?: boolean;
   degradedReason?: DegradedReason;
+  /**
+   * Walk-time counters from `pipeline/walk.ts`'s `WalkStats`, persisted into
+   * `repo_index_state.stats` and surfaced here so callers (onboarding) don't
+   * need their own read of that column. `0` on the synthesised degraded
+   * state (no persisted row = nothing was ever walked).
+   */
+  totalCandidates: number;
+  /** Files dropped because the walk hit `MAX_INDEXED_FILES` (0 = not bounded). */
+  bounded: number;
 }
 
 // ---------------------------------------------------------------------------

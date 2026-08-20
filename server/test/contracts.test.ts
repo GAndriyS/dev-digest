@@ -1,4 +1,7 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   Review,
   Finding,
@@ -18,6 +21,11 @@ import {
   SkillInput,
   SkillPatch,
   MAX_SKILL_BODY_CHARS,
+  SpecFile,
+  ContextListing,
+  ContextPaths,
+  MAX_CONTEXT_PATH_LEN,
+  MAX_CONTEXT_PATHS,
 } from '@devdigest/shared';
 import { API_CONTRACT_GATE_SKILL } from '../src/db/seed-prompts.js';
 
@@ -152,7 +160,31 @@ describe('AI contracts parse fixtures', () => {
     ).not.toThrow();
     expect(() =>
       Onboarding.parse({
-        sections: [{ kind: 'architecture', title: 'T', body: 'b', links: [] }],
+        status: 'ready',
+        reason: null,
+        generated_at: '2026-08-18T00:00:00.000Z',
+        index: { files_indexed: 120, total_candidates: 150, bounded: true, status: 'partial' },
+        sections: [{ kind: 'architecture_overview', title: 'T', body: 'b', links: [] }],
+      }),
+    ).not.toThrow();
+    // Empty state — no tour generated yet: `generated_at` null, `sections` empty (AC-3).
+    expect(() =>
+      Onboarding.parse({
+        status: 'ready',
+        reason: null,
+        generated_at: null,
+        index: { files_indexed: 0, total_candidates: 0, bounded: false, status: 'full' },
+        sections: [],
+      }),
+    ).not.toThrow();
+    // Skeleton — generation did not run to completion: `reason` names why (AC-24).
+    expect(() =>
+      Onboarding.parse({
+        status: 'skeleton',
+        reason: 'not_indexed',
+        generated_at: null,
+        index: { files_indexed: 0, total_candidates: 0, bounded: false, status: 'degraded' },
+        sections: [],
       }),
     ).not.toThrow();
     expect(() =>
@@ -176,6 +208,47 @@ describe('AI contracts parse fixtures', () => {
         sources: [{ pr: 401, context: 'ctx' }],
       }),
     ).not.toThrow();
+  });
+
+  it('mirrors the Onboarding* block across BOTH @devdigest/shared copies on disk (SPEC-03 AC-30)', () => {
+    // AC-30 requires `status`/`reason`/`generated_at`/`index` to be "present
+    // in BOTH copies" of @devdigest/shared, but (per the plan's Context read)
+    // the two copies of knowledge.ts are NOT identical overall — only the
+    // `Onboarding*` block is mirrored, never the whole file (the client copy
+    // deliberately lacks AgentVersion/AgentVersionConfig). This reads both
+    // files' source directly (no module resolution, no alias) and requires
+    // the mirrored block to be byte-identical, except for
+    // `OnboardingGenerateBody` — a request body, not part of the `Onboarding`
+    // resource, kept server-only until a client hook needs it (see the
+    // comment on that export in the server copy).
+    const extractOnboardingBlock = (src: string): string => {
+      // `\r?\n`, not `\n`: with `core.autocrlf=true` and no `.gitattributes`,
+      // a Windows checkout has CRLF on disk, and an `\n`-only marker regex
+      // then finds nothing in either copy — the test failed for every Windows
+      // contributor while CI (LF) stayed green.
+      const match = src.match(/\/\/ ---- Onboarding ----\r?\n([\s\S]*?)\r?\n\/\/ ---- Eval ----/);
+      if (!match) throw new Error('Onboarding block marker not found');
+      return match[1]!
+        .replace(
+          /\/\*\*(?:(?!\*\/)[\s\S])*?\*\/\s*\nexport const OnboardingGenerateBody[\s\S]*?export type OnboardingGenerateBody = z\.infer<typeof OnboardingGenerateBody>;\n?/,
+          '',
+        )
+        .trim();
+    };
+    const testDir = dirname(fileURLToPath(import.meta.url));
+    const serverSrc = readFileSync(
+      resolve(testDir, '../src/vendor/shared/contracts/knowledge.ts'),
+      'utf8',
+    );
+    const clientSrc = readFileSync(
+      resolve(testDir, '../../client/src/vendor/shared/contracts/knowledge.ts'),
+      'utf8',
+    );
+    const serverBlock = extractOnboardingBlock(serverSrc);
+    const clientBlock = extractOnboardingBlock(clientSrc);
+    expect(serverBlock).not.toContain('OnboardingGenerateBody');
+    expect(clientSrc).not.toContain('OnboardingGenerateBody');
+    expect(clientBlock).toBe(serverBlock);
   });
 
   it('RunTrace (data2.jsx TRACE single-document)', () => {
@@ -272,5 +345,140 @@ describe('SkillInput bounds the body', () => {
     // Guards the constant itself: a cap tightened below the seeded skills would
     // make the app's own content unsaveable.
     expect(MAX_SKILL_BODY_CHARS).toBeGreaterThan(API_CONTRACT_GATE_SKILL.length * 2);
+  });
+});
+
+describe('ContextListing wraps SpecFile with directory metadata', () => {
+  it('parses a listing with badge fields on each file', () => {
+    expect(() =>
+      ContextListing.parse({
+        files: [
+          {
+            path: 'specs/SPEC-01-project-context.md',
+            root: 'specs',
+            size: 4096,
+            updated_at: '2026-08-01T00:00:00.000Z',
+            tokens_est: 1024,
+            used_by_agents: 2,
+          },
+        ],
+        total: 1,
+        truncated: false,
+        roots: ['specs', 'docs', 'insights'],
+        file_names: ['INSIGHTS.md'],
+        scanned_at: '2026-08-18T00:00:00.000Z',
+      }),
+    ).not.toThrow();
+  });
+
+  it('accepts an empty listing (no .md under the configured roots)', () => {
+    expect(() =>
+      ContextListing.parse({
+        files: [],
+        total: 0,
+        truncated: false,
+        roots: ['specs', 'docs', 'insights'],
+        file_names: ['INSIGHTS.md'],
+        scanned_at: '2026-08-18T00:00:00.000Z',
+      }),
+    ).not.toThrow();
+  });
+
+  it('SpecFile still parses without the new badge fields (single-doc read)', () => {
+    expect(() =>
+      SpecFile.parse({
+        path: 'docs/README.md',
+        content: '# hi',
+      }),
+    ).not.toThrow();
+  });
+
+  it('parses a listing that carries file_names alongside roots', () => {
+    expect(() =>
+      ContextListing.parse({
+        files: [],
+        total: 0,
+        truncated: false,
+        roots: ['specs', 'docs'],
+        file_names: ['INSIGHTS.md'],
+        scanned_at: '2026-08-18T00:00:00.000Z',
+      }),
+    ).not.toThrow();
+  });
+
+  it('rejects a listing missing file_names — proves the field is required on the resolved schema', () => {
+    const withoutFileNames = {
+      files: [],
+      total: 0,
+      truncated: false,
+      roots: ['specs', 'docs'],
+      scanned_at: '2026-08-18T00:00:00.000Z',
+    };
+    expect(() => ContextListing.parse(withoutFileNames)).toThrow();
+  });
+
+  it('carries file_names as a required field in BOTH @devdigest/shared copies on disk (code-review, fix pass 1, item 3)', () => {
+    // `@devdigest/shared` resolves to `./src/vendor/shared` in this package's
+    // tsconfig/vitest alias (server/tsconfig.json, server/vitest.config.ts) —
+    // every `ContextListing.parse(...)` test above exercises the SERVER copy
+    // only, never the client mirror. A rebase that drops the client mirror
+    // hunk would leave those tests green while the copies diverge, so this
+    // reads both files' source directly (no module resolution, no alias) and
+    // requires the same required, non-optional field declaration in each.
+    const requiredFileNamesField = /file_names:\s*z\.array\(z\.string\(\)\)\s*,/;
+    const testDir = dirname(fileURLToPath(import.meta.url));
+    const serverSrc = readFileSync(
+      resolve(testDir, '../src/vendor/shared/contracts/platform.ts'),
+      'utf8',
+    );
+    const clientSrc = readFileSync(
+      resolve(testDir, '../../client/src/vendor/shared/contracts/platform.ts'),
+      'utf8',
+    );
+    expect(serverSrc).toMatch(requiredFileNamesField);
+    expect(clientSrc).toMatch(requiredFileNamesField);
+  });
+});
+
+describe('ContextPaths bounds and shapes the attachment set', () => {
+  const validPath = 'specs/SPEC-01-project-context.md';
+
+  it('accepts a well-formed repo-relative .md path', () => {
+    expect(() => ContextPaths.parse({ paths: [validPath] })).not.toThrow();
+  });
+
+  it('accepts an empty set (detach everything)', () => {
+    expect(() => ContextPaths.parse({ paths: [] })).not.toThrow();
+  });
+
+  it('rejects a leading slash', () => {
+    expect(() => ContextPaths.parse({ paths: ['/specs/a.md'] })).toThrow();
+  });
+
+  it('rejects .. traversal', () => {
+    expect(() => ContextPaths.parse({ paths: ['specs/../../etc/passwd.md'] })).toThrow();
+  });
+
+  it('rejects a backslash (not POSIX)', () => {
+    expect(() => ContextPaths.parse({ paths: ['specs\\a.md'] })).toThrow();
+  });
+
+  it('rejects a non-.md extension', () => {
+    expect(() => ContextPaths.parse({ paths: ['specs/a.txt'] })).toThrow();
+  });
+
+  it('rejects a path past MAX_CONTEXT_PATH_LEN', () => {
+    const long = 'specs/' + 'a'.repeat(MAX_CONTEXT_PATH_LEN) + '.md';
+    expect(() => ContextPaths.parse({ paths: [long] })).toThrow();
+  });
+
+  it('rejects more paths than MAX_CONTEXT_PATHS', () => {
+    const paths = Array.from({ length: MAX_CONTEXT_PATHS + 1 }, (_, i) => `specs/f${i}.md`);
+    expect(() => ContextPaths.parse({ paths })).toThrow();
+  });
+
+  it('accepts exactly MAX_CONTEXT_PATHS entries', () => {
+    const paths = Array.from({ length: MAX_CONTEXT_PATHS }, (_, i) => `specs/f${i}.md`);
+    expect(() => ContextPaths.parse({ paths })).not.toThrow();
   });
 });

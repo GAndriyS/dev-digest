@@ -83,7 +83,7 @@ export const MIN_SNIPPET_CHARS = 15;
 export const EXTRACTION_SCHEMA_NAME = 'ConventionExtraction';
 
 /** Mirrors the skills module — the UI keys its disabled Run button off this. */
-export const NO_PROVIDER_KEY_CODE = 'no_provider_key';
+export { NO_PROVIDER_KEY_CODE } from '../../platform/errors.js';
 
 /** Thrown when the repo has never been cloned, so there is nothing to read. */
 export const REPO_NOT_CLONED_CODE = 'repo_not_cloned';

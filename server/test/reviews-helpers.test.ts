@@ -1,6 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { taskLine, flagOutOfScope } from '../src/modules/reviews/helpers.js';
+import {
+  taskLine,
+  flagOutOfScope,
+  formatContextSummaryLine,
+  formatContextAttachedLine,
+  formatContextSkippedLine,
+} from '../src/modules/reviews/helpers.js';
 import type { Finding, Intent } from '@devdigest/shared';
+import type { ContextDocSource } from '../src/modules/context/types.js';
 
 /**
  * Unit coverage for the review task-line. The key invariant: our trusted
@@ -52,6 +59,74 @@ describe('taskLine', () => {
     expect(withIntent).toContain('src/api/ratelimit.ts');
     expect(withIntent).toContain('src/legacy/**');
     expect(withIntent).toContain('auth bypass');
+  });
+});
+
+/**
+ * SPEC-01 AC-37/AC-38/AC-41 — the three Project Context Live Log line shapes,
+ * byte-for-byte. The two prefixes (`Project context: attached ` /
+ * `Project context: skipped `) are asserted literally because
+ * `test/reviews.it.test.ts:406` and the seed fixture already rely on them.
+ */
+describe('Project Context log-line formatters', () => {
+  const AGENT: ContextDocSource = { kind: 'agent' };
+  const VIA_SKILL: ContextDocSource = { kind: 'skill', skillId: 'sk1', skillName: 'pr-quality-rubric', skillVersion: 2 };
+
+  describe('formatContextSummaryLine (AC-37)', () => {
+    it('formats N attached / M skipped', () => {
+      expect(formatContextSummaryLine(2, 1)).toBe('Project context: 2 doc(s) attached, 1 skipped');
+    });
+
+    it('formats the zero/zero case the same way — no special-casing (edge case, 19/08)', () => {
+      expect(formatContextSummaryLine(0, 0)).toBe('Project context: 0 doc(s) attached, 0 skipped');
+    });
+  });
+
+  describe('formatContextAttachedLine (AC-38)', () => {
+    it('names the agent as the source right after the path', () => {
+      expect(formatContextAttachedLine('specs/security.md', AGENT, 12)).toBe(
+        'Project context: attached specs/security.md (agent, ~12 tokens)',
+      );
+    });
+
+    it('names an inherited skill by name+version, matching the run\'s "Skills:" line vocabulary', () => {
+      expect(formatContextAttachedLine('specs/security.md', VIA_SKILL, 12)).toBe(
+        'Project context: attached specs/security.md (via skill pr-quality-rubric v2, ~12 tokens)',
+      );
+    });
+
+    it('keeps the exact prefix `Project context: attached ` — existing tests and the seed fixture depend on it', () => {
+      expect(formatContextAttachedLine('a.md', AGENT, 1).startsWith('Project context: attached ')).toBe(true);
+    });
+  });
+
+  describe('formatContextSkippedLine (AC-41/AC-42)', () => {
+    it('inserts the source before the reason, reason stays last', () => {
+      expect(formatContextSkippedLine('specs/huge.md', AGENT, 'over the 40000-byte document limit')).toBe(
+        'Project context: skipped specs/huge.md (agent) — over the 40000-byte document limit',
+      );
+    });
+
+    it('AC-42: a skill lookup-failure pseudo-path still names the skill by name+version', () => {
+      const line = formatContextSkippedLine(
+        '(skill sk1 context)',
+        VIA_SKILL,
+        "could not load the skill's attached paths — timeout",
+      );
+      expect(line).toBe(
+        "Project context: skipped (skill sk1 context) (via skill pr-quality-rubric v2) — could not load the skill's attached paths — timeout",
+      );
+    });
+
+    it('keeps the exact prefix `Project context: skipped ` — existing tests and the seed fixture depend on it', () => {
+      expect(formatContextSkippedLine('a.md', AGENT, 'reason').startsWith('Project context: skipped ')).toBe(true);
+    });
+
+    it('the reason stays last even when the reason itself contains a dash', () => {
+      const line = formatContextSkippedLine('a.md', AGENT, 'over the 40,000-byte document limit — too large');
+      expect(line.endsWith('over the 40,000-byte document limit — too large')).toBe(true);
+      expect(line).toBe('Project context: skipped a.md (agent) — over the 40,000-byte document limit — too large');
+    });
   });
 });
 

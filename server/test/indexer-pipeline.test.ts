@@ -86,6 +86,12 @@ function makeRepoStub(opts: {
         durationMs:
           typeof s.stats.durationMs === 'number' ? (s.stats.durationMs as number) : 0,
         reason: typeof s.stats.reason === 'string' ? (s.stats.reason as string) : undefined,
+        // Mirrors the real `tryGetIndexState` mapping (repository.ts) so this
+        // stub can assert `totalCandidates`/`bounded` round-trip through
+        // `upsertIndexState`'s wholesale `stats` replacement.
+        totalCandidates:
+          typeof s.stats.totalCandidates === 'number' ? (s.stats.totalCandidates as number) : 0,
+        bounded: typeof s.stats.bounded === 'number' ? (s.stats.bounded as number) : 0,
         lastIndexedSha: s.lastIndexedSha,
         indexerVersion: s.indexerVersion,
         updatedAt: new Date(),
@@ -311,6 +317,8 @@ describe('runIncremental', () => {
       lastIndexedSha: 'sha-old',
       indexerVersion: INDEXER_VERSION,
       updatedAt: new Date(0),
+      totalCandidates: 0,
+      bounded: 0,
       ...overrides,
     };
   }
@@ -411,6 +419,31 @@ describe('runIncremental', () => {
     // counter is prior (5) + this slice's filesIndexed (1).
     expect(stub.getState()!.filesIndexed).toBe(6);
     expect(stub.getState()!.lastIndexedSha).toBe('sha-new');
+  });
+
+  it('carries the prior totalCandidates/bounded walk counters forward on a slice reparse', async () => {
+    await writeFileAt(
+      root,
+      'src/changed.ts',
+      `export function fresh(x: number) { return x; }\n`,
+    );
+
+    const stub = makeRepoStub({
+      basics: { id: 'r1', owner: 'acme', name: 'app', clonePath: root },
+      initialState: makeInitialState({ totalCandidates: 42, bounded: 3 }),
+    });
+    const container = makeContainer({
+      currentHead: async () => 'sha-new',
+      diffNameOnly: async () => ['src/changed.ts'],
+    });
+
+    await runIncremental(container, stub.repo, { repoId: 'r1' });
+
+    // The slice path never re-walks the clone (only `full.ts` does), so these
+    // must be carried forward from the PRIOR state, not zeroed out —
+    // `upsertIndexState` replaces the whole `stats` column.
+    expect(stub.getState()!.totalCandidates).toBe(42);
+    expect(stub.getState()!.bounded).toBe(3);
   });
 
   it('large diff (> threshold) → delegates to runFullIndex', async () => {

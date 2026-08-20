@@ -130,11 +130,31 @@ If a built-in's output cannot be parsed, record `delegate step skipped: <which>`
 in the report and continue. A broken delegation must not take the gate down with
 it — but it must never pass silently either.
 
+**Effort by diff size.** `/code-review` and `/security-review` go out in **one
+message**, and the level depends on how big the diff is:
+
+| Changed lines in the reviewed diff | `/code-review` level |
+|---|---|
+| ≤ 1000 | `high` |
+| > 1000 | `medium` — and say so in the report |
+
+At `high` the review fans out to eight angle agents; on a 2.6k-line feature
+diff that cost ~400k tokens for ten findings, and the one exploitable finding
+in that diff came from `/security-review`, not from any of the eight angles
+(retro `docs/retro/ledger/2026-08-19-l05-sdd-onboarding-generator.md`). Above
+the threshold the budget buys more by going to the security pass than to a
+ninth correctness angle. Never drop `/security-review` to pay for
+`/code-review` — the ratio only ever moves the other way.
+
+When this skill runs inside `/implement`, stage 3 has already run both on the
+same code; this pass is a confirmation on the FINAL diff, so a finding that
+appears here and not there is a finding about the fixes.
+
 ## Cost ceiling
 
 | Limit | Default |
 |---|---|
-| concurrent subagents | 8 |
+| concurrent subagents | 3 (was 8 — every stream-watchdog stall on the 2026-08-19 run happened with ≥ 4 in flight) |
 | files per subagent | 40 |
 | diff lines per subagent prompt | 4000 |
 

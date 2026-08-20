@@ -1,51 +1,18 @@
+import type { ComponentProps } from "react";
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent, cleanup, within } from "@testing-library/react";
 import { NextIntlClientProvider } from "next-intl";
 import type { Skill, SkillStats } from "@devdigest/shared";
 import messages from "../../../../../messages/en/skills.json";
-import { ToastProvider } from "@/lib/toast";
 
-const push = vi.fn();
 const updateMutate = vi.fn();
 
 const state = {
-  skills: [] as Skill[],
-  isError: false,
   stats: null as SkillStats | null,
 };
 
-vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push, replace: vi.fn() }),
-  useSearchParams: () => new URLSearchParams(),
-  useParams: () => ({}),
-}));
-
-// The app chrome is not what this view is about; render its children only.
-vi.mock("@/components/app-shell", () => ({
-  AppShell: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-}));
-
 vi.mock("@/lib/hooks/skills", () => ({
-  useSkills: () => ({
-    data: state.skills,
-    isLoading: false,
-    isError: state.isError,
-    refetch: vi.fn(),
-  }),
   useUpdateSkill: () => ({ mutate: updateMutate, isPending: false }),
-  useCreateSkill: () => ({
-    mutate: vi.fn(),
-    mutateAsync: vi.fn(),
-    isPending: false,
-    isError: false,
-    error: null,
-  }),
-  useImportSkillPreview: () => ({
-    mutate: vi.fn(),
-    isPending: false,
-    isError: false,
-    error: null,
-  }),
   useSkillStats: () => ({ data: state.stats }),
 }));
 
@@ -63,68 +30,137 @@ const skill = (id: string, name: string, over: Partial<Skill> = {}): Skill => ({
   ...over,
 });
 
-function renderView() {
-  return render(
+function renderList(props: Partial<ComponentProps<typeof SkillsListView>> = {}) {
+  const onRetry = vi.fn();
+  const onSelect = vi.fn();
+  const onImportCta = vi.fn();
+  render(
     <NextIntlClientProvider locale="en" messages={{ skills: messages }}>
-      <ToastProvider>
-        <SkillsListView />
-      </ToastProvider>
+      <SkillsListView
+        skills={[]}
+        isLoading={false}
+        isError={false}
+        onRetry={onRetry}
+        search=""
+        selectedId={null}
+        onSelect={onSelect}
+        onImportCta={onImportCta}
+        {...props}
+      />
     </NextIntlClientProvider>,
   );
-}
-
-/** The add menu is a dropdown: open it before its entries exist in the DOM. */
-function openAddMenu() {
-  fireEvent.click(screen.getByText("Add Skill"));
+  return { onRetry, onSelect, onImportCta };
 }
 
 beforeEach(() => {
-  state.skills = [];
-  state.isError = false;
   state.stats = null;
-  push.mockReset();
   updateMutate.mockReset();
 });
 afterEach(cleanup);
 
 describe("SkillsListView", () => {
-  it("prompts for a selection until a card is picked", () => {
-    renderView();
-    expect(screen.getByText("Select a skill")).toBeInTheDocument();
+  it("offers an import CTA when the workspace has no skills", () => {
+    const { onImportCta } = renderList();
+    expect(screen.getByText("No skills yet")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("Import from file"));
+    expect(onImportCta).toHaveBeenCalled();
   });
 
-  it("offers an import CTA when the workspace has no skills", () => {
-    renderView();
-    expect(screen.getByText("No skills yet")).toBeInTheDocument();
+  it("shows loading skeletons while the list is in flight", () => {
+    renderList({ isLoading: true, skills: [] });
+    expect(screen.queryByText("No skills yet")).not.toBeInTheDocument();
   });
 
   it("surfaces a load failure with a retry", () => {
-    state.isError = true;
-    renderView();
+    const { onRetry } = renderList({ isError: true });
     expect(screen.getByText("Could not load skills.")).toBeInTheDocument();
-    expect(screen.getByText("Retry")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("Retry"));
+    expect(onRetry).toHaveBeenCalled();
   });
 
   it("renders a card per skill with its name, type, description and toggle", () => {
-    state.skills = [skill("s1", "pr-quality-rubric", { source: "community" })];
-    renderView();
+    renderList({ skills: [skill("s1", "pr-quality-rubric", { source: "community" })] });
     const card = screen.getByRole("button", { name: /pr-quality-rubric/ });
     expect(within(card).getByText("pr-quality-rubric")).toBeInTheDocument();
     expect(within(card).getByText("rubric")).toBeInTheDocument();
     expect(within(card).getByText("pr-quality-rubric description")).toBeInTheDocument();
     expect(within(card).getByRole("switch")).toBeInTheDocument();
-    // A community import is unvetted — say so on the card.
     expect(within(card).getByText("needs vetting")).toBeInTheDocument();
   });
 
   it("renders one card per skill rather than a single rail", () => {
-    state.skills = [skill("s1", "alpha"), skill("s2", "beta"), skill("s3", "gamma")];
-    renderView();
+    renderList({ skills: [skill("s1", "alpha"), skill("s2", "beta"), skill("s3", "gamma")] });
     expect(screen.getAllByRole("switch")).toHaveLength(3);
   });
 
+  it("marks the selected card active via aria-current, not aria-pressed", () => {
+    renderList({ skills: [skill("s1", "alpha"), skill("s2", "beta")], selectedId: "s2" });
+    expect(screen.getByRole("button", { name: /beta/ })).toHaveAttribute("aria-current", "true");
+    expect(screen.getByRole("button", { name: /alpha/ })).toHaveAttribute("aria-current", "false");
+    expect(screen.getByRole("button", { name: /beta/ })).not.toHaveAttribute("aria-pressed");
+    expect(screen.getByRole("button", { name: /alpha/ })).not.toHaveAttribute("aria-pressed");
+  });
+
+  it("exposes the cards as a labelled list", () => {
+    renderList({ skills: [skill("s1", "alpha")] });
+    expect(screen.getByRole("list", { name: "Skills" })).toBeInTheDocument();
+  });
+
+  it("moves focus between cards with the arrow keys", () => {
+    renderList({ skills: [skill("s1", "alpha"), skill("s2", "beta"), skill("s3", "gamma")] });
+    const alpha = screen.getByRole("button", { name: /alpha/ });
+    const beta = screen.getByRole("button", { name: /beta/ });
+    const gamma = screen.getByRole("button", { name: /gamma/ });
+
+    alpha.focus();
+    expect(document.activeElement).toBe(alpha);
+
+    fireEvent.keyDown(alpha, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(beta);
+
+    fireEvent.keyDown(beta, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(gamma);
+
+    // Past the last card, focus stays put — there is no next sibling.
+    fireEvent.keyDown(gamma, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(gamma);
+
+    fireEvent.keyDown(gamma, { key: "ArrowUp" });
+    expect(document.activeElement).toBe(beta);
+  });
+
+  it("selects the focused card with Enter or Space", () => {
+    const { onSelect } = renderList({ skills: [skill("s1", "alpha"), skill("s2", "beta")] });
+    const beta = screen.getByRole("button", { name: /beta/ });
+    fireEvent.keyDown(beta, { key: "Enter" });
+    expect(onSelect).toHaveBeenCalledWith("s2");
+
+    onSelect.mockClear();
+    fireEvent.keyDown(beta, { key: " " });
+    expect(onSelect).toHaveBeenCalledWith("s2");
+  });
+
+  it("keeps a disabled skill's card dimmed but selectable", () => {
+    const { onSelect } = renderList({ skills: [skill("s1", "alpha", { enabled: false })] });
+    const card = screen.getByRole("button", { name: /alpha/ });
+    fireEvent.click(card);
+    expect(onSelect).toHaveBeenCalledWith("s1");
+  });
+
+  it("calls onSelect rather than navigating itself", () => {
+    const { onSelect } = renderList({ skills: [skill("s1", "alpha")] });
+    fireEvent.click(screen.getByText("alpha"));
+    expect(onSelect).toHaveBeenCalledWith("s1");
+  });
+
+  it("toggles enabled without selecting the card", () => {
+    const { onSelect } = renderList({ skills: [skill("s1", "alpha")] });
+    fireEvent.click(screen.getByRole("switch"));
+    expect(updateMutate).toHaveBeenCalledWith({ id: "s1", patch: { enabled: false } });
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
   it("renders the usage line once stats arrive", () => {
-    state.skills = [skill("s1", "pr-quality-rubric")];
     state.stats = {
       used_by: [{ agent_id: "a1", agent_name: "A", order: 0, agent_enabled: true }],
       pull_count_30d: 3,
@@ -133,93 +169,42 @@ describe("SkillsListView", () => {
       accept_rate: 0.5,
       findings_by_category: [],
     };
-    renderView();
+    renderList({ skills: [skill("s1", "pr-quality-rubric")] });
     expect(screen.getByText("1 agents · 75% pull · 50% accept")).toBeInTheDocument();
   });
 
-  it("filters on search and says so when nothing matches", () => {
-    state.skills = [skill("s1", "alpha"), skill("s2", "beta")];
-    renderView();
-    const search = screen.getByPlaceholderText("Search skills…");
-    fireEvent.change(search, { target: { value: "alph" } });
+  it("filters on the search prop and says so when nothing matches", () => {
+    const { rerender } = render(
+      <NextIntlClientProvider locale="en" messages={{ skills: messages }}>
+        <SkillsListView
+          skills={[skill("s1", "alpha"), skill("s2", "beta")]}
+          isLoading={false}
+          isError={false}
+          onRetry={vi.fn()}
+          search="alph"
+          selectedId={null}
+          onSelect={vi.fn()}
+          onImportCta={vi.fn()}
+        />
+      </NextIntlClientProvider>,
+    );
     expect(screen.getByText("alpha")).toBeInTheDocument();
     expect(screen.queryByText("beta")).not.toBeInTheDocument();
-    fireEvent.change(search, { target: { value: "zzz" } });
+
+    rerender(
+      <NextIntlClientProvider locale="en" messages={{ skills: messages }}>
+        <SkillsListView
+          skills={[skill("s1", "alpha"), skill("s2", "beta")]}
+          isLoading={false}
+          isError={false}
+          onRetry={vi.fn()}
+          search="zzz"
+          selectedId={null}
+          onSelect={vi.fn()}
+          onImportCta={vi.fn()}
+        />
+      </NextIntlClientProvider>,
+    );
     expect(screen.getByText("No matching skills")).toBeInTheDocument();
-  });
-});
-
-describe("SkillsListView › side preview", () => {
-  it("opens the preview beside the grid when a card is selected", () => {
-    state.skills = [skill("s1", "alpha")];
-    renderView();
-    fireEvent.click(screen.getByText("alpha"));
-
-    expect(screen.queryByText("Select a skill")).not.toBeInTheDocument();
-    expect(screen.getByText("Rendered body")).toBeInTheDocument();
-    // The body is RENDERED, not echoed: the bold run is an element.
-    expect(screen.getByText("specific").tagName).toBe("STRONG");
-    // …and its metadata comes along.
-    expect(screen.getByText("v1")).toBeInTheDocument();
-    expect(screen.getByText("Enabled")).toBeInTheDocument();
-  });
-
-  it("selects rather than navigates, and offers the editor as a link", () => {
-    state.skills = [skill("s1", "alpha")];
-    renderView();
-    fireEvent.click(screen.getByText("alpha"));
-    expect(push).not.toHaveBeenCalled();
-
-    fireEvent.click(screen.getByText("Open in the editor"));
-    expect(push).toHaveBeenCalledWith("/skills/s1?tab=config");
-  });
-
-  it("swaps the pane when another card is selected", () => {
-    state.skills = [skill("s1", "alpha"), skill("s2", "beta")];
-    renderView();
-    fireEvent.click(screen.getByText("alpha"));
-    fireEvent.click(screen.getByText("beta"));
-    // Scoped to the <aside>: both descriptions also exist on their own cards.
-    const pane = within(screen.getByRole("complementary"));
-    expect(pane.getByText("beta description")).toBeInTheDocument();
-    expect(pane.queryByText("alpha description")).not.toBeInTheDocument();
-  });
-
-  it("toggles enabled without selecting the card", () => {
-    state.skills = [skill("s1", "alpha")];
-    renderView();
-    fireEvent.click(screen.getByRole("switch"));
-    expect(updateMutate).toHaveBeenCalledWith({ id: "s1", patch: { enabled: false } });
-    expect(screen.getByText("Select a skill")).toBeInTheDocument();
-    expect(push).not.toHaveBeenCalled();
-  });
-});
-
-describe("SkillsListView › add menu", () => {
-  // A populated workspace: the empty state's CTA carries the same "Import from
-  // file" label, and two matches would make the assertions ambiguous.
-  beforeEach(() => {
-    state.skills = [skill("s1", "alpha")];
-  });
-
-  it("offers both creating and importing", () => {
-    renderView();
-    openAddMenu();
-    expect(screen.getByText("Create from scratch")).toBeInTheDocument();
-    expect(screen.getByText("Import from file")).toBeInTheDocument();
-  });
-
-  it("opens the authoring drawer from the create entry", () => {
-    renderView();
-    openAddMenu();
-    fireEvent.click(screen.getByText("Create from scratch"));
-    expect(screen.getByText("Add a skill")).toBeInTheDocument();
-  });
-
-  it("opens the import drawer from the import entry", () => {
-    renderView();
-    openAddMenu();
-    fireEvent.click(screen.getByText("Import from file"));
-    expect(screen.getByText("Import a skill")).toBeInTheDocument();
   });
 });

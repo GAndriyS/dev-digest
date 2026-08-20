@@ -16,6 +16,8 @@ import type {
   PrMeta,
   PrDetail,
   SpecFile,
+  ContextListing,
+  ContextPaths,
   IndexStatus,
 } from "../types";
 
@@ -119,12 +121,23 @@ export function usePullDetail(prId: string | number | null | undefined) {
   });
 }
 
-// ---- Project Context (A3 contract; safe to call once API exposes it) ----
+// ---- Project Context (A3: repo document listing + preview) ----
+
+/** Bounded, badge-able directory listing under the configured roots (specs/docs/insights). */
 export function useContextFiles(repoId: string | null | undefined) {
   return useQuery({
     queryKey: ["context", repoId],
-    queryFn: () => api.get<SpecFile[]>(`/repos/${repoId}/context`),
+    queryFn: () => api.get<ContextListing>(`/repos/${repoId}/context`),
     enabled: !!repoId,
+  });
+}
+
+/** One document's full body, for the preview panel — never the listing (that never reads content). */
+export function useContextDoc(repoId: string | null | undefined, path: string | null | undefined) {
+  return useQuery({
+    queryKey: ["context-doc", repoId, path],
+    queryFn: () => api.get<SpecFile>(`/repos/${repoId}/context/doc?path=${encodeURIComponent(path!)}`),
+    enabled: !!repoId && !!path,
   });
 }
 
@@ -133,5 +146,44 @@ export function useReindexContext() {
   return useMutation({
     mutationFn: (repoId: string) => api.post<IndexStatus>(`/repos/${repoId}/context/reindex`),
     onSuccess: (_d, repoId) => qc.invalidateQueries({ queryKey: ["context", repoId] }),
+  });
+}
+
+// ---- Project context attachments (A3: GET/POST /agents/:id/context and
+// /skills/:id/context — same shape, same set-write semantics, so one pair of
+// hooks serves both editors via `ownerType` rather than four near-duplicates). ----
+
+export type ContextOwnerType = "agent" | "skill";
+
+function ownerContextPath(ownerType: ContextOwnerType, ownerId: string): string {
+  return ownerType === "agent" ? `/agents/${ownerId}/context` : `/skills/${ownerId}/context`;
+}
+
+/** Paths currently attached to this agent/skill, in prompt order. */
+export function useOwnerContext(ownerType: ContextOwnerType, ownerId: string | null | undefined) {
+  return useQuery({
+    queryKey: ["owner-context", ownerType, ownerId],
+    queryFn: () => api.get<ContextPaths>(ownerContextPath(ownerType, ownerId!)),
+    enabled: !!ownerId,
+  });
+}
+
+export interface SetOwnerContextInput {
+  ownerType: ContextOwnerType;
+  ownerId: string;
+  /** The whole set, in prompt order — the write replaces the attachment list wholesale. */
+  paths: string[];
+}
+
+export function useSetOwnerContext() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ ownerType, ownerId, paths }: SetOwnerContextInput) =>
+      api.post<ContextPaths>(ownerContextPath(ownerType, ownerId), { paths }),
+    onSuccess: (data, { ownerType, ownerId }) => {
+      qc.setQueryData(["owner-context", ownerType, ownerId], data);
+      // "Used by N agents" on the context page/preview is derived from these links.
+      qc.invalidateQueries({ queryKey: ["context"] });
+    },
   });
 }

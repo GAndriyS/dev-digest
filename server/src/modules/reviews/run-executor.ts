@@ -6,9 +6,16 @@ import * as schema from '../../db/schema.js';
 import type { AgentRow } from '../../db/rows.js';
 import type { ReviewRepository, FindingRow, PullRow, ReviewRow } from './repository.js';
 import { REVIEW_STRATEGY } from './constants.js';
-import { taskLine, flagOutOfScope } from './helpers.js';
+import {
+  taskLine,
+  flagOutOfScope,
+  formatContextAttachedLine,
+  formatContextSkippedLine,
+  formatContextSummaryLine,
+} from './helpers.js';
 import { loadDiff } from './diff-loader.js';
 import { deriveIntent } from './intent.js';
+import { BYTES_PER_TOKEN_EST } from '../context/constants.js';
 
 /** Thrown by a run when the user cancels it mid-flight (between map files). */
 export class RunCancelledError extends Error {
@@ -182,6 +189,10 @@ export class ReviewRunExecutor {
     // Hoisted so the failure path below can report the skills this run actually
     // assembled instead of hardcoding "no skills" into every failed trace.
     let skillBodies: string[] = [];
+    // L05 — Project Context: same reasoning, hoisted so a mid-run failure's
+    // trace shows exactly what was gathered before the model call, not `[]`.
+    let contextSpecs: string[] = [];
+    let contextSpecsRead: string[] = [];
 
     try {
       // Resolve the agent's LLM provider. (container.llm throws if the provider
@@ -247,6 +258,36 @@ export class ReviewRunExecutor {
           runLog.info(`run_skills not recorded — ${(err as Error).message}`),
         );
 
+      // L05 — Project Context (SPEC-01): the agent's own attached docs, plus
+      // everything inherited from its ENABLED linked skills (same kill-switch
+      // rule as skillBodies above, applied via `linkedSkills` which is already
+      // filtered), deduplicated and packed under the block budget by the
+      // facade. `container.projectContext` is the sanctioned path — importing
+      // `modules/context/service.ts` here is exactly the boundary break
+      // `no-cross-module-internals` exists to catch. Never throws: a run must
+      // not fail because Project Context has nothing to attach, or the clone
+      // is gone (`repo.clonePath` may be null).
+      const projectContext = await this.container.projectContext.resolveForRun(
+        repo.clonePath,
+        agent.id,
+        linkedSkills.map((l) => ({ id: l.skill.id, name: l.skill.name, version: l.skill.version })),
+      );
+      contextSpecs = projectContext.specs;
+      contextSpecsRead = projectContext.specsRead;
+      // SPEC-01 AC-37..AC-43 — one summary line ALWAYS, before any per-document
+      // line, then one Live Log line per attached doc (path + source +
+      // estimate) and per skipped one (path + source + reason) —
+      // Observability NFR, "never go silent" precedent
+      // (`reviewer-core/src/review/run.ts` grounding drops).
+      runLog.info(formatContextSummaryLine(projectContext.attached.length, projectContext.skipped.length));
+      projectContext.attached.forEach(({ path, source }, i) => {
+        const tokensEst = Math.max(1, Math.ceil((contextSpecs[i]?.length ?? 0) / BYTES_PER_TOKEN_EST));
+        runLog.info(formatContextAttachedLine(path, source, tokensEst));
+      });
+      for (const { path, source, reason } of projectContext.skipped) {
+        runLog.info(formatContextSkippedLine(path, source, reason));
+      }
+
       const task = taskLine(pull, intent) + rankNote;
 
       // ---- Engine: assemble → single-pass → grounding -----------------------
@@ -265,6 +306,10 @@ export class ReviewRunExecutor {
         // byte-identical to the no-skills baseline (reviewer-core renders no
         // `## Skills / rules` section for an empty slot).
         ...(skillBodies.length > 0 ? { skills: skillBodies } : {}),
+        // L05 — resolved + packed Project Context chunks. Same omit-when-empty
+        // contract: reviewer-core renders no `## Project context` section for
+        // an empty/undefined slot.
+        ...(contextSpecs.length > 0 ? { specs: contextSpecs } : {}),
         // T1.3 — pass the callers digest only when we built one. assemblePrompt
         // omits the section when this is empty/undefined.
         ...(callersDigest ? { callers: callersDigest } : {}),
@@ -357,7 +402,10 @@ export class ReviewRunExecutor {
         })),
         raw_output: outcome.raw,
         memory_pulled: [],
-        specs_read: [],
+        // L05 — exactly the paths that made it into the prompt, in prompt
+        // order (post-dedupe, post-budget-pack); the Configuration card's
+        // "Specs read" renders this verbatim.
+        specs_read: contextSpecsRead,
         // Persisted log = the run's FULL event buffer (incl. shared pre-work:
         // diff load + intent), not just events recorded inside this method.
         log: runLog.logFor(runId),
@@ -388,7 +436,16 @@ export class ReviewRunExecutor {
       await this.repo
         .saveRunTrace(
           runId,
-          this.traceFromBuffer(runId, pull, agent, '0/0 passed', Date.now() - start, skillBodies),
+          this.traceFromBuffer(
+            runId,
+            pull,
+            agent,
+            '0/0 passed',
+            Date.now() - start,
+            skillBodies,
+            contextSpecs,
+            contextSpecsRead,
+          ),
         )
         .catch(() => undefined);
       this.container.runBus.complete(runId);
@@ -501,6 +558,10 @@ export class ReviewRunExecutor {
      * loaded must show them, or the trace lies about what was in the prompt.
      */
     skills: string[] = [],
+    /** Same reasoning as `skills`, for the Project Context chunks (L05). */
+    contextSpecs: string[] = [],
+    /** Same reasoning, for `specs_read` — never hardcoded to `[]` here either. */
+    specsRead: string[] = [],
   ): RunTrace {
     return {
       config: {
@@ -524,13 +585,13 @@ export class ReviewRunExecutor {
         // Same join reviewer-core's assemblePrompt uses for the skills slot.
         skills: skills.length > 0 ? skills.join('\n\n') : null,
         memory: null,
-        specs: null,
+        specs: contextSpecs.length > 0 ? contextSpecs.join('\n\n') : null,
         user: '',
       },
       tool_calls: [],
       raw_output: '',
       memory_pulled: [],
-      specs_read: [],
+      specs_read: specsRead,
       log: this.container.runBus.buffer(runId).map((e) => ({ t: e.t, kind: e.kind, msg: e.msg })),
     };
   }

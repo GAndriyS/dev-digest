@@ -20,6 +20,12 @@ export const s = {
     fontSize: 13,
   } satisfies CSSProperties,
   agentName: { fontWeight: 600, flex: 1, minWidth: 0 } satisfies CSSProperties,
+  openLink: {
+    fontSize: 12,
+    fontWeight: 600,
+    color: "var(--accent)",
+    textDecoration: "none",
+  } satisfies CSSProperties,
   muted: { fontSize: 13, color: "var(--text-muted)", lineHeight: 1.5 } satisfies CSSProperties,
   note: {
     fontSize: 12,

@@ -196,6 +196,8 @@ export class RepoIntelService implements RepoIntel {
       filesSkipped: 0,
       durationMs: 0,
       reason: 'no_data',
+      totalCandidates: 0,
+      bounded: 0,
       lastIndexedSha: '',
       indexerVersion: INDEXER_VERSION,
       updatedAt: new Date(0),
