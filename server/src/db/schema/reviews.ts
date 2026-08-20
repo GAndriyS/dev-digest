@@ -77,4 +77,10 @@ export const prBrief = pgTable('pr_brief', {
     .primaryKey()
     .references(() => pullRequests.id, { onDelete: 'cascade' }),
   json: jsonb('json').notNull(),
+  // L05 — Why + Risk Brief metadata. All nullable: pre-existing rows have
+  // none of these, and the service treats a missing `head_sha` as "stale of
+  // unknown origin" rather than failing (additive-only migration, AC-24).
+  headSha: text('head_sha'),
+  generatedAt: timestamp('generated_at', { withTimezone: true }),
+  model: text('model'),
 });

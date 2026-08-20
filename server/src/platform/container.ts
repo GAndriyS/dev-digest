@@ -30,6 +30,8 @@ import type { RepoIntel } from '../modules/repo-intel/types.js';
 import { RepoIntelService } from '../modules/repo-intel/service.js';
 import type { ProjectContext } from '../modules/context/types.js';
 import { ContextService } from '../modules/context/service.js';
+import type { Blast } from '../modules/blast/types.js';
+import { BlastService } from '../modules/blast/service.js';
 import { type DepGraph, DepCruiseGraph } from '../adapters/depgraph/index.js';
 import { type Tokenizer, TiktokenTokenizer } from '../adapters/tokenizer/index.js';
 
@@ -53,6 +55,8 @@ export interface ContainerOverrides {
   repoIntel?: RepoIntel;
   /** Project Context facade (L05) — tests inject a mock ProjectContext. */
   projectContext?: ProjectContext;
+  /** Blast Radius facade (L05, `modules/brief/**`) — tests inject a mock Blast. */
+  blast?: Blast;
   /** repo-intel T3 adapters — only the indexer pipeline reads these. */
   depgraph?: DepGraph;
   tokenizer?: Tokenizer;
@@ -80,6 +84,7 @@ export class Container {
   private _skillsRepo?: SkillsRepository;
   private _repoIntel?: RepoIntel;
   private _projectContext?: ProjectContext;
+  private _blast?: Blast;
   private _depgraph?: DepGraph;
   private _tokenizer?: Tokenizer;
   private _priceBook?: PriceBook;
@@ -144,6 +149,18 @@ export class Container {
     if (this.overrides.projectContext) return this.overrides.projectContext;
     this._projectContext ??= new ContextService(this);
     return this._projectContext;
+  }
+
+  /**
+   * Blast Radius facade (L04, exposed on the container for L05).
+   * `modules/brief/**` reads through this rather than importing
+   * `modules/blast/service.ts` — `no-cross-module-internals` forbids the
+   * latter. Tests inject a mock via `ContainerOverrides.blast`.
+   */
+  get blast(): Blast {
+    if (this.overrides.blast) return this.overrides.blast;
+    this._blast ??= new BlastService(this);
+    return this._blast;
   }
 
   /** Import-graph builder (dependency-cruiser). T3 indexer pipeline only. */

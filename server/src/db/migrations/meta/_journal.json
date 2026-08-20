@@ -120,6 +120,13 @@
       "when": 1787045222481,
       "tag": "0016_yielding_brother_voodoo",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1787212254442,
+      "tag": "0017_shallow_swordsman",
+      "breakpoints": true
     }
   ]
 }
