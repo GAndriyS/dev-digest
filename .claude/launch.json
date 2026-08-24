@@ -3,14 +3,14 @@
   "configurations": [
     {
       "name": "api",
-      "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["--dir", "server", "exec", "tsx", "watch", "src/server.ts"],
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "cd server && WEB_PORT=3100 exec pnpm exec tsx watch src/server.ts"],
       "port": 3001
     },
     {
       "name": "web",
-      "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["--dir", "client", "exec", "next", "dev", "-p", "3100"],
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "cd client && exec pnpm exec next dev -p 3100"],
       "port": 3100
     }
   ]
