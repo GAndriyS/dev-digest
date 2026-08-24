@@ -1,0 +1,59 @@
+{
+  "run_id": "case-7-baseline-run-1",
+  "expectations": [
+    {
+      "text": "Flags the three new columns added to the reviews table and says this per-review data belongs in its own table keyed by review_id",
+      "passed": false,
+      "evidence": "FRAMING: cross-module write → container.reviewRepo. Finding 5 is titled «Модуль пише в чужу таблицю — межа модуля порушена, хоч depcruise мовчить» and is about `repository.ts:24-68` touching `t.reviews`, not about the ALTER TABLE lines. It offers «два законні варіанти, обидва краще за поточний»: (1) `review_annotations` side table, (2) «Якщо колонки лишаються на `reviews` — ходити через `container.reviewRepo`». Option 2 explicitly blesses the three new columns staying on `reviews`, so the review never objects to the columns as such — it objects to who writes them. The ALTER TABLE lines (`0043_review_annotations.sql:7-9`) are never flagged."
+    },
+    {
+      "text": "Gives the operational reason for keeping reviews narrow — it is the hottest table and an ALTER rewrites/locks it, killing a run in flight — rather than a generic appeal to normalisation or tidiness",
+      "passed": false,
+      "evidence": "No operational reason anywhere: no mention of `reviews` being hot, of table rewrite, of ACCESS EXCLUSIVE / lock duration, or of a run dying mid-flight. The side-table option is justified only by ownership («модуль володіє своїми таблицями») and by «зникає `UPDATE` по чужому рядку». The non-CONCURRENTLY `CREATE INDEX ... ON reviews` is discussed (finding 11) purely as schema-drift and hand-written-SQL evidence, never as a locking risk."
+    },
+    {
+      "text": "Flags the new ON DELETE CASCADE foreign keys and says new ones should be RESTRICT, with the owning service deleting children explicitly",
+      "passed": false,
+      "evidence": "Only the single spectacular FK is flagged. Finding 3 covers `schema.excerpt.ts:28-30` (`annotation_author_id → users`) and recommends `onDelete: 'set null'`. The two other new cascades (`0043_review_annotations.sql:13-14`, workspace_id and review_id on annotation_attachments) are never questioned — they are cited approvingly in finding 6 as the FK that «перевіряє лише існування `reviews.id`». No general rule for new FKs, no RESTRICT, no owning-service-deletes-children."
+    },
+    {
+      "text": "Does NOT endorse the cascades or recommend matching the surrounding schema's cascading style — the existing cascades are grandfathered, and consistency is the wrong instinct here",
+      "passed": false,
+      "evidence": "Finding 3 argues from the surrounding schema's cascading style: «Каскади в цій схемі свідомо йдуть тільки по власнику (`workspace_id`, `pr_id` — server/src/db/schema/reviews.ts:11-18), і жодна таблиця не каскадить по «автору»». That treats the ambient owner-cascade pattern as deliberate and correct, which is exactly the endorsement the assertion excludes — and it validates the two new owner-shaped cascades on `annotation_attachments` by implication."
+    },
+    {
+      "text": "Flags deleteAttachment() deleting by id without a workspaceId predicate (control — expected from both versions)",
+      "passed": true,
+      "evidence": "Finding 7, `repository.ts:94-98`: «`where(eq(t.annotationAttachments.id, attachmentId))` — без `workspaceId` ... Метод зараз нікому не викликається, тому це «заряджена рушниця»: перший роут, який його підключить, отримає міжворкспейсне видалення»."
+    },
+    {
+      "text": "Flags that the new wire contracts must be mirrored into the client copy of @devdigest/shared in the same change (control — expected from both versions)",
+      "passed": true,
+      "evidence": "«Не входить у фікстуру» item 2: «новий файл контрактів + експорт у `server/src/vendor/shared/index.ts`, а потім **дзеркало** в `client/src/vendor/shared/contracts/` — це прямий пункт `AGENTS.md` («ніколи не правити лише одну копію»)»."
+    },
+    {
+      "text": "Does not argue the annotation_attachments side table should itself be folded into reviews or removed — a side table keyed by review_id is the shape this data should have",
+      "passed": true,
+      "evidence": "The table is accepted («`attachments` уже й так окрема таблиця»); the only asks are a composite tenant index (finding 11.2) and orphan handling (finding 10)."
+    },
+    {
+      "text": "Every finding names a file and a line (or line range)",
+      "passed": true,
+      "evidence": "Each of the 16 numbered findings opens with «**Файл:**» / «**Файли:**» and a line range (e.g. «`annotations-branch/repository.ts:94-98`»). The four «не входить у фікстуру» items reference files the branch does not add."
+    },
+    {
+      "text": "The fixture files are byte-identical to before the run (the task was a review, not a fix)",
+      "passed": true,
+      "evidence": "skill-evals/results/onion-architecture-case7-v2-vs-v1.1.0/fixture-integrity.json: {\"touched\": [], \"clean\": true} — 5/5 fixtures verified byte-identical (shasum -c)."
+    }
+  ],
+  "findings_reported": 20,
+  "false_findings": [],
+  "notes": "Technically strong and accurate — every repo claim verified (0000_init.sql really has zero IF NOT EXISTS, OkResponse really is unused, knowledge.ts:77 composite tenant index, reviews/repository.ts:5-8 ownership comment) — but it misses both team decisions. The columns are framed as a module-boundary problem whose fix may legitimately leave them on `reviews`, and the cascades are reduced to the one author_id FK, defended by appeal to the surrounding owner-cascade style. Judgment call recorded explicitly: a8-no-cascade-endorsement is failed on that appeal, not on any sentence recommending a cascade be added.",
+  "summary": {
+    "passed": 5,
+    "failed": 4,
+    "total": 9,
+    "pass_rate": 0.5555555555555556
+  }
+}

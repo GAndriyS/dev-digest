@@ -1,0 +1,54 @@
+{
+  "$comment": "Recorded results a CI run is compared against. Update it only together with the skill or the eval set, in the same PR, the way a snapshot test is updated — never to make a red run go green.",
+  "skills": {
+    "onion-architecture": {
+      "measured_at": "2026-08-24",
+      "measured_by": "claude-opus-5",
+      "skill_version": "2.0.0",
+      "runs": [
+        {
+          "id": "machine-enforced (cases 0-2), v1.0.0 with-skill vs no-skill",
+          "evidence": "skill-evals/baselines/onion-architecture-2026-08-24/",
+          "runs_per_config": 1,
+          "with_skill": { "pass_rate": 1.0, "passed": 18, "total": 18 },
+          "baseline": { "pass_rate": 1.0, "passed": 18, "total": 18 },
+          "delta_pass_rate": 0.0,
+          "reading": "Saturated. An agent with the repo derives these rules from server/.dependency-cruiser.cjs and AGENTS.md."
+        },
+        {
+          "id": "blind-spots (cases 3-5), v1.1.0 vs v1.0.0",
+          "evidence": "skill-evals/baselines/onion-architecture-2026-08-24-v1.1.0-vs-v1.0.0/",
+          "runs_per_config": 1,
+          "with_skill": { "pass_rate": 1.0, "passed": 17, "total": 17 },
+          "baseline": { "pass_rate": 1.0, "passed": 17, "total": 17 },
+          "delta_pass_rate": 0.0,
+          "reading": "Also saturated: v1.0.0 reached every mechanism by reading the depcruise config itself. Case 4 turned out not to be a blind spot at all — service-stays-http-agnostic does catch a type-only import under tsPreCompilationDeps."
+        },
+        {
+          "id": "secret-cache (case 6), v1.1.0 vs v1.0.0, 5 runs per side",
+          "evidence": "skill-evals/baselines/onion-architecture-2026-08-24-case6-5x/",
+          "runs_per_config": 5,
+          "with_skill": { "pass_rate": 1.0, "passed": 45, "total": 45, "false_findings": 0 },
+          "baseline": { "pass_rate": 1.0, "passed": 45, "total": 45, "false_findings": 3 },
+          "delta_pass_rate": 0.0,
+          "reading": "Unanimous on both sides — no assertion split, so detection is not fragile either way. The 3-vs-0 false-finding gap is p≈0.17: a hypothesis, not a result. What five runs did establish: v1.1.0's token spread is five times tighter (±1.8k vs ±8.5k)."
+        },
+        {
+          "id": "team-conventions (case 7), v2.0.0 vs v1.1.0, 5 runs per side",
+          "evidence": "skill-evals/baselines/onion-architecture-2026-08-24-case7-v2-vs-v1.1.0/",
+          "runs_per_config": 5,
+          "with_skill": { "pass_rate": 1.0, "passed": 45, "total": 45, "false_findings": 0 },
+          "baseline": { "pass_rate": 0.6, "passed": 27, "total": 45, "false_findings": 0 },
+          "delta_pass_rate": 0.4,
+          "reading": "The first real delta. Three discriminating assertions split 5/5 vs 0/5 (Fisher p≈0.008 each) while all controls stayed 25/25 — a targeted blind spot, not a weaker reviewer. Baseline reframed the widened `reviews` table as a cross-module write (different fix, columns stay) and, on cascades, three of five actively recommended new ON DELETE CASCADE."
+      }
+      ],
+      "gate": {
+        "on": "with_skill.pass_rate",
+        "min": 0.9,
+        "$comment": "Absolute, not relative. On cases 0-6 the delta is 0, so a 'must beat baseline' gate would fail on a healthy skill; case 7 is the only one where the delta itself is meaningful, and one case is too thin to gate on. This gate answers the question CI can answer: did an edit to the skill make it worse. 0.9 leaves room for one missed assertion — a single model run is noisy."
+      },
+      "known_weakness": "Cases 0-6 are saturated: both configurations score 100%, so they are regression guards, not A/B instruments. Only case 7 (group `team-decisions`) discriminates, and it does so because its rules are not recoverable from any file in the repo. See .claude/skills/onion-architecture/evals/README.md."
+    }
+  }
+}

@@ -1,0 +1,39 @@
+{
+  "run_id": "case-3-with-skill-run-1",
+  "expectations": [
+    {
+      "text": "Flags the global fetch() call inside reviewer-core as I/O the core must not do, and says the advisory data should arrive resolved from the caller",
+      "passed": true,
+      "evidence": "Blocker 1: «lookupAdvisories() ходить у мережу (fetch(...)) прямо з reviewer-core… Правило про побічний ефект, а не про імпорт». Fix: «I/O переїжджає до caller-а, а в ядро дані приходять уже резолвленими», with EnrichInput taking `advisories: Record<string, string[]>` and changedPackages dropped."
+    },
+    {
+      "text": "Notes that dependency-cruiser cannot catch this — the rule lists imports and global fetch is not imported — so a green CI is not evidence the boundary held",
+      "passed": true,
+      "evidence": "Header: «core-has-no-io перелічує модулі (node:http, octokit, …), а глобальний fetch не імпортується, тож жоден імпорт не зʼявляється в графі й правило мовчить. Див. server/.dependency-cruiser.cjs:123-135.» Mechanism named, correct config anchor (rule is at 122-135)."
+    },
+    {
+      "text": "Does not claim the file has a forbidden import: it imports only @devdigest/shared types and its own ./prompts.js",
+      "passed": true,
+      "evidence": "No forbidden-import claim anywhere. The two import-related findings are #10 (./prompts.js resolves to nothing — reviewer-core has prompt.ts, singular; verified) and #11 (EnrichedFinding missing from both vendor/shared copies; verified by grep). Both are compile facts, not boundary violations."
+    },
+    {
+      "text": "Every finding names a file and a line (or line range)",
+      "passed": true,
+      "evidence": "Findings 1-11 all carry enrich.ts:NN or NN-MM. Finding 12 names `reviewer-core/src/index.ts` without a line because the defect is a missing export — there is no line to point at."
+    },
+    {
+      "text": "The fixture file is byte-identical to before the run (the task was a review, not a fix)",
+      "passed": true,
+      "evidence": "Verified by the run owner: shasum -c over all 12 fixtures, 12/12 OK."
+    }
+  ],
+  "findings_reported": 12,
+  "false_findings": [],
+  "notes": "Catches the planted blind spot and names the mechanism precisely, with a correct citation into server/.dependency-cruiser.cjs. Every load-bearing repo claim checks out against source: StructuredResult.data (adapters.ts:72-80), Severity as an uppercase enum (contracts/findings.ts:11), prompt.ts singular, EnrichedFinding absent from both vendor/shared copies, openrouter.ts:124 as the one legitimate fetch in the core. Adds real value beyond the boundary call — the wrapUntrusted gap on third-party advisory text is a genuine injection path the baseline also found.",
+  "summary": {
+    "passed": 5,
+    "failed": 0,
+    "total": 5,
+    "pass_rate": 1
+  }
+}

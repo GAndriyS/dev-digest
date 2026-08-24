@@ -1,0 +1,59 @@
+{
+  "run_id": "case-7-with-skill-run-2",
+  "expectations": [
+    {
+      "text": "Flags the three new columns added to the reviews table and says this per-review data belongs in its own table keyed by review_id",
+      "passed": true,
+      "evidence": "B1 «Три нові колонки в `reviews` — таблиця закрита для нових колонок» (`0043_review_annotations.sql:7-9`; `schema.excerpt.ts:27-31`) → «Своя таблиця, ключована `review_id`, join на читанні» with `\"review_id\" uuid PRIMARY KEY`. Pre-empts the escape hatch: «Аргумент «це ж просто три nullable-колонки, PG додасть їх метаданими» тут не рятує: правило безумовне». Cross-module write is a separate blocker (B5)."
+    },
+    {
+      "text": "Gives the operational reason for keeping reviews narrow — it is the hottest table and an ALTER rewrites/locks it, killing a run in flight — rather than a generic appeal to normalisation or tidiness",
+      "passed": true,
+      "evidence": "«Додавання `model` переписало таблицю на демо-інстансі й тримало `ACCESS EXCLUSIVE` майже чотири хвилини; ревʼю, що виконувалося в той момент, померло на півдорозі й лишилося напівзаписаним рядком ... `reviews` — найгарячіша таблиця в проєкті». B2 adds the CREATE INDEX SHARE-lock as «рівно той сценарій INC-42, тільки з іншого боку»."
+    },
+    {
+      "text": "Flags the new ON DELETE CASCADE foreign keys and says new ones should be RESTRICT, with the owning service deleting children explicitly",
+      "passed": true,
+      "evidence": "B3 «Усі нові FK — `ON DELETE CASCADE`» states the rule («нові зовнішні ключі — `ON DELETE RESTRICT`, а дітей видаляє явно сервіс-власник») and prescribes both the schema change and the service method: «`AnnotationsService` отримує `deleteForReview(workspaceId, reviewId)`, який видаляє вкладення ... і може залогувати або відмовити; сервіс ревʼю кличе його перед видаленням ревʼю»."
+    },
+    {
+      "text": "Does NOT endorse the cascades or recommend matching the surrounding schema's cascading style — the existing cascades are grandfathered, and consistency is the wrong instinct here",
+      "passed": true,
+      "evidence": "«Схема тут сперечатиметься з вами: майже кожен FK у `server/src/db/schema/reviews.ts` каже `onDelete: 'cascade'`, і скопіювати сусідній стиль — саме той інстинкт, який це рішення й забороняє. Наявні каскади лишаються; нові не додаються.» B4 fixes the author_id drift towards SET NULL / RESTRICT, never towards adding the cascade to SQL."
+    },
+    {
+      "text": "Flags deleteAttachment() deleting by id without a workspaceId predicate (control — expected from both versions)",
+      "passed": true,
+      "evidence": "B6, `repository.ts:94-98`: «Правило репозиторію: кожен запит скоупиться `workspaceId` ... Тут — жодного. Будь-який `attachmentId` з будь-якого воркспейсу видаляється без питань» — «мертвий код із вбудованим IDOR»."
+    },
+    {
+      "text": "Flags that the new wire contracts must be mirrored into the client copy of @devdigest/shared in the same change (control — expected from both versions)",
+      "passed": true,
+      "evidence": "«Гілка має додати їх у серверну копію (канонічна) і **віддзеркалити** в клієнтську; ці типи перетинають дріт, тож правити тільки одну копію не можна.» Verified: none of the four names exist in either vendor/shared copy."
+    },
+    {
+      "text": "Does not argue the annotation_attachments side table should itself be folded into reviews or removed — a side table keyed by review_id is the shape this data should have",
+      "passed": true,
+      "evidence": "M2 asks only that the table move to its own schema file (`db/schema/annotations.ts`) rather than living in `db/schema/reviews.ts`; M4 asks for a composite index. The table itself is treated as correct."
+    },
+    {
+      "text": "Every finding names a file and a line (or line range)",
+      "passed": true,
+      "evidence": "Every B/S/M item opens with **Файли:** and a line range (e.g. B3 «`0043_review_annotations.sql:13-14`; `schema.excerpt.ts:28-30, 39-44`»). The four «чого немає у вирізці» items name files that do not exist yet, so no lines are possible."
+    },
+    {
+      "text": "The fixture files are byte-identical to before the run (the task was a review, not a fix)",
+      "passed": true,
+      "evidence": "skill-evals/results/onion-architecture-case7-v2-vs-v1.1.0/fixture-integrity.json: {\"touched\": [], \"clean\": true} — 5/5 fixtures verified byte-identical (shasum -c)."
+    }
+  ],
+  "findings_reported": 20,
+  "false_findings": [],
+  "notes": "Longest with-skill review (6 blockers / 5 serious / 5 minor / 4 gaps) and the only one that closes with an explicit statement that CI cannot catch any of the six blockers. Repo claims verified: ReviewRepository.deleteReview at modules/reviews/repository.ts:105-107, getReview at :69 is genuinely not workspace-scoped, container.reviewRepo at platform/container.ts:111-113, _shared/schemas.ts:14-27 response-schema comment, journal ends at idx 17. No false findings.",
+  "summary": {
+    "passed": 9,
+    "failed": 0,
+    "total": 9,
+    "pass_rate": 1
+  }
+}

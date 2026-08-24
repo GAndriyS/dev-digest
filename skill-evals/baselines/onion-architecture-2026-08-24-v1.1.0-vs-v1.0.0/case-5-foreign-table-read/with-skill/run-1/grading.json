@@ -1,0 +1,44 @@
+{
+  "run_id": "case-5-with-skill-run-1",
+  "expectations": [
+    {
+      "text": "Flags the service querying another module's tables (t.reviews / t.pullRequests) as cross-module coupling, and says the data should come from container.reviewRepo rather than an inline join",
+      "passed": true,
+      "evidence": "«1. Сервіс читає таблиці чужих модулів інлайном», service.ts:35-56. «reviews належить модулю reviews … pull_requests — модулю pulls. Тут alerts бере обидві таблиці собі.» Fix names the container getter: «ReviewRepository там уже є — server/src/platform/container.ts:111-113 (container.reviewRepo)», with a listForWorkspaceSince method added to modules/reviews/repository.ts. The getter exists at exactly those lines."
+    },
+    {
+      "text": "Notes that dependency-cruiser does not catch this, because the only import is db/schema, which is legal everywhere",
+      "passed": true,
+      "evidence": "Header: «dependency-cruiser читає імпорти, а інлайн-запит по чужій таблиці імпортує лише db/schema, який дозволений усюди… Зелений депкруз тут не є свідченням про межі.» Repeated inside finding 1 with the counterfactual: «import { ReviewRepository } from '../reviews/repository.js' впав би на правилі no-cross-module-internals … Той самий запит, написаний руками через container.db, імпортує тільки db/schema — легально скрізь, а звʼязаність рівно та сама.»"
+    },
+    {
+      "text": "Flags remove() deleting by id without a workspaceId predicate (control — expected from both versions)",
+      "passed": true,
+      "evidence": "«4. Видалення правила не скоуплене воркспейсом», repository.ts:43-45 and service.ts:72-74: «Знаючи id, будь-який воркспейс видаляє чуже правило… і водночас IDOR.» Fix mirrors the real modules/repos/repository.ts remove(workspaceId, id) (verified at 80-86)."
+    },
+    {
+      "text": "Flags that data access belongs in the repository, not inline in the service (control — expected from both versions)",
+      "passed": true,
+      "evidence": "«2. Доступ до даних узагалі не має жити в сервісі», service.ts:35-56: «Навіть якби таблиці були свої, запит у service.ts порушує чекліст модуля: repository.ts — єдине місце, що торкається таблиць», and points out the fixture's own repository.ts:10 docblock claims that and the sibling file breaks it."
+    },
+    {
+      "text": "Every finding names a file and a line (or line range)",
+      "passed": true,
+      "evidence": "All ten findings carry a file plus a line or range (e.g. service.ts:40, repository.ts:43-45, service.ts:62-63, service.ts:7-8, service.ts:68)."
+    },
+    {
+      "text": "The fixture files are byte-identical to before the run (the task was a review, not a fix)",
+      "passed": true,
+      "evidence": "Verified by the run owner: shasum -c over all 12 fixtures, 12/12 OK."
+    }
+  ],
+  "findings_reported": 10,
+  "false_findings": [],
+  "notes": "Both discriminating assertions and both controls pass. Every checked claim holds: container.reviewRepo at container.ts:111-113, the reviews table having no findings column (findings is a separate table at db/schema/reviews.ts:28), nullable verdict/score, the tenancy header at db/schema.ts:4-7, no alert_rules/alert_runs tables and no AlertRule/AlertHit contracts anywhere, and the claim that smart-diff/service.ts:27 is the only db/schema mention in any module service (grep confirms it is the only service file matching, and there it is inside a comment). Its SKILL.md:151-179 anchor for the Blind spots section is exact.",
+  "summary": {
+    "passed": 6,
+    "failed": 0,
+    "total": 6,
+    "pass_rate": 1
+  }
+}

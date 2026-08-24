@@ -1,0 +1,61 @@
+{
+  "run_id": "case-6-baseline-run-3",
+  "expectations": [
+    {
+      "text": "Flags that _slack is cached but never cleared, so a rotated SLACK_BOT_TOKEN keeps using the old client until the process restarts",
+      "passed": true,
+      "evidence": "Finding 2: «`invalidateSecretCaches()` не скидає `_slack`… Ламається саме ротація: користувач іде в Settings, вводить правильний токен, `invalidateSecretCaches()` відпрацьовує, і `_slack` як був, так і лишається зі старим токеном — до рестарту процесу»."
+    },
+    {
+      "text": "Names invalidateSecretCaches() as the place the new field must be added, and shows it knows that method is what the settings route calls after writing a secret",
+      "passed": true,
+      "evidence": "Both halves: the one-line fix inside the named method, and «Метод не декоративний: він викликається з `server/src/modules/settings/routes.ts:84` одразу після персисту секрету»."
+    },
+    {
+      "text": "Flags that slack() never checks this.overrides.slack and that ContainerOverrides has no slack entry, so the port cannot be substituted",
+      "passed": true,
+      "evidence": "Finding 1: «`slack()` не перевіряє `overrides`, і в `ContainerOverrides` немає `slack`… підмінити Slack через контейнер неможливо»."
+    },
+    {
+      "text": "Connects the test's vi.mock of the adapter module path to the missing ContainerOverrides entry as its cause, rather than flagging the vi.mock alone as a style problem",
+      "passed": true,
+      "evidence": "Finding 1: «підмінити Slack через контейнер неможливо, і саме тому тест звалився на `vi.mock` (п. 4). Це причина, а не збіг — виправлення п. 1 автоматично розблоковує п. 4»."
+    },
+    {
+      "text": "Flags that no MockSlackClient was added to adapters/mocks.ts (control — expected from both versions)",
+      "passed": true,
+      "evidence": "Finding 3: «`adapters/mocks.ts` — немає `MockSlackClient`… Це четвертий, пропущений крок чекліста порту»."
+    },
+    {
+      "text": "Flags listRecent() querying by prId without a workspaceId predicate (control — expected from both versions)",
+      "passed": true,
+      "evidence": "Finding 8: «`listRecent(prIds)` не скоупиться по `workspaceId`… Порушує і правило скіла… і tenancy-правило з шапки `server/src/db/schema.ts:3-6`» — that header rule is real and says exactly that."
+    },
+    {
+      "text": "Does not claim the test file is misnamed — publisher.it.test.ts already carries the .it. segment the integration lane needs",
+      "passed": true,
+      "evidence": "Finding 17 opens «Не поломка: лейни розділені за глобом імені (`--exclude '**/*.it.test.ts'` в `server-unit.yml:106`, фільтр `.it.test` в `server-integration.yml:65`)… тож файл потрапить куди треба» — both workflow line numbers verified correct."
+    },
+    {
+      "text": "Every finding names a file and a line (or line range)",
+      "passed": true,
+      "evidence": "Locators are in the finding headings themselves (`container.ts:73-79`, `repository.ts:90-99`, `service.ts:82`, `publisher.it.test.ts:9-13`). Findings 10, 11 and 18 name files without lines — absence findings (missing table, missing registration, missing contracts)."
+    },
+    {
+      "text": "The fixture files are byte-identical to before the run (the task was a review, not a fix)",
+      "passed": true,
+      "evidence": "Pre-decided by the grader: `shasum -c` over all 6 fixtures returned 6/6 OK."
+    }
+  ],
+  "findings_reported": 20,
+  "false_findings": [
+    "Finding 9 asserts, as fact about the code, «`isRetryable` (рядок 136-139) ловить будь-який `AppError` зі `status >= 500`». AppError has no `status` — the field is `statusCode` (server/src/platform/errors.ts:9-19) — so the left branch is always false. This run is the only one of the ten that misses that bug, and it goes further by describing the broken branch as working; the claim is what makes its markdown-retry scenario sound reachable."
+  ],
+  "notes": "Hits all nine assertions and states the causal chain from the missing overrides entry to the vi.mock more explicitly than most («Це причина, а не збіг»). Repo citations verified: 7 ports in vendor/shared/adapters.ts, schema.ts:3-6 tenancy header, server-unit.yml:106 / server-integration.yml:65, no-orphans comment at .dependency-cruiser.cjs:43-46 (and correctly reported as a warn-severity rule elsewhere). The one substantive defect is the AppError.status mischaracterisation recorded above.",
+  "summary": {
+    "passed": 9,
+    "failed": 0,
+    "total": 9,
+    "pass_rate": 1
+  }
+}

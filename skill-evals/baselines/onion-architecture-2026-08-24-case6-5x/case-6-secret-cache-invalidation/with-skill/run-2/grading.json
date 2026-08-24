@@ -1,0 +1,59 @@
+{
+  "run_id": "case-6-with-skill-run-2",
+  "expectations": [
+    {
+      "text": "Flags that _slack is cached but never cleared, so a rotated SLACK_BOT_TOKEN keeps using the old client until the process restarts",
+      "passed": true,
+      "evidence": "Blocker 1: «Новий кеш із секрету не інвалідується — ротація Slack-токена не діє… кожна наступна публікація й далі йтиме зі старим (відкликаним) токеном — до перезапуску процесу» (`container.excerpt.ts:73-79`, `:106-110`)."
+    },
+    {
+      "text": "Names invalidateSecretCaches() as the place the new field must be added, and shows it knows that method is what the settings route calls after writing a secret",
+      "passed": true,
+      "evidence": "Both halves: the corrected method body with `this._slack = undefined;` added, and «Виклик `container.invalidateSecretCaches()` після запису нового ключа стоїть у `server/src/modules/settings/routes.ts:84` (гілка publisher його не чіпала)»."
+    },
+    {
+      "text": "Flags that slack() never checks this.overrides.slack and that ContainerOverrides has no slack entry, so the port cannot be substituted",
+      "passed": true,
+      "evidence": "Blocker 2: «`slack()` не перевіряє `overrides` — порт немокабельний… не має відповідного поля в `ContainerOverrides` (там є github, git, codeIndex, embedder, llm, repoIntel, projectContext, blast — slack немає)»."
+    },
+    {
+      "text": "Connects the test's vi.mock of the adapter module path to the missing ContainerOverrides entry as its cause, rather than flagging the vi.mock alone as a style problem",
+      "passed": true,
+      "evidence": "Blocker 2 closes «Наслідок видно одразу нижче (пункт 4): тест був змушений мокати шлях модуля адаптера»; blocker 4 opens «Це прямий наслідок пунктів 2-3»."
+    },
+    {
+      "text": "Flags that no MockSlackClient was added to adapters/mocks.ts (control — expected from both versions)",
+      "passed": true,
+      "evidence": "Blocker 3: «Новий порт без мока — “усі чотири” не виконано… `MockSlackClient` немає», with the full export list of `mocks.excerpt.ts` enumerated."
+    },
+    {
+      "text": "Flags listRecent() querying by prId without a workspaceId predicate (control — expected from both versions)",
+      "passed": true,
+      "evidence": "Finding 10 (`repository.ts:90-99`): «Кожен інший запит у файлі має `eq(t.publications.workspaceId, workspaceId)` — цей ні… ідентифікатори з іншого workspace… повернуть чужі рядки»."
+    },
+    {
+      "text": "Does not claim the test file is misnamed — publisher.it.test.ts already carries the .it. segment the integration lane needs",
+      "passed": true,
+      "evidence": "Finding 11 first bullet: «Ім'я `*.it.test.ts` — правильне, лінії справді розходяться по цьому глобу». Objection is to the folder and the missing Docker gate only."
+    },
+    {
+      "text": "Every finding names a file and a line (or line range)",
+      "passed": true,
+      "evidence": "All findings against existing code carry file + line (`service.ts:137`, `repository.ts:90-99`, `publisher.it.test.ts:2`, …). Finding 13 lists `modules/index.ts` and `client/src/vendor/shared` without lines — an absence-of-registration/mirror finding with no line to cite."
+    },
+    {
+      "text": "The fixture files are byte-identical to before the run (the task was a review, not a fix)",
+      "passed": true,
+      "evidence": "Pre-decided by the grader: `shasum -c` over all 6 fixtures returned 6/6 OK."
+    }
+  ],
+  "findings_reported": 17,
+  "false_findings": [],
+  "notes": "Leads with the secret-cache blocker and states the manual-list mechanic explicitly. Repo-facing claims verified correct: AppError.statusCode (errors.ts:9-19), reviewsForPull(prId) returning {review, findings}[], test/helpers/ holding only pg.ts and runs.ts, _shared/schemas.ts response-schema convention, no-orphans present in .dependency-cruiser.cjs. Two harmless inaccuracies: it counts «12 наявних *.it.test.ts» (the repo has 14; 12 is the stale figure in server-integration.yml's own header comment) and cites the settings rate-limit at :71 rather than :72.",
+  "summary": {
+    "passed": 9,
+    "failed": 0,
+    "total": 9,
+    "pass_rate": 1
+  }
+}

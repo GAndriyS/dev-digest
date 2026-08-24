@@ -1,0 +1,92 @@
+{
+  "skill": "onion-architecture",
+  "run": "skill-evals/results/onion-architecture-2026-08-24-iteration-1",
+  "graded_at": "2026-08-24T11:42:54.252Z",
+  "configs": {
+    "baseline": {
+      "pass_rate": 1,
+      "passed": 18,
+      "total": 18,
+      "false_findings": 0,
+      "seconds": 303.9666666666667,
+      "runs": [
+        {
+          "case": "new-module-layering",
+          "run": "run-1",
+          "passed": 6,
+          "failed": 0,
+          "total": 6,
+          "pass_rate": 1,
+          "findings_reported": null,
+          "false_findings": 0,
+          "seconds": 281
+        },
+        {
+          "case": "core-purity",
+          "run": "run-1",
+          "passed": 6,
+          "failed": 0,
+          "total": 6,
+          "pass_rate": 1,
+          "findings_reported": null,
+          "false_findings": 0,
+          "seconds": 294.6
+        },
+        {
+          "case": "cross-module-and-seams",
+          "run": "run-1",
+          "passed": 6,
+          "failed": 0,
+          "total": 6,
+          "pass_rate": 1,
+          "findings_reported": null,
+          "false_findings": 0,
+          "seconds": 336.3
+        }
+      ]
+    },
+    "with-skill": {
+      "pass_rate": 1,
+      "passed": 18,
+      "total": 18,
+      "false_findings": 0,
+      "seconds": 276.06666666666666,
+      "runs": [
+        {
+          "case": "new-module-layering",
+          "run": "run-1",
+          "passed": 6,
+          "failed": 0,
+          "total": 6,
+          "pass_rate": 1,
+          "findings_reported": null,
+          "false_findings": 0,
+          "seconds": 275.3
+        },
+        {
+          "case": "core-purity",
+          "run": "run-1",
+          "passed": 6,
+          "failed": 0,
+          "total": 6,
+          "pass_rate": 1,
+          "findings_reported": null,
+          "false_findings": 0,
+          "seconds": 212.3
+        },
+        {
+          "case": "cross-module-and-seams",
+          "run": "run-1",
+          "passed": 6,
+          "failed": 0,
+          "total": 6,
+          "pass_rate": 1,
+          "findings_reported": null,
+          "false_findings": 0,
+          "seconds": 340.6
+        }
+      ]
+    }
+  },
+  "delta_pass_rate": 0
+}

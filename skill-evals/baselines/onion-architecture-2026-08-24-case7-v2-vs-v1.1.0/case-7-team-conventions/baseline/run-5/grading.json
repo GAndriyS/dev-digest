@@ -1,0 +1,59 @@
+{
+  "run_id": "case-7-baseline-run-5",
+  "expectations": [
+    {
+      "text": "Flags the three new columns added to the reviews table and says this per-review data belongs in its own table keyed by review_id",
+      "passed": false,
+      "evidence": "FRAMING: cross-module write → container.reviewRepo, and nothing else. Blocker 1 «Модуль пише в чужу таблицю — `repository.ts:24-68`» prescribes «додати методи анотацій до `ReviewRepository` ... і брати його з композиційного кореня — `container.reviewRepo` ... `AnnotationsRepository` лишити власником одного `annotation_attachments`». This is the only run of the ten that never mentions a `review_annotations` side table at all — the three new columns stay on `reviews` in every fix it proposes, and the ALTER TABLE lines are never flagged."
+    },
+    {
+      "text": "Gives the operational reason for keeping reviews narrow — it is the hottest table and an ALTER rewrites/locks it, killing a run in flight — rather than a generic appeal to normalisation or tidiness",
+      "passed": false,
+      "evidence": "Absent, and there is no place where it could have appeared, since the review never argues for keeping `reviews` narrow. Blocker 5 discusses `reviews_annotated_at_idx` purely as schema drift («Drizzle-схема — джерело істини для `db:generate` ... випише `DROP INDEX`») and recommends declaring the index ON `reviews` in the Drizzle schema — the opposite of not touching the hot table."
+    },
+    {
+      "text": "Flags the new ON DELETE CASCADE foreign keys and says new ones should be RESTRICT, with the owning service deleting children explicitly",
+      "passed": false,
+      "evidence": "Only the author_id FK (blocker 4, `schema.excerpt.ts:28-30`): «Як правильно: `onDelete: 'set null'`», backed by the createdBy precedent (`repos.createdBy` db/schema/repos.ts:18, `agents.createdBy` agents.ts:34 — both verified as references without cascade). The two new cascades in `0043_review_annotations.sql:13-14` are never mentioned; no general rule for new FKs anywhere."
+    },
+    {
+      "text": "Does NOT endorse the cascades or recommend matching the surrounding schema's cascading style — the existing cascades are grandfathered, and consistency is the wrong instinct here",
+      "passed": true,
+      "evidence": "Passes vacuously: no sentence endorses a cascade, and the drift fixes it proposes never add one. The only precedent it invokes points the other way («`references(() => users.id)` взагалі без каскаду»). But it also never confronts the two new cascades on annotation_attachments — this is silence, not a stated position."
+    },
+    {
+      "text": "Flags deleteAttachment() deleting by id without a workspaceId predicate (control — expected from both versions)",
+      "passed": true,
+      "evidence": "Finding 14, `repository.ts:94-98`: «Це єдиний метод файлу, який його не має. Метод при цьому нізвідки не викликається ... зараз він просто чекає, поки хтось викличе його без скоупу.»"
+    },
+    {
+      "text": "Flags that the new wire contracts must be mirrored into the client copy of @devdigest/shared in the same change (control — expected from both versions)",
+      "passed": true,
+      "evidence": "Finding 8: «додати контракти в **канонічну серверну копію** ... і **обовʼязково дзеркалити** в `client/src/vendor/shared` — типи перетинають дріт (клієнт шле `AnnotationInput`)»."
+    },
+    {
+      "text": "Does not argue the annotation_attachments side table should itself be folded into reviews or removed — a side table keyed by review_id is the shape this data should have",
+      "passed": true,
+      "evidence": "The table is kept as the module's own («`AnnotationsRepository` лишити власником одного `annotation_attachments`»); asks are the `schema` const registration (finding 6) and a composite index (finding 18)."
+    },
+    {
+      "text": "Every finding names a file and a line (or line range)",
+      "passed": true,
+      "evidence": "Every one of the 21 findings has file:line in its title (e.g. «### 14. `deleteAttachment` не скоупиться по воркспейсу і мертвий — `repository.ts:94-98`»). Finding 7 names `src/modules/index.ts` without a line because the required entry does not exist yet."
+    },
+    {
+      "text": "The fixture files are byte-identical to before the run (the task was a review, not a fix)",
+      "passed": true,
+      "evidence": "skill-evals/results/onion-architecture-case7-v2-vs-v1.1.0/fixture-integrity.json: {\"touched\": [], \"clean\": true} — 5/5 fixtures verified byte-identical (shasum -c)."
+    }
+  ],
+  "findings_reported": 21,
+  "false_findings": [],
+  "notes": "The purest instance of the wrong framing: the annotation columns are treated solely as a data-ownership question answered by container.reviewRepo, with no side table proposed anywhere, and two of its recommendations actively cement the branch's shape on `reviews` (declare `reviews_annotated_at_idx` in the Drizzle schema; move annotation read/write methods into ReviewRepository). Technically accurate otherwise — createdBy precedents, invalidateSecretCaches (container.ts:260, called only from settings/routes.ts:84) and the repos 201/200 convention all verified. No false findings.",
+  "summary": {
+    "passed": 6,
+    "failed": 3,
+    "total": 9,
+    "pass_rate": 0.6666666666666666
+  }
+}

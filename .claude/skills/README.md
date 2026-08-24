@@ -6,7 +6,7 @@ Reusable AI skills that provide specialized knowledge and workflows. Canonical l
 
 | Skill | Scope | Description |
 |-------|-------|-------------|
-| [onion-architecture](onion-architecture/SKILL.md) `v1.0.0` | Backend | Layer boundaries for `server/` + `reviewer-core/`; enforced by `server/.dependency-cruiser.cjs` in CI |
+| [onion-architecture](onion-architecture/SKILL.md) `v2.0.0` | Backend | Layer boundaries for `server/` + `reviewer-core/`; enforced by `server/.dependency-cruiser.cjs` in CI, plus the blind spots it cannot see and two team conventions no file records. Ships its own [eval set](onion-architecture/evals/README.md) |
 | [fastify-best-practices](fastify-best-practices/SKILL.md) | Backend | Fastify routes, plugins, JSON-schema validation, error handling |
 | [drizzle-orm-patterns](drizzle-orm-patterns/SKILL.md) | Backend | Drizzle schema, queries, relations, transactions, migrations |
 | [postgresql-table-design](postgresql-table-design/SKILL.md) | Backend | Postgres schema design, data types, indexing, constraints |
@@ -47,6 +47,14 @@ Each skill has:
 - `CHANGELOG.md` — Version history (required once the skill declares a
   `metadata.version`, and for any skill backed by a check that can fail CI —
   a rule change is an architecture decision and needs a paper trail)
+- `evals/` — The skill's own test set (optional): `evals.json` with the cases
+  and `fixtures/` with the code they act on. It lives inside the skill folder so
+  a skill delivered elsewhere arrives with its tests attached; the runner that
+  executes it — with the skill and without it — is `skill-evals/` at the repo
+  root. Fixtures must sit outside every package's `tsconfig` (this folder does)
+  and must never name their own planted bug in a comment, or the case measures
+  reading comprehension instead of the skill. See
+  [onion-architecture/evals](onion-architecture/evals/README.md).
 
 A skill that is enforced by tooling (e.g. [onion-architecture](onion-architecture/SKILL.md)
 and its dependency-cruiser config) must keep the prose, the check, and the

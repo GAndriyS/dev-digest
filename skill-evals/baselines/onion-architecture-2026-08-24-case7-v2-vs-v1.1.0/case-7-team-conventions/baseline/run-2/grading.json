@@ -1,0 +1,59 @@
+{
+  "run_id": "case-7-baseline-run-2",
+  "expectations": [
+    {
+      "text": "Flags the three new columns added to the reviews table and says this per-review data belongs in its own table keyed by review_id",
+      "passed": false,
+      "evidence": "FRAMING: cross-module write → container.reviewRepo, with the side table as the preferred of two remedies. Finding 5 is «`repository.ts:24-68` — модуль пише в чужу таблицю (сліпа зона depcruise)»; its fix menu is «**A.** Винести нотатку у власну таблицю модуля — `review_annotations (review_id PK → reviews.id ON DELETE CASCADE, ...)`» or «**B.** Якщо колонки все ж мають лишитися на `reviews` — методи ... переїжджають у `ReviewRepository`». The closing plan says «Рекомендую окрему таблицю», but the justification is ownership and mechanics («модуль `annotations` володіє **своїми** таблицями ... `DELETE` нотатки стає справжнім `DELETE`»), and option B leaves the columns in place as legitimate. The `ALTER TABLE reviews ADD COLUMN` lines are never themselves objected to."
+    },
+    {
+      "text": "Gives the operational reason for keeping reviews narrow — it is the hottest table and an ALTER rewrites/locks it, killing a run in flight — rather than a generic appeal to normalisation or tidiness",
+      "passed": false,
+      "evidence": "Absent. No mention of `reviews` being hot, of a table rewrite, of ACCESS EXCLUSIVE or any lock, or of an in-flight run dying. Finding 18 discusses `reviews_annotated_at_idx` only as write-amplification and schema drift («Індекс коштує запису на кожному апдейті `reviews` і не використовується»), not as a lock on the hottest table."
+    },
+    {
+      "text": "Flags the new ON DELETE CASCADE foreign keys and says new ones should be RESTRICT, with the owning service deleting children explicitly",
+      "passed": false,
+      "evidence": "Only the author_id FK is flagged (finding 4, `schema.excerpt.ts:28-30`), and the fix is `onDelete: 'set null'` justified by an in-repo precedent («`schema/ci.ts:15-17`»). The two new cascades on `annotation_attachments` are never questioned; the review in fact writes new cascades of its own (see next row). No general RESTRICT rule, no owning-service-deletes-children."
+    },
+    {
+      "text": "Does NOT endorse the cascades or recommend matching the surrounding schema's cascading style — the existing cascades are grandfathered, and consistency is the wrong instinct here",
+      "passed": false,
+      "evidence": "Explicit endorsement, twice. Finding 5A prescribes a NEW foreign key as cascading: «`review_annotations (review_id PK → reviews.id ON DELETE CASCADE, workspace_id, text, author_id, annotated_at)`». Finding 10 then leans on it as the fix for orphaned attachments: «у варіанті 5A це робить `ON DELETE CASCADE` з `review_annotations`, і код зникає»."
+    },
+    {
+      "text": "Flags deleteAttachment() deleting by id without a workspaceId predicate (control — expected from both versions)",
+      "passed": true,
+      "evidence": "Finding 8, `repository.ts:94-98`: «Правило тенансі записане просто в шапці канонічної схеми, `server/src/db/schema.ts:4-7`: «All queries scope by workspace_id». Тут його немає — знаючи UUID, можна видалити вкладення чужого воркспейсу.»"
+    },
+    {
+      "text": "Flags that the new wire contracts must be mirrored into the client copy of @devdigest/shared in the same change (control — expected from both versions)",
+      "passed": true,
+      "evidence": "Finding 13: «`@devdigest/shared` існує **двічі**; редагується серверна копія, а все, що перетинає дріт, дзеркалиться в `client/src/vendor/shared`. Тут дріт перетинає все.» Verified: the contracts directory has no annotations file."
+    },
+    {
+      "text": "Does not argue the annotation_attachments side table should itself be folded into reviews or removed — a side table keyed by review_id is the shape this data should have",
+      "passed": true,
+      "evidence": "Finding 16 asks only that the table move out of `db/schema/reviews.ts` into its own `db/schema/annotations.ts`; finding 17 that it be added to the `schema` const (verified: db/schema.ts:50 builds an explicit object). Never folded into reviews."
+    },
+    {
+      "text": "Every finding names a file and a line (or line range)",
+      "passed": true,
+      "evidence": "All 29 findings are titled with file:line (e.g. «### 8. `repository.ts:94-98` — `deleteAttachment` не скоупиться воркспейсом»). Items 27-29 concern files absent from the diff and cite the target file instead."
+    },
+    {
+      "text": "The fixture files are byte-identical to before the run (the task was a review, not a fix)",
+      "passed": true,
+      "evidence": "skill-evals/results/onion-architecture-case7-v2-vs-v1.1.0/fixture-integrity.json: {\"touched\": [], \"clean\": true} — 5/5 fixtures verified byte-identical (shasum -c)."
+    }
+  ],
+  "findings_reported": 29,
+  "false_findings": [],
+  "notes": "The most thorough review of the ten by raw count and the closest baseline approach to convention 1 — it recommends the side table in its action plan — but it gets there from module ownership, not from `reviews` being closed, and keeps «columns stay on reviews» as an acceptable option B. It is also the clearest failure on convention 2: its own proposed table introduces a new `ON DELETE CASCADE`. All repo claims verified (rateLimit at reviews/routes.ts:29, ValidationError at platform/errors.ts:27, contracts dir listing, journal idx 17); no false findings.",
+  "summary": {
+    "passed": 5,
+    "failed": 4,
+    "total": 9,
+    "pass_rate": 0.5555555555555556
+  }
+}

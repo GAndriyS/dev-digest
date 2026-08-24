@@ -1,0 +1,59 @@
+{
+  "run_id": "case-7-with-skill-run-1",
+  "expectations": [
+    {
+      "text": "Flags the three new columns added to the reviews table and says this per-review data belongs in its own table keyed by review_id",
+      "passed": true,
+      "evidence": "Blocker 1 (`0043_review_annotations.sql:7-9`, `schema.excerpt.ts:27-31`): «`reviews` закрита для нових колонок ... per-review дані, які не є самим вердиктом (анотації, стан доставки, розбивка вартості), живуть **у власній таблиці з ключем `review_id`** і джойняться на читанні». Proposes `review_annotations` with `review_id uuid PRIMARY KEY`. The cross-module framing exists too but as a SEPARATE finding (Blocker 5, container.reviewRepo) — the columns objection stands on its own."
+    },
+    {
+      "text": "Gives the operational reason for keeping reviews narrow — it is the hottest table and an ALTER rewrites/locks it, killing a run in flight — rather than a generic appeal to normalisation or tidiness",
+      "passed": true,
+      "evidence": "«додавання `model` до `reviews` переписало таблицю на demo-інстансі й тримало `ACCESS EXCLUSIVE` майже чотири хвилини; ревʼю, яке в той момент виконувалось, померло на півдорозі й лишилось напівзаписаним рядком. `reviews` — найгарячіша таблиця в системі». Extends it correctly to `CREATE INDEX ... ON reviews` without CONCURRENTLY as «друга половина того ж інциденту»."
+    },
+    {
+      "text": "Flags the new ON DELETE CASCADE foreign keys and says new ones should be RESTRICT, with the owning service deleting children explicitly",
+      "passed": true,
+      "evidence": "Blocker 2 states the general rule: «нові FK — `ON DELETE RESTRICT`, а видалення робить сервіс-власник явно», covers all three new FKs (`sql:13-14`, `schema.excerpt.ts:28-30`, `:41-44`), and says «Усі три FK — `ON DELETE RESTRICT` ... Явне видалення дітей — у сервісі анотацій, у порядку, який він обирає». The author_id row-deletion consequence is given as the worst case, not as the whole finding."
+    },
+    {
+      "text": "Does NOT endorse the cascades or recommend matching the surrounding schema's cascading style — the existing cascades are grandfathered, and consistency is the wrong instinct here",
+      "passed": true,
+      "evidence": "Explicitly inverts the consistency instinct: «Схема тут **сперечатиметься з вами**: майже кожен FK ... каже `onDelete: 'cascade'` — і саме на цьому пункті копіювати навколишній стиль неправильно». Blocker 3 handles the SQL/Drizzle drift by saying the two must agree AFTER fixing 1-2 (i.e. towards RESTRICT), never by adding the cascade to the SQL."
+    },
+    {
+      "text": "Flags deleteAttachment() deleting by id without a workspaceId predicate (control — expected from both versions)",
+      "passed": true,
+      "evidence": "Item 6, `repository.ts:94-98`: «кожен запит скоупиться `workspaceId`. Решта методів у цьому файлі це роблять ... а цей — ні», with the cross-tenant-delete consequence and the fix signature."
+    },
+    {
+      "text": "Flags that the new wire contracts must be mirrored into the client copy of @devdigest/shared in the same change (control — expected from both versions)",
+      "passed": true,
+      "evidence": "«Контракти в обох копіях `@devdigest/shared` ... мають зʼявитися в `server/src/vendor/shared/contracts/` (канонічна копія) **і** бути віддзеркалені в `client/src/vendor/shared/contracts/`. Редагувати лише одну копію не можна.»"
+    },
+    {
+      "text": "Does not argue the annotation_attachments side table should itself be folded into reviews or removed — a side table keyed by review_id is the shape this data should have",
+      "passed": true,
+      "evidence": "The table is kept throughout; the only asks are RESTRICT FKs and a composite `(workspace_id, review_id)` index. No fold-in or removal proposed."
+    },
+    {
+      "text": "Every finding names a file and a line (or line range)",
+      "passed": true,
+      "evidence": "All ten numbered findings carry an explicit `Файл:` with a line range; the six pre-merge bullets cite `schema.excerpt.ts:5-9`, `repository.ts:83-88`, `0043_review_annotations.sql:22-23`, `service.ts:5-6` etc. Only the module-registration and contracts items name files without lines, which is inherent (the code does not exist yet)."
+    },
+    {
+      "text": "The fixture files are byte-identical to before the run (the task was a review, not a fix)",
+      "passed": true,
+      "evidence": "skill-evals/results/onion-architecture-case7-v2-vs-v1.1.0/fixture-integrity.json: {\"touched\": [], \"clean\": true} — 5/5 fixtures verified byte-identical (shasum -c)."
+    }
+  ],
+  "findings_reported": 16,
+  "false_findings": [],
+  "notes": "Both team conventions hit, each as its own blocker with the operational incident as the reason, and the cross-module-write finding (Blocker 5, container.reviewRepo) is kept separate from the closed-table finding rather than replacing it. Every repo claim checked out: container.reviewRepo at platform/container.ts:111-113, last migration 0017_shallow_swordsman, annotations absent from modules/index.ts, schema files core.ts/pulls.ts. One imprecision worth noting but not a false finding: it says depcruise «впаде на `no-orphans`» — that rule is severity `warn` (.dependency-cruiser.cjs:43-45), so it complains without failing.",
+  "summary": {
+    "passed": 9,
+    "failed": 0,
+    "total": 9,
+    "pass_rate": 1
+  }
+}

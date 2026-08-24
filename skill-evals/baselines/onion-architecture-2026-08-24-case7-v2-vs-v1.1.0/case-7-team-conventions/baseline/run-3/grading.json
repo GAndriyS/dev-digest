@@ -1,0 +1,59 @@
+{
+  "run_id": "case-7-baseline-run-3",
+  "expectations": [
+    {
+      "text": "Flags the three new columns added to the reviews table and says this per-review data belongs in its own table keyed by review_id",
+      "passed": false,
+      "evidence": "FRAMING: cross-module write → container.reviewRepo, with the side table as a secondary architectural alternative. Blocker 1 is «Модуль `annotations` читає й пише чужу таблицю `reviews`»; its primary prescription keeps the columns exactly where they are and moves the code: «Запис/читання/очищення анотації — теж методи `ReviewRepository` (`setAnnotation` / `getAnnotation` / `clearAnnotation`), бо вони мутують рядок `reviews`». Only then: «Альтернатива, яка розвʼязує вузол архітектурно ... винести анотацію в окрему таблицю-сателіт `review_annotations` (PK = `review_id`, FK → `reviews`, як уже зроблено для `pr_intent` та `pr_brief`) ... Це найчистіший варіант». It reaches the right shape from pattern symmetry, but never objects to the columns living on `reviews` — its main fix ratifies them."
+    },
+    {
+      "text": "Gives the operational reason for keeping reviews narrow — it is the hottest table and an ALTER rewrites/locks it, killing a run in flight — rather than a generic appeal to normalisation or tidiness",
+      "passed": false,
+      "evidence": "Absent. The satellite-table argument is «відповідає патерну, який у схемі вже двічі застосований» plus «`ALTER TABLE reviews` з міграції зникає взагалі» — a tidiness/symmetry argument. No hot table, no rewrite, no lock, no in-flight run. Item 13 calls `reviews_annotated_at_idx` merely «індекс, який лише сповільнює запис»."
+    },
+    {
+      "text": "Flags the new ON DELETE CASCADE foreign keys and says new ones should be RESTRICT, with the owning service deleting children explicitly",
+      "passed": false,
+      "evidence": "Only the author_id FK (blocker 3, `schema.excerpt.ts:28-30`): «Має бути `onDelete: 'set null'`: автор зник — анотація лишається, підпис знімається». The two new cascades on `annotation_attachments` (`0043_review_annotations.sql:13-14`) are never mentioned as a problem, and no general rule for new foreign keys is stated anywhere."
+    },
+    {
+      "text": "Does NOT endorse the cascades or recommend matching the surrounding schema's cascading style — the existing cascades are grandfathered, and consistency is the wrong instinct here",
+      "passed": true,
+      "evidence": "Passes vacuously: the review contains no sentence endorsing a cascade and no drift-fix that adds one. Its only ON DELETE recommendation is `set null` for author_id, and the satellite-table reference to pr_intent/pr_brief is about the PK-equals-parent-id shape, not about the delete action. Note this is a non-statement, not a stated position — it never confronts the two new cascades at all."
+    },
+    {
+      "text": "Flags deleteAttachment() deleting by id without a workspaceId predicate (control — expected from both versions)",
+      "passed": true,
+      "evidence": "Item 5, `repository.ts:94-98`: «Єдиний запит у файлі без `workspaceId` у `where` — прямий IDOR, щойно зʼявиться роут, який його викличе», with the corrected signature."
+    },
+    {
+      "text": "Flags that the new wire contracts must be mirrored into the client copy of @devdigest/shared in the same change (control — expected from both versions)",
+      "passed": true,
+      "evidence": "Pre-merge checklist item 3: «Додавати треба в **канонічну** копію `server/src/vendor/shared`, а потім **дзеркалити** в `client/src/vendor/shared` — типи перетинають дріт, і правило «ніколи не редагувати лише одну копію» тут застосовне буквально.»"
+    },
+    {
+      "text": "Does not argue the annotation_attachments side table should itself be folded into reviews or removed — a side table keyed by review_id is the shape this data should have",
+      "passed": true,
+      "evidence": "The table is affirmed as the module's rightful own («Модуль `annotations` тоді володіє тільки `annotation_attachments` — своєю власною таблицею, і це чесно»); asks are a composite index and registration in the `schema` const."
+    },
+    {
+      "text": "Every finding names a file and a line (or line range)",
+      "passed": true,
+      "evidence": "Each numbered finding opens with file:line references (`repository.ts:24-32`, `service.ts:46-70`, `0043_review_annotations.sql:22-23`). Whole-file findings (blocker 2) say so explicitly («увесь файл»); the four checklist items concern files the branch does not contain."
+    },
+    {
+      "text": "The fixture files are byte-identical to before the run (the task was a review, not a fix)",
+      "passed": true,
+      "evidence": "skill-evals/results/onion-architecture-case7-v2-vs-v1.1.0/fixture-integrity.json: {\"touched\": [], \"clean\": true} — 5/5 fixtures verified byte-identical (shasum -c)."
+    }
+  ],
+  "findings_reported": 18,
+  "false_findings": [],
+  "notes": "The most interesting baseline run for the delta question: it independently proposes `review_annotations` keyed by `review_id` and calls it «найчистіший варіант» — but derives it from the pr_intent/pr_brief precedent (verified at db/schema/reviews.ts:48, :75), not from any rule that `reviews` is closed, and its primary recommendation is to move the annotation methods into ReviewRepository with the columns intact. So the shape is guessable; the constraint is not. Cascades reduced to the single author_id FK. All repo claims verified (migrate.ts:29-31, DELETE /reviews/:id at reviews/routes.ts:159, client.ts typing via the schema const, journal idx 17).",
+  "summary": {
+    "passed": 6,
+    "failed": 3,
+    "total": 9,
+    "pass_rate": 0.6666666666666666
+  }
+}

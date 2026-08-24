@@ -1,0 +1,44 @@
+{
+  "run_id": "eval-1-without_skill",
+  "expectations": [
+    {
+      "text": "Flags the node:fs read of skill files as filesystem I/O that reviewer-core must not do",
+      "passed": true,
+      "evidence": "Finding 1, 'Файлові операції всередині ядра', `summarizer.ts:1-2` (imports), використання `summarizer.ts:32-36` — cites `reviewer-core/AGENTS.md:13` iron rule and the `core-has-no-io` depcruise rule."
+    },
+    {
+      "text": "Flags the import from server/src/platform/config.js as the core reaching into the server package",
+      "passed": true,
+      "evidence": "Finding 2, 'Імпорт із `server/` у ядро', `summarizer.ts:4`, використання `:30` — cites `core-does-not-import-server`, the `server/src/vendor/shared` exception, and notes the transitive `dotenv/config` + `node:os`/`node:path` pull-in plus the undeclared dependency in reviewer-core's own package.json."
+    },
+    {
+      "text": "Flags the direct fetch() call to the GitHub API as network I/O that belongs outside the core",
+      "passed": true,
+      "evidence": "Finding 3, 'Мережевий виклик до GitHub із ядра', `summarizer.ts:38` and `:57-67`; likewise notes depcruise misses bare `fetch` — 'правило порушене, а гейт зелений. Тут ревʼюер — єдиний захист.'"
+    },
+    {
+      "text": "States the correct fix direction: the I/O moves to the caller and the core receives already-resolved data (skill bodies and commit subjects as arguments), rather than suggesting the core keep the I/O behind a new internal helper",
+      "passed": true,
+      "evidence": "Finding 1: 'Ядро приймає вже резольвлені рядки ... `skillBodies: string[]` ... Резолвінг переїжджає в caller', citing `run-executor.ts:230-234`. Finding 3 gives the interface with `/** Commit subjects, already fetched by the caller. */ commits: string[]` and states `repoFullName`/`headSha` disappear from the input; the closing summary repeats it."
+    },
+    {
+      "text": "Every finding names a file and a line (or line range)",
+      "passed": true,
+      "evidence": "14 of 16 findings carry file+line. #15 ('відсутній запис у `reviewer-core/src/index.ts`') and #16 ('відсутній `reviewer-core/test/summarizer.test.ts`') name a file but no line — both are absence findings."
+    },
+    {
+      "text": "The fixture file is byte-identical to before the run (the task was a review, not a fix)",
+      "passed": true,
+      "evidence": "verified by shasum -c, 7/7 OK"
+    }
+  ],
+  "passed_count": 6,
+  "total_count": 6,
+  "notes": "Identical outcome to the with_skill run on all four content assertions, quoting the same iron-rule text from `reviewer-core/AGENTS.md` and the same `run-executor.ts` precedent for resolved skill bodies. It went slightly deeper on two non-planted axes — the reviewer-core lockfile/undeclared-dependency angle on the `dotenv` pull-in, the `MAX_PR_DESCRIPTION_CHARS = 4000` cap, and the asymmetric error handling in `fetch` (silent `[]` on !ok vs an uncaught throw on a network error, no AbortSignal). Every repo reference spot-checked is accurate.",
+  "summary": {
+    "passed": 6,
+    "failed": 0,
+    "total": 6,
+    "pass_rate": 1
+  }
+}

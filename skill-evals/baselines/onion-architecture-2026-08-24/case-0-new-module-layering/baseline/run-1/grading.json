@@ -1,0 +1,44 @@
+{
+  "run_id": "eval-0-without_skill",
+  "expectations": [
+    {
+      "text": "Flags the GET handler in routes.ts for querying the database directly instead of delegating to the service layer",
+      "passed": true,
+      "evidence": "C1 'Роут ходить у БД повз сервіс — правило `routes-through-service`', `routes.ts:3`, `routes.ts:7`, `routes.ts:29-39`; also notes the handler duplicates the live `ExportsRepository.listForPull` (`repository.ts:43-51`) and gives the delegating handler as the fix."
+    },
+    {
+      "text": "Flags the service for constructing OctokitGitHubClient itself, and says the adapter must be resolved through the container",
+      "passed": true,
+      "evidence": "C3 `service.ts:5`, `service.ts:40-42` — cites `no-direct-adapter-clients`, notes `ContainerOverrides.github` cannot substitute it and the test would hit real GitHub, and states the fix: 'const github = await this.container.github();'."
+    },
+    {
+      "text": "Flags the service for taking FastifyRequest (reading headers/body) instead of receiving resolved values such as workspaceId and the parsed body",
+      "passed": true,
+      "evidence": "C2 `service.ts:1`, `service.ts:25`, `service.ts:26-27` — cites `service-stays-http-agnostic` and prescribes `create(workspaceId: string, prId: string, input: ExportCreate)`; B1 (`service.ts:26`) separately covers the `x-workspace-id` header read and shows the route resolving it via `getContext`."
+    },
+    {
+      "text": "Every finding names a file and a line (or line range)",
+      "passed": true,
+      "evidence": "20 of 22 findings carry file+line. The exceptions are A7 ('відсутній запис у `server/src/modules/index.ts`', file but no line) and E6 ('Немає тестів', neither) — both absence findings with no line to cite."
+    },
+    {
+      "text": "Does not claim repository.ts leaks across workspaces — every query in that file is already scoped by workspaceId",
+      "passed": true,
+      "evidence": "No such claim. Its repository.ts findings are E2 (dead `listForPull`, no limit), E3 (`inserted!`) and E4 (`row.format as ExportFormat`). B1 correctly locates the tenancy hole in `service.ts:26`, and A4 explicitly notes `getPull(workspaceId, prId)` at `service.ts:33` is what enforces tenancy and 'це зроблено правильно'."
+    },
+    {
+      "text": "The fixture files are byte-identical to before the run (the task was a review, not a fix)",
+      "passed": true,
+      "evidence": "verified by shasum -c, 7/7 OK"
+    }
+  ],
+  "passed_count": 6,
+  "total_count": 6,
+  "notes": "Matched the with_skill run on all three planted violations, naming the same three depcruise rules with config line numbers and giving the same fixes (delegate to the service, `container.github()`, resolved arguments). Added correct findings the skill run also had or partly had — `ConfigError` returning 500 for a client error, missing response schemas, POST not returning 201, duplicate DTO mapping. Same unavoidable compile-error volume; every repo-fact spot-checked (rule names, `reviewsForPull` shape, `getRepo`, `errors.ts` status codes) is accurate.",
+  "summary": {
+    "passed": 6,
+    "failed": 0,
+    "total": 6,
+    "pass_rate": 1
+  }
+}

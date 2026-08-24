@@ -1,0 +1,44 @@
+{
+  "run_id": "eval-1-with_skill",
+  "expectations": [
+    {
+      "text": "Flags the node:fs read of skill files as filesystem I/O that reviewer-core must not do",
+      "passed": true,
+      "evidence": "Finding 1, 'Файлові операції всередині домейн-ядра', `summarizer.ts` рядки 1–2, 7, 32–36 — quotes the `readFile(join(config.rootDir, SKILLS_DIR, ...))` line and cites the `core-has-no-io` rule."
+    },
+    {
+      "text": "Flags the import from server/src/platform/config.js as the core reaching into the server package",
+      "passed": true,
+      "evidence": "Finding 2, 'Ядро імпортує сервер', `summarizer.ts:4` — cites `core-does-not-import-server` and notes the only allowed slice of the server is `server/src/vendor/shared` under the `@devdigest/shared` alias; adds that `config.ts` does `import 'dotenv/config'` so the import itself has a side effect."
+    },
+    {
+      "text": "Flags the direct fetch() call to the GitHub API as network I/O that belongs outside the core",
+      "passed": true,
+      "evidence": "Finding 3, 'Мережевий виклик до GitHub із ядра', `summarizer.ts:38, 57–67`; also correctly warns that depcruise will NOT catch this because global `fetch` is not an import — 'Не сприймайте зелений depcruise як дозвіл.'"
+    },
+    {
+      "text": "States the correct fix direction: the I/O moves to the caller and the core receives already-resolved data (skill bodies and commit subjects as arguments), rather than suggesting the core keep the I/O behind a new internal helper",
+      "passed": true,
+      "evidence": "Explicit in each finding and again in the closing 'Як має виглядати правильний розподіл': `skillBodies: string[];    // ТІЛА, не слаги` and `commitSubjects: string[]; // РЯДКИ, не (repo, sha)`, with 'Сервер ... робить усе I/O перед викликом ядра' and the `run-executor.ts:234` precedent `linkedSkills.map((l) => l.skill.body)`."
+    },
+    {
+      "text": "Every finding names a file and a line (or line range)",
+      "passed": true,
+      "evidence": "12 of 13 findings carry explicit line numbers (1–12 all use bolded `рядки N–M`). Only #13 ('Файл не потрапляє в публічну поверхню пакета', `reviewer-core/src/index.ts` — не змінено) has no line, and it is an absence-of-registration finding."
+    },
+    {
+      "text": "The fixture file is byte-identical to before the run (the task was a review, not a fix)",
+      "passed": true,
+      "evidence": "verified by shasum -c, 7/7 OK"
+    }
+  ],
+  "passed_count": 6,
+  "total_count": 6,
+  "notes": "Caught all three planted core-purity violations, and got the fix direction exactly right — the core takes `skillBodies` and `commitSubjects` as arguments, the server resolves them. Its best non-planted contribution is the observation that `core-has-no-io` cannot see global `fetch`, so CI is green on a real violation. The remaining volume is compile errors (`ReviewSummary`, `./prompts.js`, `config.rootDir`/`defaultModel`, `result.value` vs `.data`) plus a path-traversal and prompt-injection pass; all of it checks out against the repo.",
+  "summary": {
+    "passed": 6,
+    "failed": 0,
+    "total": 6,
+    "pass_rate": 1
+  }
+}

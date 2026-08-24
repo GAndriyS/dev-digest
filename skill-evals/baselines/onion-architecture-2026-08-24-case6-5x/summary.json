@@ -1,0 +1,136 @@
+{
+  "skill": "onion-architecture",
+  "run": "skill-evals/results/onion-architecture-case6-5x",
+  "graded_at": "2026-08-24T13:04:11.897Z",
+  "configs": {
+    "baseline": {
+      "pass_rate": 1,
+      "passed": 45,
+      "total": 45,
+      "false_findings": 3,
+      "seconds": 367.48,
+      "runs": [
+        {
+          "case": "secret-cache-invalidation",
+          "run": "run-1",
+          "passed": 9,
+          "failed": 0,
+          "total": 9,
+          "pass_rate": 1,
+          "findings_reported": 25,
+          "false_findings": 1,
+          "seconds": 433.7
+        },
+        {
+          "case": "secret-cache-invalidation",
+          "run": "run-2",
+          "passed": 9,
+          "failed": 0,
+          "total": 9,
+          "pass_rate": 1,
+          "findings_reported": 27,
+          "false_findings": 0,
+          "seconds": 367.5
+        },
+        {
+          "case": "secret-cache-invalidation",
+          "run": "run-3",
+          "passed": 9,
+          "failed": 0,
+          "total": 9,
+          "pass_rate": 1,
+          "findings_reported": 20,
+          "false_findings": 1,
+          "seconds": 330.5
+        },
+        {
+          "case": "secret-cache-invalidation",
+          "run": "run-4",
+          "passed": 9,
+          "failed": 0,
+          "total": 9,
+          "pass_rate": 1,
+          "findings_reported": 19,
+          "false_findings": 0,
+          "seconds": 369.3
+        },
+        {
+          "case": "secret-cache-invalidation",
+          "run": "run-5",
+          "passed": 9,
+          "failed": 0,
+          "total": 9,
+          "pass_rate": 1,
+          "findings_reported": 16,
+          "false_findings": 1,
+          "seconds": 336.4
+        }
+      ]
+    },
+    "with-skill": {
+      "pass_rate": 1,
+      "passed": 45,
+      "total": 45,
+      "false_findings": 0,
+      "seconds": 329.12,
+      "runs": [
+        {
+          "case": "secret-cache-invalidation",
+          "run": "run-1",
+          "passed": 9,
+          "failed": 0,
+          "total": 9,
+          "pass_rate": 1,
+          "findings_reported": 19,
+          "false_findings": 0,
+          "seconds": 291.6
+        },
+        {
+          "case": "secret-cache-invalidation",
+          "run": "run-2",
+          "passed": 9,
+          "failed": 0,
+          "total": 9,
+          "pass_rate": 1,
+          "findings_reported": 17,
+          "false_findings": 0,
+          "seconds": 311.1
+        },
+        {
+          "case": "secret-cache-invalidation",
+          "run": "run-3",
+          "passed": 9,
+          "failed": 0,
+          "total": 9,
+          "pass_rate": 1,
+          "findings_reported": 17,
+          "false_findings": 0,
+          "seconds": 325.5
+        },
+        {
+          "case": "secret-cache-invalidation",
+          "run": "run-4",
+          "passed": 9,
+          "failed": 0,
+          "total": 9,
+          "pass_rate": 1,
+          "findings_reported": 22,
+          "false_findings": 0,
+          "seconds": 348.7
+        },
+        {
+          "case": "secret-cache-invalidation",
+          "run": "run-5",
+          "passed": 9,
+          "failed": 0,
+          "total": 9,
+          "pass_rate": 1,
+          "findings_reported": 26,
+          "false_findings": 0,
+          "seconds": 368.7
+        }
+      ]
+    }
+  },
+  "delta_pass_rate": 0
+}

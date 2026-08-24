@@ -1,0 +1,44 @@
+{
+  "run_id": "case-4-with-skill-run-1",
+  "expectations": [
+    {
+      "text": "Flags the `import type { FastifyRequest }` in the service as a violation — not as an allowed type-only import — and says the service must take resolved values instead",
+      "passed": true,
+      "evidence": "«B1. FastifyRequest протік у сервіс — це помилка навіть як import type» at service.ts:1,47,55. Fix: «Резолвити на краю, передавати всередину готові значення» with a DeliveryAudit interface in types.ts and recordDelivery(workspaceId, digestId, audit)."
+    },
+    {
+      "text": "Explains the nuance rather than asserting it flatly: type-only is tolerated for port interfaces but not for the request type, because the signature still speaks HTTP",
+      "passed": true,
+      "evidence": "Both halves given. Mechanical: service-stays-http-agnostic «на відміну від no-direct-adapter-clients — не має dependencyTypesNot: ['type-only']», plus tsPreCompilationDeps: true puts the type edge in the graph. Substantive: «Виняток для type-only існує рівно для одного випадку — назвати інтерфейс порту (import type { GitHubClient }). Тут же тип у сигнатурі означає, що сигнатура сервісу говорить HTTP.» Both rule names verified against server/.dependency-cruiser.cjs."
+    },
+    {
+      "text": "Flags the hand-rolled safeParse of req.body instead of a declared body schema on the route (control — expected from both versions)",
+      "passed": true,
+      "evidence": "«B2. Ручний safeParse у хендлері замість schema.body», routes.ts:24-29, with the 400-vs-422 divergence (app.ts:129-140, hasZodFastifySchemaValidationErrors → 422, verified) and the flat error envelope."
+    },
+    {
+      "text": "Flags the route matching an error message string to produce a 404 instead of the service throwing a domain error (control — expected from both versions)",
+      "passed": true,
+      "evidence": "«B3. Роут вручну мапить доменну помилку — і робить це за текстом повідомлення», routes.ts:31-38 paired with service.ts:27; notes setErrorHandler already turns AppError into the canonical 404 envelope."
+    },
+    {
+      "text": "Every finding names a file and a line (or line range)",
+      "passed": true,
+      "evidence": "B1-B3, I1-I3, I5, M1-M3 all carry file:line. I4 names server/src/modules/index.ts without a line because the defect is a missing registry entry."
+    },
+    {
+      "text": "The fixture files are byte-identical to before the run (the task was a review, not a fix)",
+      "passed": true,
+      "evidence": "Verified by the run owner: shasum -c over all 12 fixtures, 12/12 OK."
+    }
+  ],
+  "findings_reported": 11,
+  "false_findings": [],
+  "notes": "Nails both discriminating assertions and both controls. Every substantive repo claim verified: the two depcruise rule names and their differing dependencyTypesNot, tsPreCompilationDeps: true, the 422 handler in app.ts, OkResponse at _shared/schemas.ts:26, the digests table columns in db/schema/ops.ts, and the absence of DigestBuild/DigestWindow/DigestRecord from both vendor/shared copies. Caveat not counted as a false finding: several line anchors into .dependency-cruiser.cjs are off by ~16 lines (cites :78-86 and :88-97 for rules that live at 62-70 and 71-81, and :186 for tsPreCompilationDeps in a 180-line file) — the substance is right, the coordinates are not.",
+  "summary": {
+    "passed": 6,
+    "failed": 0,
+    "total": 6,
+    "pass_rate": 1
+  }
+}

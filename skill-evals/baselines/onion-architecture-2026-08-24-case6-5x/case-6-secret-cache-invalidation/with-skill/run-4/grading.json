@@ -1,0 +1,59 @@
+{
+  "run_id": "case-6-with-skill-run-4",
+  "expectations": [
+    {
+      "text": "Flags that _slack is cached but never cleared, so a rotated SLACK_BOT_TOKEN keeps using the old client until the process restarts",
+      "passed": true,
+      "evidence": "Blocker 1: «`invalidateSecretCaches()` не скидає `_slack` — ротація токена нічого не змінює… `container.slack()` до кінця життя процесу віддає клієнта зі старим, відкликаним токеном»."
+    },
+    {
+      "text": "Names invalidateSecretCaches() as the place the new field must be added, and shows it knows that method is what the settings route calls after writing a secret",
+      "passed": true,
+      "evidence": "Both halves: the fixed method body adding `this._slack = undefined;` and «`invalidateSecretCaches()` — це список, який чиститься руками… Його викликає `server/src/modules/settings/routes.ts` одразу після `secrets.set(...)` (рядок ~85, шлях `POST /settings/test-connection`)». Real call site is line 84."
+    },
+    {
+      "text": "Flags that slack() never checks this.overrides.slack and that ContainerOverrides has no slack entry, so the port cannot be substituted",
+      "passed": true,
+      "evidence": "Blocker 2: «`slack()` не перевіряє `overrides` — порт неможливо підмінити… `ContainerOverrides` перелічує secrets, auth, github, git, codeIndex, embedder, llm, repoIntel, projectContext, blast — але не `slack`»."
+    },
+    {
+      "text": "Connects the test's vi.mock of the adapter module path to the missing ContainerOverrides entry as its cause, rather than flagging the vi.mock alone as a style problem",
+      "passed": true,
+      "evidence": "Blocker 4: «Це прямий наслідок пунктів 2-3: підмінити адаптер через `ContainerOverrides` неможливо, тож тест підмінює шлях імпорту». Blocker 3 also closes with «Наслідок п. 3 і 4 видно неозброєним оком у тесті»."
+    },
+    {
+      "text": "Flags that no MockSlackClient was added to adapters/mocks.ts (control — expected from both versions)",
+      "passed": true,
+      "evidence": "Blocker 3: «Немає `MockSlackClient` в `adapters/mocks.ts`… 4. мок у `adapters/mocks.ts` — **не зроблено**», against a four-step port checklist."
+    },
+    {
+      "text": "Flags listRecent() querying by prId without a workspaceId predicate (control — expected from both versions)",
+      "passed": true,
+      "evidence": "Blocker 6: «`listRecent()` не скоупиться воркспейсом — витік між тенантами… Решта методів цього ж файлу це роблять (`:46`, `:61`, `:68`, `:80`) — цей один ні»."
+    },
+    {
+      "text": "Does not claim the test file is misnamed — publisher.it.test.ts already carries the .it. segment the integration lane needs",
+      "passed": true,
+      "evidence": "Finding 12.1 explicitly clears the lane: «Формально лани не поламані (`vitest.config.ts` інклюдить і `src/**/*.test.ts`, а розділ ланів… іде по підрядку `.it.test`), але це розходження з конвенцією»."
+    },
+    {
+      "text": "Every finding names a file and a line (or line range)",
+      "passed": true,
+      "evidence": "Consistent file+line locators, including the mapping fixture-line → real-file line for the container (`container.excerpt.ts:106-110` → `server/src/platform/container.ts:260-264`, which is exactly right). Findings 20-21 name files only — absence findings (module registration, client contract mirror)."
+    },
+    {
+      "text": "The fixture files are byte-identical to before the run (the task was a review, not a fix)",
+      "passed": true,
+      "evidence": "Pre-decided by the grader: `shasum -c` over all 6 fixtures returned 6/6 OK."
+    }
+  ],
+  "findings_reported": 22,
+  "false_findings": [],
+  "notes": "The only run that maps fixture line numbers onto the real container.ts lines (260-264) and the only one that proposes httpStatusOf() from platform/resilience.ts for the isRetryable bug — verified to exist at resilience.ts:40-46 and to handle .status/.statusCode exactly as claimed. Its rate-limit precedent list (settings:72, reviews:29,151, blast:33, brief:54, onboarding:50) checks out line for line. One imprecise aside in blocker 1: «той самий виклик стоїть і на записі секретів» — settings/routes.ts:84 is the only call site in the repo; kept out of false_findings because the finding it supports is correct.",
+  "summary": {
+    "passed": 9,
+    "failed": 0,
+    "total": 9,
+    "pass_rate": 1
+  }
+}

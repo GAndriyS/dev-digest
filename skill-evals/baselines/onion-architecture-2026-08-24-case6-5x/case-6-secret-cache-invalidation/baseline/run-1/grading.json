@@ -1,0 +1,61 @@
+{
+  "run_id": "case-6-baseline-run-1",
+  "expectations": [
+    {
+      "text": "Flags that _slack is cached but never cleared, so a rotated SLACK_BOT_TOKEN keeps using the old client until the process restarts",
+      "passed": true,
+      "evidence": "Blocker B2: «`invalidateSecretCaches()` не скидає закешований Slack-клієнт… `container.slack()` віддає закешований `SlackWebhookClient` зі старим токеном — і так до перезапуску процесу», with a six-step consequence chain into `failed` rows that retry can no longer pick up."
+    },
+    {
+      "text": "Names invalidateSecretCaches() as the place the new field must be added, and shows it knows that method is what the settings route calls after writing a secret",
+      "passed": true,
+      "evidence": "Both halves: «`this._slack = undefined;   // ← додати`» inside the method, and «Єдиний реальний виклик — `server/src/modules/settings/routes.ts:84`, одразу після `container.secrets.set(...)`»."
+    },
+    {
+      "text": "Flags that slack() never checks this.overrides.slack and that ContainerOverrides has no slack entry, so the port cannot be substituted",
+      "passed": true,
+      "evidence": "Blocker B1 lists all three locations: «`container.excerpt.ts:27-39` — в `ContainerOverrides` немає поля `slack?: SlackClient`; `container.excerpt.ts:73-79` — геттер `slack()` не перевіряє `this.overrides.slack`»."
+    },
+    {
+      "text": "Connects the test's vi.mock of the adapter module path to the missing ContainerOverrides entry as its cause, rather than flagging the vi.mock alone as a style problem",
+      "passed": true,
+      "evidence": "Blocker B4: «Це прямий наслідок B1 — автор не мав чим підмінити порт, бо `ContainerOverrides.slack` і `MockSlackClient` не існують. Виправлення B1 знімає й це». B1 also forward-references it («наслідок видно прямо в тесті гілки (B3)»)."
+    },
+    {
+      "text": "Flags that no MockSlackClient was added to adapters/mocks.ts (control — expected from both versions)",
+      "passed": true,
+      "evidence": "B1 third bullet: «`mocks.excerpt.ts:6-17` — у `server/src/adapters/mocks.ts` немає `MockSlackClient`», with a concrete class to add."
+    },
+    {
+      "text": "Flags listRecent() querying by prId without a workspaceId predicate (control — expected from both versions)",
+      "passed": true,
+      "evidence": "Blocker B7: «`listRecent` не скоупиться по `workspaceId` — читання через межу воркспейсу… Достатньо, щоб викликач передав чужий `prId`»."
+    },
+    {
+      "text": "Does not claim the test file is misnamed — publisher.it.test.ts already carries the .it. segment the integration lane needs",
+      "passed": true,
+      "evidence": "B5 closes: «Ім'я `*.it.test.ts` — правильне (skill: “DB-backed tests must be named `*.it.test.ts`…”), питання лише в теці»."
+    },
+    {
+      "text": "Every finding names a file and a line (or line range)",
+      "passed": true,
+      "evidence": "Every code finding carries a **Файл/рядки** header (`repository.ts:90-99`, `service.ts:82`, `container.excerpt.ts:106-110`). S6-S8 name files without lines — absence findings about contracts, the missing table and the missing registration."
+    },
+    {
+      "text": "The fixture files are byte-identical to before the run (the task was a review, not a fix)",
+      "passed": true,
+      "evidence": "Pre-decided by the grader: `shasum -c` over all 6 fixtures returned 6/6 OK."
+    }
+  ],
+  "findings_reported": 25,
+  "false_findings": [
+    "B5, point 3: claims that a test file living under `server/src/` trips the depcruise rule `not-to-dev-dep` at severity 'error'. Untrue — the rule is written `from: { path: '^src/', pathNot: '\\.(test|spec)\\.ts$' }` (server/.dependency-cruiser.cjs:145-151), so test files are explicitly excluded. The follow-on «і, ймовірно, у no-orphans» is also wrong in direction: the file imports other modules, so it is not an orphan. The claim is what turns a placement nit into a CI-failure argument, which is why it is recorded here."
+  ],
+  "notes": "The most thorough baseline run and, on the graded assertions, indistinguishable from the with-skill arm — it finds the stale-cache blocker, names the call site at settings/routes.ts:84, and derives the vi.mock from B1. It also independently reaches the same secondary insight as with-skill run-1 (B3: SLACK_BOT_TOKEN is not in SECRET_KEY_BY_PROVIDER, so there is no UI path that would even call invalidateSecretCaches for it). Its S7 schema-file inventory and the reviews.kind enum precedent both check out; only the not-to-dev-dep claim is false.",
+  "summary": {
+    "passed": 9,
+    "failed": 0,
+    "total": 9,
+    "pass_rate": 1
+  }
+}

@@ -1,0 +1,59 @@
+{
+  "run_id": "case-7-with-skill-run-5",
+  "expectations": [
+    {
+      "text": "Flags the three new columns added to the reviews table and says this per-review data belongs in its own table keyed by review_id",
+      "passed": true,
+      "evidence": "B1 «Три нові колонки на `reviews` — таблиця закрита для нових колонок» (`0043_review_annotations.sql:7-9`, `schema.excerpt.ts:27-31`) → «Власна таблиця, ключована `review_id`, join на читанні» with `\"review_id\" uuid PRIMARY KEY`. Explicitly rebuts the cheap-ALTER escape: «колонки додані без `DEFAULT`, тож самі по собі вони дешеві, але це не рятує ... рішення про власну таблицю — не про вартість цієї конкретної міграції, а про те, щоб `reviews` не росла далі». Cross-module write is a separate blocker (B4)."
+    },
+    {
+      "text": "Gives the operational reason for keeping reviews narrow — it is the hottest table and an ALTER rewrites/locks it, killing a run in flight — rather than a generic appeal to normalisation or tidiness",
+      "passed": true,
+      "evidence": "«додавання `model` переписало таблицю на демо-інстансі й тримало `ACCESS EXCLUSIVE` майже чотири хвилини, ревʼю, яке в той момент виконувалось, померло на півдорозі й лишилось напівзаписаним рядком. Це найгарячіша таблиця в системі — її читає кожен екран». M2 applies the same reasoning to the SHARE lock of `CREATE INDEX` on `reviews`."
+    },
+    {
+      "text": "Flags the new ON DELETE CASCADE foreign keys and says new ones should be RESTRICT, with the owning service deleting children explicitly",
+      "passed": true,
+      "evidence": "B3 states the general rule («нові FK — `ON DELETE RESTRICT`, а видалення дітей іде через сервіс-власник, у порядку, який він обирає, з можливістю залогувати або відмовити. Наявні каскади лишаються ... нові не додаються») for `sql:13-14` and `schema.excerpt.ts:41,44`, and prescribes `AnnotationsService.purgeForReview(...)` called explicitly by `ReviewService.deleteReview`. B2 handles the author_id FK separately."
+    },
+    {
+      "text": "Does NOT endorse the cascades or recommend matching the surrounding schema's cascading style — the existing cascades are grandfathered, and consistency is the wrong instinct here",
+      "passed": true,
+      "evidence": "«Схема буде сперечатися: майже кожен FK, який ви прочитаєте в `server/src/db/schema/*.ts`, каже `cascade` ... і саме тут копіювати оточення є неправильним інстинктом ... Якщо команда вважає, що тут каскад справді доречний — це треба написати в описі PR і узгодити окремо; дефолт — `restrict`». No drift-fix-by-cascade anywhere."
+    },
+    {
+      "text": "Flags deleteAttachment() deleting by id without a workspaceId predicate (control — expected from both versions)",
+      "passed": true,
+      "evidence": "B5, `repository.ts:94-98`: «маючи будь-який `attachment_id`, метод видаляє вкладення чужого воркспейсу ... Мертвий метод із дірою в тенансі — це заряджена міна», with the corrected signature returning boolean like deleteReview."
+    },
+    {
+      "text": "Flags that the new wire contracts must be mirrored into the client copy of @devdigest/shared in the same change (control — expected from both versions)",
+      "passed": true,
+      "evidence": "M3: «Схеми додати в `server/src/vendor/shared` (канонічна копія) і **віддзеркалити** в `client/src/vendor/shared` — усе, що перетинає дріт, живе у двох копіях, і правити лише одну не можна.» Verified: neither copy contains the four names."
+    },
+    {
+      "text": "Does not argue the annotation_attachments side table should itself be folded into reviews or removed — a side table keyed by review_id is the shape this data should have",
+      "passed": true,
+      "evidence": "The table is treated as correct and even extended (suggests adding `created_by`); asks are RESTRICT FKs and a composite index. It also cites `pr_intent` / `pr_brief` (verified at db/schema/reviews.ts:48, :75) as the in-repo precedent for the side-table shape."
+    },
+    {
+      "text": "Every finding names a file and a line (or line range)",
+      "passed": true,
+      "evidence": "Every B/M item and every «Дрібне» bullet leads with a file:line reference (`repository.ts:52-61`, `routes.ts:46-52`, `0043_review_annotations.sql:22-23`, `schema.excerpt.ts:5-9`). The two items about files missing from the branch (tests, helpers.ts/constants.ts) cannot have lines."
+    },
+    {
+      "text": "The fixture files are byte-identical to before the run (the task was a review, not a fix)",
+      "passed": true,
+      "evidence": "skill-evals/results/onion-architecture-case7-v2-vs-v1.1.0/fixture-integrity.json: {\"touched\": [], \"clean\": true} — 5/5 fixtures verified byte-identical (shasum -c)."
+    }
+  ],
+  "findings_reported": 23,
+  "false_findings": [],
+  "notes": "Highest finding count of the ten and the only review that splits the author_id cascade (B2) from the general new-FK rule (B3), so both the spectacular consequence and the rule are stated. Repo claims verified: .dependency-cruiser.cjs:83 no-cross-module-internals and :43 no-orphans, brief/routes.ts:43 and onboarding/routes.ts:30 response schemas, db/schema.ts:4-6 tenancy/created_by comment, journal breakpoints:true, pr_intent/pr_brief precedent. Minor overstatement, not a false finding: «(53 входження)» of cascade — the actual count in server/src/db/schema/*.ts is 50.",
+  "summary": {
+    "passed": 9,
+    "failed": 0,
+    "total": 9,
+    "pass_rate": 1
+  }
+}

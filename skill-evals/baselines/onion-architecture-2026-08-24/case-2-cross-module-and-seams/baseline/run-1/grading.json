@@ -1,0 +1,44 @@
+{
+  "run_id": "eval-2-without_skill",
+  "expectations": [
+    {
+      "text": "Flags the service importing another module's repository, and says the cross-module repository belongs on the container (container.reviewRepo)",
+      "passed": true,
+      "evidence": "A3 `service.ts:4` — point 3 cites `no-cross-module-internals` (`.dependency-cruiser.cjs:83-97`), then 'брати санкціонований шов із контейнера — `container.reviewRepo` (`server/src/platform/container.ts:111-113`)' with `BlastService` (`blast/service.ts:30-33`) as the working precedent. Also catches that the class is not exported from `review.repo.ts` and that `getPull` lives in `pull.repo.ts`."
+    },
+    {
+      "text": "Flags at least one repository query that is missing the workspaceId predicate (remove or countForPull)",
+      "passed": true,
+      "evidence": "C11 `repository.ts:32-34` — '`workspaceId` приймається і мовчки викидається. Хто знає UUID запису — видаляє його з **будь-якого** воркспейсу', with the `and(...)` + `.returning()` + NotFoundError fix; C13 `repository.ts:36-39` covers `countForPull`. C12 adds the missing owner check in the service."
+    },
+    {
+      "text": "Flags the vi.mock of an adapter module path and says the port should be substituted via ContainerOverrides instead",
+      "passed": true,
+      "evidence": "B8 `watchlist.test.ts:7-13` — 'Підміна класу через `vi.mock` обходить `ContainerOverrides` (`platform/container.ts:45-63`) і ламається щоразу, коли змінюється шлях до файлу адаптера'; fix: 'new Container(config, db, { github: mockGitHubClient })'. Also spots the mock is dead because WatchlistService never calls GitHub."
+    },
+    {
+      "text": "Flags that a DB-backed test must be named *.it.test.ts so the integration lane picks it up",
+      "passed": true,
+      "evidence": "B7 — 'DB-backed тест **мусить** закінчуватися на `.it.test.ts`. Лейни розділяються саме за цим глобом: `.github/workflows/server-unit.yml:106` ... `server-integration.yml:65`', concluding the file must become `watchlist.it.test.ts` in `server/test/`."
+    },
+    {
+      "text": "Every finding names a file and a line (or line range)",
+      "passed": true,
+      "evidence": "18 of 20 findings carry file+line (A1–A5, B8–B10, C11–C20). B6 (missing `routes.ts` / registration in `modules/index.ts`) and B7 (file naming/location) are absence and whole-file findings with no line to cite."
+    },
+    {
+      "text": "The fixture files are byte-identical to before the run (the task was a review, not a fix)",
+      "passed": true,
+      "evidence": "verified by shasum -c, 7/7 OK"
+    }
+  ],
+  "passed_count": 6,
+  "total_count": 6,
+  "notes": "Matched the with_skill run on all three planted violations with the same container/ContainerOverrides/lane-glob fixes, and reported four more findings — the N+1 in `digest` (C16), the hardcoded 25/26 limit instead of importing MAX_WATCHED_PULLS (C17), the missing `dockerAvailable()` skip gate (B9), and the digest counting entries whose PR is gone (C20). It found the same index-drift bug in `digest` (C15). Nothing invented: `pr_repo_number_uq` at `schema/pulls.ts:31`, the container getter lines, and the workflow lines all check out.",
+  "summary": {
+    "passed": 6,
+    "failed": 0,
+    "total": 6,
+    "pass_rate": 1
+  }
+}

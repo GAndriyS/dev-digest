@@ -1,0 +1,44 @@
+{
+  "run_id": "case-4-baseline-run-1",
+  "expectations": [
+    {
+      "text": "Flags the `import type { FastifyRequest }` in the service as a violation — not as an allowed type-only import — and says the service must take resolved values instead",
+      "passed": true,
+      "evidence": "«1. Fastify протік у сервіс — service-stays-http-agnostic впаде в CI», service.ts:1, 47–53, 55–57, with «Окремо наголошую: import type тут НЕ рятує.» Fix: DeliveryAudit resolved at the edge, recordDelivery(workspaceId, digestId, audit)."
+    },
+    {
+      "text": "Explains the nuance rather than asserting it flatly: type-only is tolerated for port interfaces but not for the request type, because the signature still speaks HTTP",
+      "passed": true,
+      "evidence": "Explicit three-bullet contrast: tsPreCompilationDeps: true means the type edge is in the graph; «no-direct-adapter-clients … має явний виняток dependencyTypesNot: ['type-only'] — саме тому import type порту законний»; «service-stays-http-agnostic такого винятку не має». Then the reason: «Виняток для портів існує тому, що назвати абстракцію — і є мета. FastifyRequest не абстракція домену, це транспортний тип» — plus the practical consequence that recordDelivery cannot be called from a job, CLI or unit test without a fake request."
+    },
+    {
+      "text": "Flags the hand-rolled safeParse of req.body instead of a declared body schema on the route (control — expected from both versions)",
+      "passed": true,
+      "evidence": "«3. Ручний safeParse у хендлері замість schema.body», routes.ts:26–29, with the 400-vs-422 mismatch and the flat `{ error: 'invalid_window' }` envelope against the canonical `{ error: { code, message, details } }`."
+    },
+    {
+      "text": "Flags the route matching an error message string to produce a 404 instead of the service throwing a domain error (control — expected from both versions)",
+      "passed": true,
+      "evidence": "«4. Ручний маппінг доменної помилки за текстом повідомлення», routes.ts:31–38 with service.ts:27; «порівняння за текстом повідомлення: будь-яке редагування рядка в сервісі тихо ламає роут»."
+    },
+    {
+      "text": "Every finding names a file and a line (or line range)",
+      "passed": true,
+      "evidence": "Findings 1-6 and 8-10 carry file plus line ranges, and the closing checklist table repeats a location for each. Finding 7 names server/src/modules/index.ts without a line — a missing registry entry has none."
+    },
+    {
+      "text": "The fixture files are byte-identical to before the run (the task was a review, not a fix)",
+      "passed": true,
+      "evidence": "Verified by the run owner: shasum -c over all 12 fixtures, 12/12 OK."
+    }
+  ],
+  "findings_reported": 10,
+  "false_findings": [],
+  "notes": "Identical verdict to the with-skill run on all four graded content assertions, and its config citations are the more accurate of the two (service-stays-http-agnostic at :63-70 vs the real 62-70; no-direct-adapter-clients at :72 vs the real 71). It reaches the nuance from v1.0.0's own line «import type of a port interface is always fine» read narrowly — it quotes that sentence and then checks the config to see whether the neighbouring rule shares the exception. Minor slip not counted as a false finding: finding 8 says the digests table «має рівно пʼять колонок» and then correctly lists six.",
+  "summary": {
+    "passed": 6,
+    "failed": 0,
+    "total": 6,
+    "pass_rate": 1
+  }
+}

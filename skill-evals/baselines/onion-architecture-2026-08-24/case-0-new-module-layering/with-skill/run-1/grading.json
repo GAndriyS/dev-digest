@@ -1,0 +1,44 @@
+{
+  "run_id": "eval-0-with_skill",
+  "expectations": [
+    {
+      "text": "Flags the GET handler in routes.ts for querying the database directly instead of delegating to the service layer",
+      "passed": true,
+      "evidence": "A-1 `routes.ts:3, 7, 29–47` — 'роут ходить у БД повз сервіс'; names the `routes-through-service` rule, notes `exports` is not in LAYERLESS_MODULES, and gives the fix: add `listForPull` to ExportsService and reduce the handler to `return service.listForPull(workspaceId, req.params.id)`."
+    },
+    {
+      "text": "Flags the service for constructing OctokitGitHubClient itself, and says the adapter must be resolved through the container",
+      "passed": true,
+      "evidence": "A-2 `service.ts:5, 40–43` — quotes `new OctokitGitHubClient(token)`, cites `no-direct-adapter-clients`, and prescribes `const github = await this.container.github();`, plus notes the three lines duplicate `Container.github()` including its cache invalidation."
+    },
+    {
+      "text": "Flags the service for taking FastifyRequest (reading headers/body) instead of receiving resolved values such as workspaceId and the parsed body",
+      "passed": true,
+      "evidence": "A-3 `service.ts:1, 25–27` — '`FastifyRequest` протік у сервіс'; cites `service-stays-http-agnostic`, correctly notes this rule has no `dependencyTypesNot: ['type-only']` escape so even `import type` errors, and gives the signature `create(workspaceId, prId, input)`. A-4 `service.ts:26` separately covers the raw `x-workspace-id` header read."
+    },
+    {
+      "text": "Every finding names a file and a line (or line range)",
+      "passed": true,
+      "evidence": "15 of 18 findings carry file+line (A-1…A-5, B-1…B-6, C-1…C-4). The three without a line — B-7 (missing registration in `server/src/modules/index.ts`), C-5 (`service.ts`, missing `createdBy`), C-6 (no tests in the set) — are absence-of-code findings where no line can exist."
+    },
+    {
+      "text": "Does not claim repository.ts leaks across workspaces — every query in that file is already scoped by workspaceId",
+      "passed": true,
+      "evidence": "No such claim. The review states '`repository.ts` при цьому написаний майже правильно — його чіпати треба найменше'; its only repository.ts findings are C-1 (dead/unlimited `listForPull`), C-3 (`inserted!`) and C-4 (`row.format as ExportFormat`). The tenancy hole it reports (A-4) is the `x-workspace-id` header read in service.ts, which is correct."
+    },
+    {
+      "text": "The fixture files are byte-identical to before the run (the task was a review, not a fix)",
+      "passed": true,
+      "evidence": "verified by shasum -c, 7/7 OK"
+    }
+  ],
+  "passed_count": 6,
+  "total_count": 6,
+  "notes": "Found all three planted violations and named the exact depcruise rule behind each, including the subtle point that `service-stays-http-agnostic` has no type-only exemption so `import type { FastifyRequest }` alone is an error. Fix directions are concrete and repo-grounded (container.github(), service.listForPull delegation, ContainerOverrides for tests, *.it.test.ts glob). Most of its volume is the unavoidable does-not-compile noise (missing `exports` table, contracts, helpers/constants, `listReviews`, `repoFullName`, `commitUrl`), all of which checks out against the real repo.",
+  "summary": {
+    "passed": 6,
+    "failed": 0,
+    "total": 6,
+    "pass_rate": 1
+  }
+}

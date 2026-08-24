@@ -1,0 +1,59 @@
+{
+  "run_id": "case-6-baseline-run-2",
+  "expectations": [
+    {
+      "text": "Flags that _slack is cached but never cleared, so a rotated SLACK_BOT_TOKEN keeps using the old client until the process restarts",
+      "passed": true,
+      "evidence": "Blocker 3: «`invalidateSecretCaches()` не скидає `_slack` — протухлий токен живе до перезапуску… Лікується лише рестартом процесу, причому симптом виглядає як “Slack зламався”, а не як “кеш протух”»."
+    },
+    {
+      "text": "Names invalidateSecretCaches() as the place the new field must be added, and shows it knows that method is what the settings route calls after writing a secret",
+      "passed": true,
+      "evidence": "Both halves: «`this._slack = undefined;      // ← бракує`» and «Метод викликається з `server/src/modules/settings/routes.ts:84` одразу після `await container.secrets.set(SECRET_KEY_BY_PROVIDER[provider], key)` — саме для того, щоб щойно збережений ключ підхопився без рестарту». Quotes the real call verbatim."
+    },
+    {
+      "text": "Flags that slack() never checks this.overrides.slack and that ContainerOverrides has no slack entry, so the port cannot be substituted",
+      "passed": true,
+      "evidence": "Blocker 1: «Порт `SlackClient` доданий у контейнер без `ContainerOverrides` — шов підміни зламано… входу `slack?: SlackClient` немає. Відповідно й гетер не починається з перевірки override»."
+    },
+    {
+      "text": "Connects the test's vi.mock of the adapter module path to the missing ContainerOverrides entry as its cause, rather than flagging the vi.mock alone as a style problem",
+      "passed": true,
+      "evidence": "Blocker 1: «Порт без входу в overrides неможливо підмінити нічим, окрім підробки `SecretsProvider` плюс мокання шляху модуля — що тест і робить (див. пункт 4)», and blocker 4's fix is conditioned «після виправлення пунктів 1-2»."
+    },
+    {
+      "text": "Flags that no MockSlackClient was added to adapters/mocks.ts (control — expected from both versions)",
+      "passed": true,
+      "evidence": "Blocker 2: «Немає `MockSlackClient` у `adapters/mocks.ts`… Це друга половина того самого зламаного шва»."
+    },
+    {
+      "text": "Flags listRecent() querying by prId without a workspaceId predicate (control — expected from both versions)",
+      "passed": true,
+      "evidence": "Finding 9: «`listRecent(prIds)` не скоуплений по `workspaceId`… Метод, який приймає лише масив `prId`, — це готовий міжтенантний витік»."
+    },
+    {
+      "text": "Does not claim the test file is misnamed — publisher.it.test.ts already carries the .it. segment the integration lane needs",
+      "passed": true,
+      "evidence": "Blocker 5 closes: «Назва `*.it.test.ts` — єдине правильне, що тут є: юніт- і інтеграційний лейни розділяються рівно по цьому глобу»."
+    },
+    {
+      "text": "Every finding names a file and a line (or line range)",
+      "passed": true,
+      "evidence": "Every code finding opens with a file+line locator (`container.excerpt.ts:27-39`, `service.ts:136-139`, `repository.ts:90-99`, `publisher.it.test.ts:7-13`). The closing «Не було в наборі» list names files without lines by construction — those files are not in the review set."
+    },
+    {
+      "text": "The fixture files are byte-identical to before the run (the task was a review, not a fix)",
+      "passed": true,
+      "evidence": "Pre-decided by the grader: `shasum -c` over all 6 fixtures returned 6/6 OK."
+    }
+  ],
+  "findings_reported": 27,
+  "false_findings": [],
+  "notes": "Quotes the actual settings/routes.ts line («await container.secrets.set(SECRET_KEY_BY_PROVIDER[provider], key)»), i.e. it read the file rather than paraphrasing. Its sharpest verified claim is in blocker 4: «У всій директорії `server/test/` `vi.mock` зустрічається рівно в одному юніт-тесті і в жодному `*.it.test.ts`» — true (only test/onboarding-facts.test.ts). Finding 6 also correctly routes the isRetryable fix to the existing httpStatusOf/defaultIsRetryable in platform/resilience.ts. Counts «14 наявних інтеграційних тестів», which matches the tree.",
+  "summary": {
+    "passed": 9,
+    "failed": 0,
+    "total": 9,
+    "pass_rate": 1
+  }
+}
