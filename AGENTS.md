@@ -9,15 +9,22 @@ agent review on it. Node 22 · TS 5.7 · Zod 3 · Fastify 5 + Drizzle/Postgres
 Read the touched module's `INSIGHTS.md` before starting work (root `INSIGHTS.md`
 for cross-cutting tasks); search `docs/` and `specs/` as needed. Working inside
 a package — read its own `AGENTS.md` (`server/`, `client/`, `reviewer-core/`,
-`e2e/`, `mcp/`).
+`e2e/`, `mcp/`); `evals/` has no `AGENTS.md` — read its `README.md`.
 
 ## Conventions (not obvious from code)
 
-- This is NOT a monorepo workspace: five independent packages, each with its own
-  `package.json` **and lockfile**. `server/`, `client/` → **pnpm**;
+- This is NOT a monorepo workspace: six independent packages, each with its own
+  `package.json` **and lockfile**. `server/`, `client/`, `evals/` → **pnpm**;
   `reviewer-core/`, `e2e/`, `mcp/` → **npm**. Installing at the repo root does
   nothing. Cross-package code resolves via tsconfig path aliases, not published
   modules.
+- `evals/` is the harness eval package (skills, subagents, workflow traces) and
+  is **not** part of any CI slice — `scripts/verify.mjs` does not know it. It
+  reads `.claude/skills/*` and `.claude/agents/*` by relative path, which is why
+  it lives in the repo instead of `node_modules`. Its `pnpm.onlyBuiltDependencies`
+  is dead config under pnpm 11 — the esbuild build approval lives in
+  `evals/pnpm-workspace.yaml` (`allowBuilds: esbuild: true`); without it vitest
+  installs unbuilt.
 - Migrations are NOT applied on boot — `cd server && pnpm db:migrate`.
 - `@devdigest/shared` exists **twice**: `server/src/vendor/shared` (canonical,
   also used by reviewer-core) and `client/src/vendor/shared` (trimmed copy, has
@@ -64,6 +71,11 @@ a package — read its own `AGENTS.md` (`server/`, `client/`, `reviewer-core/`,
 - Review-engine work → read `reviewer-core/AGENTS.md`
 - Browser e2e work → read `e2e/AGENTS.md`
 - MCP-server / coding-agent tool work → read `mcp/AGENTS.md`
+- Measuring a skill, subagent or the harness itself (static gate, LLM-judged
+  quality, workflow traces, with/without benchmark) → read `evals/README.md`;
+  the model-free gate is `cd evals && pnpm eval:quality`. Model-backed lanes
+  (`pnpm eval*`) spend subscription or OpenRouter budget — run them by hand,
+  never as a side effect of another task.
 - Deep dives → read `docs/` · current work → read `specs/` · findings → read
   `INSIGHTS.md` · skills catalog → read `.claude/skills/README.md` · subagents
   catalog → read `.claude/agents/README.md`
