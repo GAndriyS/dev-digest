@@ -4,6 +4,10 @@ Harness that runs a skill's eval set twice — **with the skill** and **without
 it** — and grades both. It answers one question: does this skill change what an
 agent does, on a repository that already documents itself?
 
+**Looking for the results rather than the machinery?** → [`HISTORY.md`](HISTORY.md)
+— every comparison we have run, with the one-screen contrast that shows what the
+skill actually changed.
+
 The cases and fixtures do **not** live here. They live with the skill:
 
 ```

@@ -11,8 +11,9 @@ still works, not with a pointer to a harness that stayed behind.
   `tsconfig`, so `pnpm typecheck` and `depcruise` never see it.
 
 The harness that runs these cases lives in `skill-evals/` at the repo root
-(runner, grader prompt, recorded baseline, results). It discovers this file by
-convention: `.claude/skills/<skill>/evals/evals.json`.
+(runner, grader prompt, recorded baselines, results). It discovers this file by
+convention: `.claude/skills/<skill>/evals/evals.json`. Every comparison ever run,
+with the reviews kept verbatim, is indexed in `skill-evals/HISTORY.md`.
 
 ```bash
 node skill-evals/run.mjs --skill onion-architecture
