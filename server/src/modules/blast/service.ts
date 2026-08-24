@@ -5,6 +5,7 @@ import { assemblePrompt } from '../../platform/prompt.js';
 import type { RunLogger } from '../../platform/run-logger.js';
 import type { BlastResult } from '../repo-intel/types.js';
 import { resolveFeatureModel } from '../settings/index.js';
+import type { Blast } from './types.js';
 import {
   BLAST_SUMMARY_MAX_RETRIES,
   BLAST_SUMMARY_MAX_TOKENS,
@@ -26,7 +27,7 @@ import {
  * cross-module seam), so this module owns no SQL of its own — `file_edges`,
  * `file_facts` and `symbols` belong to repo-intel and stay there.
  */
-export class BlastService {
+export class BlastService implements Blast {
   private repo: Container['reviewRepo'];
 
   constructor(private container: Container) {

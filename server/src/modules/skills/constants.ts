@@ -30,7 +30,7 @@ export const EVAL_FALLBACK_MODEL = 'deepseek/deepseek-v4-flash';
  * Error code returned (409) when no provider key is configured, so the UI can
  * disable its Run buttons instead of offering an action that cannot succeed.
  */
-export const NO_PROVIDER_KEY_CODE = 'no_provider_key';
+export { NO_PROVIDER_KEY_CODE } from '../../platform/errors.js';
 
 // ---- Skill import (L02) ---------------------------------------------------
 

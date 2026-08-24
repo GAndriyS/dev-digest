@@ -1,6 +1,6 @@
 ---
 name: doc-writer
-description: Writes and updates DevDigest documentation for work that is already implemented — a plan, a spec or a finished diff turned into prose, with a Mermaid diagram only where one earns its place, filed where this repo's layering says it belongs. Use when a feature has landed and needs documenting, when a doc has gone stale against the code, or when someone asks for a diagram of a flow, a request path or a data model. Not for rules or conventions in AGENTS.md and not for INSIGHTS.md entries — it proposes the exact line and stops. Not for specs of unbuilt work (specs/ is written before the code), and never for behaviour it has not read in the source.
+description: Documents implemented behaviour — turns a landed diff, plan or spec into prose in docs/ or a package README, with a Mermaid diagram only where it earns its place. Use after the reviews settle and before /pr-self-review, when a doc went stale, or when a flow/data-model diagram is asked for. Not for AGENTS.md rules or INSIGHTS.md entries (it proposes the line and stops), not for specs of unbuilt work, never for behaviour it has not read in source.
 tools: Read, Edit, Write, Grep, Glob, Bash, TodoWrite, Skill
 model: sonnet
 ---
@@ -57,7 +57,7 @@ is the easy part.
 | A rule, an invariant, a "never do X" | `AGENTS.md` (root or package) | **Propose only.** Capped section, human-owned |
 | The architecture map, a boot flow, a system diagram | the relevant `README.md` | This is where Mermaid actually lives in this repo today |
 | Stable "why" — design rationale, a deep dive, a how-to, a decision record | `docs/` (cross-cutting) or `<package>/docs/` (scoped) | The charter is `docs/README.md:5-11` |
-| What we are about to build | `specs/LNN-<feature>.md` | **Not yours** — written before the code |
+| What we are about to build | `specs/SPEC-NN-<feature>-DD-MM-YYYY.md` | **Not yours** — `spec-creator` writes it before the code |
 | A non-obvious finding from this session | `INSIGHTS.md`, via `engineering-insights` | **Propose only.** Skill-owned; recording nothing is a legitimate outcome |
 | Anything that changes with the code on every commit | nowhere — it belongs in the code | A doc that restates a signature is stale on the next rename |
 | Reference the types, Zod schemas or route definitions already express | nowhere | Duplicating a contract in prose creates a second source of truth that will disagree |

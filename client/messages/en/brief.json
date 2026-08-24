@@ -15,5 +15,29 @@
     "blame": "blame",
     "noHistory": "No history available for this line.",
     "noCommits": "No commits found for this line."
+  },
+  "card": {
+    "title": "Why + Risk Brief",
+    "regenerate": "Regenerate",
+    "regenerating": "Regenerating…",
+    "generateFailed": "Generation failed",
+    "loadError": "Could not load this PR's brief.",
+    "emptyTitle": "No brief yet",
+    "emptyBody": "Generate a why + risk brief for this PR — what it does, why, what could go wrong, and where to look first.",
+    "emptyCta": "Generate brief",
+    "stale": "PR has new commits since this was generated",
+    "what": "What",
+    "why": "Why",
+    "risks": "Risks",
+    "reviewFocusHeading": "Review focus — read these first",
+    "reviewFocusCount": "{count}",
+    "reviewFocusEmpty": "No files flagged for priority review.",
+    "riskLevel": {
+      "high": "High risk",
+      "medium": "Medium risk",
+      "low": "Low risk"
+    },
+    "scoreLabel": "Agent review score",
+    "noScore": "Not yet reviewed by an agent"
   }
 }

@@ -8,7 +8,14 @@ import { SmartDiffViewer } from "../SmartDiffViewer";
 import { usePrComments, useCreatePrComment } from "@/lib/hooks/reviews";
 import { notify } from "@/lib/toast";
 import type { FindingRecord, PrFile } from "@devdigest/shared";
-import { DEFAULT_DIFF_VIEW, DIFF_VIEWS, SEGMENT_ARROW_KEYS, type DiffView } from "./constants";
+import { targetFileMeta } from "../SmartDiffViewer/helpers";
+import {
+  DEFAULT_DIFF_VIEW,
+  DIFF_VIEWS,
+  SCROLL_SETTLE_MAX_FRAMES,
+  SEGMENT_ARROW_KEYS,
+  type DiffView,
+} from "./constants";
 import { s } from "./styles";
 
 /** Both orders in ONE control: a two-segment pill whose highlight slides to the
@@ -80,15 +87,82 @@ interface DiffTabProps {
       optional: an unsoldered seam with the caller must fail typecheck rather
       than silently drop clicks. */
   onOpenFinding: (findingId: string) => void;
+  /** Repo-relative path to expand and scroll into view on mount — the page's
+      `?file=` (SPEC-04 AC-34/AC-35), forwarded from a ReviewFocusPanel row
+      via `OverviewTab`. When set, this tab renders the flat
+      `DiffViewer` directly instead of `SmartDiffViewer` (R3/Amendment A3 —
+      see `targetFileMeta` in `SmartDiffViewer/helpers.ts`), so Smart order's
+      own grouped `fileMeta` is never a second writer of `defaultOpen` for
+      this path. Absent/null: ordinary Smart-order default, unaffected. */
+  targetPath?: string | null;
 }
 
-export function DiffTab({ prId, filesCount, files, canComment, findings, onOpenFinding }: DiffTabProps) {
+export function DiffTab({
+  prId,
+  filesCount,
+  files,
+  canComment,
+  findings,
+  onOpenFinding,
+  targetPath = null,
+}: DiffTabProps) {
   const t = useTranslations("prReview");
   const { data: comments } = usePrComments(prId);
   const create = useCreatePrComment(prId);
   // Comments start hidden so the diff is clean by default — toggle to reveal.
   const [showComments, setShowComments] = React.useState(false);
-  const [view, setView] = React.useState<DiffView>(DEFAULT_DIFF_VIEW);
+  // Lazy initializer: a `targetPath` lands directly on Original order instead
+  // of flashing Smart order first — DiffTab remounts on every tab switch (the
+  // page conditionally renders it), so "on mount" is the only time this needs
+  // deciding.
+  const [view, setView] = React.useState<DiffView>(() => (targetPath ? "original" : DEFAULT_DIFF_VIEW));
+
+  // Scroll the target file into view once it's rendered. A single
+  // `scrollIntoView` undershoots here: neighbouring FileCards above the
+  // target are still expanding for several frames after mount, which keeps
+  // moving the target's document position out from under a one-shot scroll
+  // (client/INSIGHTS.md — same pattern as FindingsPanel's `?finding=`
+  // target). Re-scroll every frame until the element's DOCUMENT offset holds
+  // still, with a frame cap so a genuinely never-settling layout stops
+  // rather than spins.
+  const diffRef = React.useRef<HTMLDivElement | null>(null);
+  React.useEffect(() => {
+    if (!targetPath) return;
+    const documentTop = (el: HTMLElement) => {
+      let y = 0;
+      for (let n: HTMLElement | null = el; n; n = n.offsetParent as HTMLElement | null) y += n.offsetTop;
+      return y;
+    };
+    // FileCard renders the path as literal text (`.mono`) inside its header —
+    // no `data-*` anchor exists on it (that component isn't owned by this
+    // change), so an exact text match scoped to this tab's own diff area is
+    // the anchor. `closest("div")` climbs from the text span to its header
+    // row, a taller, more legible target to land the viewport on.
+    const findTarget = (): HTMLElement | null => {
+      const root = diffRef.current;
+      if (!root) return null;
+      for (const el of root.querySelectorAll<HTMLElement>("span.mono")) {
+        if (el.textContent === targetPath) return (el.closest("div") as HTMLElement | null) ?? el;
+      }
+      return null;
+    };
+    let raf = 0;
+    let lastTop = Number.NaN;
+    let stableFrames = 0;
+    let frames = 0;
+    const tick = () => {
+      const el = findTarget();
+      if (el) {
+        const top = documentTop(el);
+        el.scrollIntoView({ block: "center" });
+        stableFrames = top === lastTop ? stableFrames + 1 : 0;
+        lastTop = top;
+      }
+      if (stableFrames < 2 && ++frames < SCROLL_SETTLE_MAX_FRAMES) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [targetPath]);
 
   const commentCount = comments?.length ?? 0;
 
@@ -148,19 +222,26 @@ export function DiffTab({ prId, filesCount, files, canComment, findings, onOpenF
           </span>
         </div>
       </div>
-      {view === "original" ? (
-        // No `fileMeta` at all — the design's "no annotations in Original
-        // order" is structural here, not a conditional inside the viewer.
-        <DiffViewer files={files} commenting={commenting} />
-      ) : (
-        <SmartDiffViewer
-          prId={prId}
-          files={files}
-          findings={findings}
-          commenting={commenting}
-          onOpenFinding={onOpenFinding}
-        />
-      )}
+      <div ref={diffRef}>
+        {view === "original" ? (
+          // `fileMeta` is empty unless a `?file=` target is active — Original
+          // order otherwise carries "no annotations" structurally, not via a
+          // conditional inside the viewer.
+          <DiffViewer
+            files={files}
+            commenting={commenting}
+            fileMeta={targetPath ? targetFileMeta(targetPath) : undefined}
+          />
+        ) : (
+          <SmartDiffViewer
+            prId={prId}
+            files={files}
+            findings={findings}
+            commenting={commenting}
+            onOpenFinding={onOpenFinding}
+          />
+        )}
+      </div>
     </section>
   );
 }

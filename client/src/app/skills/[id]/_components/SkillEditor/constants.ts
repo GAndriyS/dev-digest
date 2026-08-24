@@ -8,12 +8,13 @@ export interface EditorTab {
 }
 
 /** Tab keys accepted in `?tab=`; anything else falls back to DEFAULT_TAB. */
-export const VALID_TABS = ["config", "preview", "evals", "stats", "versions"];
+export const VALID_TABS = ["config", "context", "preview", "evals", "stats", "versions"];
 
 export const DEFAULT_TAB = "config";
 
 export const TABS: readonly EditorTab[] = [
   { key: "config", labelKey: "tabs.config", icon: "Settings" },
+  { key: "context", labelKey: "tabs.context", icon: "FileText" },
   { key: "preview", labelKey: "tabs.preview", icon: "Eye" },
   { key: "evals", labelKey: "tabs.evals", icon: "FlaskConical" },
   { key: "stats", labelKey: "tabs.stats", icon: "BarChart" },

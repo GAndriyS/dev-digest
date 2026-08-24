@@ -64,3 +64,9 @@ jobs:
           node scripts/pr-gate-ci.mjs \
             --base "${{ github.event.pull_request.base.sha }}" \
             --body-file "$RUNNER_TEMP/pr-body.md"
+
+      # Feature specs are cited by SPEC-NN / AC-N from plans, PRs and
+      # plan-verifier; this makes those ids unique and greppable by construction
+      # rather than by the spec-creator prompt holding (see specs/README.md).
+      - name: Check specs
+        run: node scripts/check-specs.mjs

@@ -1,17 +1,20 @@
-/* /skills/:id — loads the skill, paints the header, and hands the rest to the
-   tabbed SkillEditor. Kept separate from the editor so the editor only ever
-   deals with a resolved Skill (no loading/404 branches inside the tabs). */
+/* /skills/:id — the right column's content once a skill is selected: loads
+   the skill, paints its header, and hands the rest to the tabbed SkillEditor.
+   AppShell, breadcrumbs and the left column live one level up in
+   SkillsLabShell (L05) — this only ever renders inside that shell's detail
+   column, never on its own. Kept separate from the editor so the editor only
+   ever deals with a resolved Skill (no loading/404 branches inside the tabs). */
 "use client";
 
 import React from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { Badge, Button, EmptyState, ErrorState, Icon, Skeleton } from "@devdigest/ui";
-import { AppShell } from "@/components/app-shell";
 import { useDeleteSkill, useSkill } from "@/lib/hooks/skills";
 import { useToast } from "@/lib/toast";
 import { ApiError } from "@/lib/api";
 import { SkillEditor } from "../SkillEditor";
+import { RunEvalsButton, SkillEvalRunProvider } from "../SkillEvalRun";
 import { s } from "./styles";
 
 export function SkillDetailView() {
@@ -22,42 +25,30 @@ export function SkillDetailView() {
   const { data: skill, isLoading, isError, error, refetch } = useSkill(id);
   const del = useDeleteSkill();
 
-  const crumb = [
-    { label: t("page.crumbLab") },
-    { label: t("page.crumbSkills"), href: "/skills" },
-    { label: skill?.name ?? t("detail.crumbSkill") },
-  ];
-
   // A missing skill 404s; anything else is a transport/server failure. Both are
   // terminal for this route, but only one of them is worth a Retry button.
   const notFound = error instanceof ApiError && error.status === 404;
 
   if (isError) {
-    return (
-      <AppShell crumb={crumb}>
-        {notFound ? (
-          <EmptyState
-            icon="Search"
-            title={t("detail.notFound.title")}
-            body={t("detail.notFound.body")}
-            cta={t("detail.back")}
-            onCta={() => router.push("/skills")}
-          />
-        ) : (
-          <ErrorState fullScreen body={t("detail.loadError")} onRetry={() => refetch()} />
-        )}
-      </AppShell>
+    return notFound ? (
+      <EmptyState
+        icon="Search"
+        title={t("detail.notFound.title")}
+        body={t("detail.notFound.body")}
+        cta={t("detail.back")}
+        onCta={() => router.push("/skills")}
+      />
+    ) : (
+      <ErrorState fullScreen body={t("detail.loadError")} onRetry={() => refetch()} />
     );
   }
 
   if (isLoading || !skill) {
     return (
-      <AppShell crumb={crumb}>
-        <div style={s.loading}>
-          <Skeleton height={24} width={240} />
-          <Skeleton height={200} />
-        </div>
-      </AppShell>
+      <div style={s.loading}>
+        <Skeleton height={24} width={240} />
+        <Skeleton height={200} />
+      </div>
     );
   }
 
@@ -74,7 +65,7 @@ export function SkillDetailView() {
   };
 
   return (
-    <AppShell crumb={crumb}>
+    <SkillEvalRunProvider skill={skill}>
       <div style={s.wrap}>
         <div style={s.header}>
           <Icon.Sparkles size={18} style={s.icon} />
@@ -90,13 +81,8 @@ export function SkillDetailView() {
             </Badge>
           )}
           <div style={s.spacer}>
-            <Button
-              kind="danger"
-              size="sm"
-              icon="Trash"
-              onClick={remove}
-              disabled={del.isPending}
-            >
+            <RunEvalsButton skill={skill} />
+            <Button kind="danger" size="sm" icon="Trash" onClick={remove} disabled={del.isPending}>
               {t("detail.delete")}
             </Button>
           </div>
@@ -106,6 +92,6 @@ export function SkillDetailView() {
 
         <SkillEditor skill={skill} />
       </div>
-    </AppShell>
+    </SkillEvalRunProvider>
   );
 }

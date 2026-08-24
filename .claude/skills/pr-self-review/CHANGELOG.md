@@ -12,6 +12,30 @@ Semver for this skill:
 - **minor** — new checks, new routing entries, new stages that do not newly block.
 - **patch** — wording, caps, link fixes, syncing a command with CI.
 
+## 3.1.0 — 2026-08-20
+
+**`/code-review` level now depends on diff size, and the concurrency cap drops
+from 8 to 3.** Both come from the L05 Onboarding retro
+(`docs/retro/ledger/2026-08-19-l05-sdd-onboarding-generator.md`). On a
+2.6k-line feature diff, `/code-review high` fanned out to eight angle agents
+for ~400k tokens and ten findings — and the one exploitable finding in that
+diff came from `/security-review`, not from any angle. Above ~1000 changed
+lines the level is now `medium`, the two built-ins go out in one message, and
+the report says which level ran. Separately, every stream-watchdog stall on
+that run happened with four or more subagents in flight, so the cost ceiling's
+`concurrent subagents` default is 3. Neither change can newly block a PR — the
+verdict rules are untouched — hence minor, not major.
+
+## 3.0.2 — 2026-08-17
+
+**Stage 2 gates run through `scripts/verify.mjs`.** The four lane commands were
+inlined here, in `implementer`, `test-writer`, `plan-verifier` and the
+workflows — five copies to keep in step, and every run read the full vitest
+output. The script inlines the same workflow commands (still no package
+scripts) and prints one line per gate plus the failing gate's tail. Same
+commands, same exit codes — a patch. Also adds the `mcp` slice, which the
+inline block had never listed.
+
 ## 3.0.1 — 2026-08-12
 
 **`mcp/**` routed to the `backend` slice.** The new `mcp/` package (L04, a

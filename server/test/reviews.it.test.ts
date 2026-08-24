@@ -1,13 +1,23 @@
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { startPg, dockerAvailable, type PgFixture } from './helpers/pg.js';
-import { waitForPrRuns } from './helpers/runs.js';
+import { waitForPrRuns, waitForRunTrace } from './helpers/runs.js';
 import { buildApp } from '../src/app.js';
 import { loadConfig } from '../src/platform/config.js';
 import { seed } from '../src/db/seed.js';
 import { MockLLMProvider, MockEmbedder, MockGitClient } from '../src/adapters/mocks.js';
+import { runBus } from '../src/platform/sse.js';
 import * as t from '../src/db/schema.js';
 import { eq } from 'drizzle-orm';
-import { PrMeta, type Intent, type Review } from '@devdigest/shared';
+import {
+  PrMeta,
+  type Intent,
+  type Review,
+  type StructuredRequest,
+  type StructuredResult,
+} from '@devdigest/shared';
 
 const hasDocker = await dockerAvailable();
 const d = hasDocker ? describe : describe.skip;
@@ -25,6 +35,27 @@ const DIFF = `diff --git a/src/config.ts b/src/config.ts
    port: 3000,
 +  stripeKey: "sk_live_xxx",
    redisUrl: x,`;
+
+/**
+ * Same first file as `DIFF`, plus a second file — `strategy: 'map-reduce'`
+ * only switches to map-reduce when `diff.files.length > 1`
+ * (`reviewer-core/src/review/run.ts:117`), which is what gives the cancel
+ * test below a SECOND `checkCancelled` checkpoint to abort on.
+ */
+const TWO_FILE_DIFF = `diff --git a/src/config.ts b/src/config.ts
+--- a/src/config.ts
++++ b/src/config.ts
+@@ -10,3 +10,4 @@
+   port: 3000,
++  stripeKey: "sk_live_xxx",
+   redisUrl: x,
+diff --git a/src/other.ts b/src/other.ts
+--- a/src/other.ts
++++ b/src/other.ts
+@@ -1,2 +1,3 @@
+ export const a = 1;
++export const b = 2;
+ export const c = 3;`;
 
 /** A Review fixture: one valid finding (line 11), one hallucinated (line 999). */
 const REVIEW_FIXTURE: Review = {
@@ -76,12 +107,52 @@ const INTENT_FIXTURE: Intent = {
   sources: [],
 };
 
+/**
+ * L05 AC-24 — drives a real mid-run cancellation. `checkCancelled` only fires
+ * BETWEEN map-reduce chunks (`reviewer-core/src/review/run.ts:164`), so this
+ * lets the FIRST chunk's call through normally and calls `runBus.cancel()`
+ * (the same process-wide singleton `container.runBus` aliases — `container.ts:92`)
+ * right after, so the checkpoint before the SECOND chunk throws
+ * `RunCancelledError` and the run ends up in `run-executor.ts`'s
+ * failure/cancel branch. The runId isn't known until the review POST
+ * responds, so the test arms `runIdBox.current` afterwards — the run's own
+ * pre-work (diff load, intent derivation via a real LLM round trip, linked-
+ * skill/context resolution) still has to happen before the first chunk's
+ * call, which is what gives that assignment time to land first.
+ */
+class CancelOnSecondChunkProvider extends MockLLMProvider {
+  constructor(
+    structured: unknown,
+    private runIdBox: { current?: string },
+  ) {
+    super('openai', { structured });
+  }
+  override async completeStructured<T>(
+    req: StructuredRequest<T>,
+  ): Promise<StructuredResult<T>> {
+    const result = await super.completeStructured(req);
+    const calls = this.calls.filter((c) => c.method === 'completeStructured').length;
+    if (calls === 1 && this.runIdBox.current) runBus.cancel(this.runIdBox.current);
+    return result;
+  }
+}
+
 let repoSeq = 0;
-async function setupRepoAndPr(db: PgFixture['handle']['db'], workspaceId: string) {
+async function setupRepoAndPr(
+  db: PgFixture['handle']['db'],
+  workspaceId: string,
+  opts: { clonePath?: string } = {},
+) {
   const name = `payments-api-${repoSeq++}`;
   const [repo] = await db
     .insert(t.repos)
-    .values({ workspaceId, owner: 'acme', name, fullName: `acme/${name}` })
+    .values({
+      workspaceId,
+      owner: 'acme',
+      name,
+      fullName: `acme/${name}`,
+      ...(opts.clonePath ? { clonePath: opts.clonePath } : {}),
+    })
     .returning();
   const [pr] = await db
     .insert(t.pullRequests)
@@ -229,6 +300,584 @@ d('A2 reviews + agents (Testcontainers pg)', () => {
     expect(run!.grounding).toBe('1/2 passed');
 
     await app.close();
+  });
+
+  it('L05: a document attached to the agent reaches the prompt and is recorded in the trace', async () => {
+    // Step 11 seam check — Lane B reported the wire shapes match what Lane A's
+    // routes serve; this proves the harder claim the plan's step 11 asks for:
+    // an attached path actually reaches `reviewPullRequest`'s prompt and comes
+    // back out through `RunTrace.specs_read` / `prompt_assembly.specs`, over a
+    // real container (`container.projectContext` is NOT overridden here), not
+    // a hermetic stub like `skills-run-path.test.ts` uses.
+    const clonePath = await mkdtemp(join(tmpdir(), 'devdigest-reviews-context-'));
+    try {
+      await mkdir(join(clonePath, 'specs'), { recursive: true });
+      await writeFile(
+        join(clonePath, 'specs', 'security.md'),
+        '# Security baseline\n\nAlways read secrets from the environment.',
+        'utf8',
+      );
+
+      const app = await appWith(REVIEW_FIXTURE);
+      const { pr } = await setupRepoAndPr(pg.handle.db, workspaceId, { clonePath });
+
+      const agent = (
+        await app.inject({
+          method: 'POST',
+          url: '/agents',
+          payload: { name: 'Context Reviewer', provider: 'openai', model: 'gpt-4.1', system_prompt: 'sec' },
+        })
+      ).json();
+
+      const attach = await app.inject({
+        method: 'POST',
+        url: `/agents/${agent.id}/context`,
+        payload: { paths: ['specs/security.md'] },
+      });
+      expect(attach.statusCode).toBe(200);
+
+      const body = (
+        await app.inject({ method: 'POST', url: `/pulls/${pr.id}/review`, payload: { agentId: agent.id } })
+      ).json();
+      const runId = body.runs[0].run_id;
+      await waitForPrRuns(pg.handle.db, pr.id, { expected: 1 });
+      await waitForRunTrace(pg.handle.db, runId);
+
+      const trace = (await app.inject({ method: 'GET', url: `/runs/${runId}/trace` })).json();
+      // Exactly the attached path, in prompt order (AC-22).
+      expect(trace.specs_read).toEqual(['specs/security.md']);
+      // The literal text sent to the model (AC-23/AC-24) — reviewer-core wraps
+      // each packed doc in `<untrusted source="spec-N">`, itself nested under
+      // the `## Project context` heading it renders around the WHOLE
+      // `prompt_assembly.specs` block, not inside it.
+      expect(trace.prompt_assembly.specs).toContain('Always read secrets from the environment.');
+      expect(trace.prompt_assembly.specs).toContain('<untrusted source="spec-0">');
+      expect(trace.prompt_assembly.specs).toContain('specs/security.md');
+
+      // SPEC-01 AC-37/AC-38 (a) — one summary line first, then the doc's own
+      // attached line naming the agent as its source.
+      const contextLines = (trace.log as { msg: string }[])
+        .map((l) => l.msg)
+        .filter((m) => m.startsWith('Project context:'));
+      expect(contextLines[0]).toBe('Project context: 1 doc(s) attached, 0 skipped');
+      expect(contextLines[1]).toMatch(/^Project context: attached specs\/security\.md \(agent, ~\d+ tokens\)$/);
+
+      await app.close();
+    } finally {
+      await rm(clonePath, { recursive: true, force: true });
+    }
+  });
+
+  it('L05/SPEC-01: a document matched only by configured NAME (outside every root) still reaches the prompt (AC-33)', async () => {
+    // AC-33 — the reason string a name-only match would have been skipped
+    // with before this branch ("outside the configured context roots") must
+    // NOT appear: `resolveForRun` → `classifyAndRead` now also accepts a
+    // name match, so an `INSIGHTS.md` sitting at the clone root (no
+    // configured root above it) must be read and packed exactly like a
+    // root-matched doc.
+    const clonePath = await mkdtemp(join(tmpdir(), 'devdigest-reviews-context-name-'));
+    try {
+      await writeFile(
+        join(clonePath, 'INSIGHTS.md'),
+        '# Insights\n\nOnly attach documented, load-bearing findings.',
+        'utf8',
+      );
+
+      const app = await appWith(REVIEW_FIXTURE);
+      const { pr } = await setupRepoAndPr(pg.handle.db, workspaceId, { clonePath });
+
+      const agent = (
+        await app.inject({
+          method: 'POST',
+          url: '/agents',
+          payload: { name: 'Name-Match Reviewer', provider: 'openai', model: 'gpt-4.1', system_prompt: 'sec' },
+        })
+      ).json();
+
+      const attach = await app.inject({
+        method: 'POST',
+        url: `/agents/${agent.id}/context`,
+        payload: { paths: ['INSIGHTS.md'] },
+      });
+      expect(attach.statusCode).toBe(200);
+
+      const body = (
+        await app.inject({ method: 'POST', url: `/pulls/${pr.id}/review`, payload: { agentId: agent.id } })
+      ).json();
+      const runId = body.runs[0].run_id;
+      await waitForPrRuns(pg.handle.db, pr.id, { expected: 1 });
+
+      const trace = (await app.inject({ method: 'GET', url: `/runs/${runId}/trace` })).json();
+      expect(trace.specs_read).toEqual(['INSIGHTS.md']);
+      expect(trace.prompt_assembly.specs).toContain('Only attach documented, load-bearing findings.');
+      // The old skip reason (pre-name-rule) must not show up in the Live Log.
+      const skipLines = (trace.log as { msg: string }[]).filter((l) =>
+        l.msg.startsWith('Project context: skipped'),
+      );
+      expect(skipLines).toEqual([]);
+
+      await app.close();
+    } finally {
+      await rm(clonePath, { recursive: true, force: true });
+    }
+  });
+
+  it('L05/SPEC-01: a document over the 40,000-byte limit is skipped whole, with a Live Log line (AC-19)', async () => {
+    const clonePath = await mkdtemp(join(tmpdir(), 'devdigest-reviews-context-oversize-'));
+    try {
+      await mkdir(join(clonePath, 'specs'), { recursive: true });
+      // 41,000 bytes — over MAX_CONTEXT_DOC_BYTES (40_000, SPEC-01 AC-19's
+      // raised ceiling). Also over the OLD 20_000 limit, so this value alone
+      // does not distinguish "skipped under the raised ceiling" from "would
+      // have been skipped under the old one too" — it only proves the skip
+      // path fires at the CURRENT limit (corrected: code-review, fix pass 1,
+      // item 4 — the old comment claimed this was under the old limit's ~2x
+      // headroom, which is false; 41_000 > 20_000).
+      await writeFile(join(clonePath, 'specs', 'huge.md'), 'x'.repeat(41_000), 'utf8');
+
+      const app = await appWith(REVIEW_FIXTURE);
+      const { pr } = await setupRepoAndPr(pg.handle.db, workspaceId, { clonePath });
+
+      const agent = (
+        await app.inject({
+          method: 'POST',
+          url: '/agents',
+          payload: { name: 'Oversize Reviewer', provider: 'openai', model: 'gpt-4.1', system_prompt: 'sec' },
+        })
+      ).json();
+
+      const attach = await app.inject({
+        method: 'POST',
+        url: `/agents/${agent.id}/context`,
+        payload: { paths: ['specs/huge.md'] },
+      });
+      expect(attach.statusCode).toBe(200);
+
+      const body = (
+        await app.inject({ method: 'POST', url: `/pulls/${pr.id}/review`, payload: { agentId: agent.id } })
+      ).json();
+      const runId = body.runs[0].run_id;
+      await waitForPrRuns(pg.handle.db, pr.id, { expected: 1 });
+      await waitForRunTrace(pg.handle.db, runId);
+
+      const trace = (await app.inject({ method: 'GET', url: `/runs/${runId}/trace` })).json();
+      expect(trace.specs_read).toEqual([]); // skipped whole, never partially read
+      expect(trace.prompt_assembly.specs).toBeNull();
+      const skipLine = (trace.log as { msg: string }[]).find((l) =>
+        l.msg.includes('specs/huge.md'),
+      );
+      // SPEC-01 AC-41 (e) — the skip line carries its source right after the
+      // path, and the reason stays last.
+      expect(skipLine?.msg).toBe(
+        'Project context: skipped specs/huge.md (agent) — over the 40000-byte document limit',
+      );
+      // AC-37 — the summary counts it as skipped, not attached.
+      const summaryLine = (trace.log as { msg: string }[]).find((l) => l.msg.startsWith('Project context: 0'));
+      expect(summaryLine?.msg).toBe('Project context: 0 doc(s) attached, 1 skipped');
+
+      await app.close();
+    } finally {
+      await rm(clonePath, { recursive: true, force: true });
+    }
+  });
+
+  it('L05: an agent with no attachments gets a null specs slot — no section, no cost', async () => {
+    const app = await appWith(REVIEW_FIXTURE);
+    const { pr } = await setupRepoAndPr(pg.handle.db, workspaceId);
+    const agent = (
+      await app.inject({
+        method: 'POST',
+        url: '/agents',
+        payload: { name: 'No Context', provider: 'openai', model: 'gpt-4.1', system_prompt: 's' },
+      })
+    ).json();
+
+    const body = (
+      await app.inject({ method: 'POST', url: `/pulls/${pr.id}/review`, payload: { agentId: agent.id } })
+    ).json();
+    const runId = body.runs[0].run_id;
+    await waitForPrRuns(pg.handle.db, pr.id, { expected: 1 });
+    await waitForRunTrace(pg.handle.db, runId);
+
+    const trace = (await app.inject({ method: 'GET', url: `/runs/${runId}/trace` })).json();
+    expect(trace.specs_read).toEqual([]);
+    expect(trace.prompt_assembly.specs).toBeNull();
+
+    // SPEC-01 AC-37 (d)/edge case (19/08) — exactly one summary line, `0`/`0`,
+    // even with no linked skills and no own attachments; no per-doc line follows it.
+    const contextLines = (trace.log as { msg: string }[])
+      .map((l) => l.msg)
+      .filter((m) => m.startsWith('Project context:'));
+    expect(contextLines).toEqual(['Project context: 0 doc(s) attached, 0 skipped']);
+
+    await app.close();
+  });
+
+  it('L05: own docs come first, then an enabled linked skill\'s — deduped on first occurrence', async () => {
+    // AC-16/AC-17/AC-22 — merge order is "own docs, then each ENABLED linked
+    // skill's, in link order", with the first occurrence of a shared path kept
+    // (`modules/context/service.ts:262`, `dedupeKeepFirst`).
+    const clonePath = await mkdtemp(join(tmpdir(), 'devdigest-reviews-context-order-'));
+    try {
+      await mkdir(join(clonePath, 'specs'), { recursive: true });
+      await writeFile(
+        join(clonePath, 'specs', 'agent-doc.md'),
+        '# Agent-only doc\n\nOnly the agent attaches this.',
+        'utf8',
+      );
+      await writeFile(
+        join(clonePath, 'specs', 'shared.md'),
+        '# Shared doc\n\nBoth the agent and the skill attach this path.',
+        'utf8',
+      );
+      await writeFile(
+        join(clonePath, 'specs', 'skill-doc.md'),
+        '# Skill-only doc\n\nOnly the skill attaches this.',
+        'utf8',
+      );
+
+      const app = await appWith(REVIEW_FIXTURE);
+      const { pr } = await setupRepoAndPr(pg.handle.db, workspaceId, { clonePath });
+
+      const agent = (
+        await app.inject({
+          method: 'POST',
+          url: '/agents',
+          payload: { name: 'Order Reviewer', provider: 'openai', model: 'gpt-4.1', system_prompt: 'sec' },
+        })
+      ).json();
+
+      const skill = (
+        await app.inject({
+          method: 'POST',
+          url: '/skills',
+          payload: { name: 'Order Skill', body: 'Follow the house style.' },
+        })
+      ).json();
+      expect(skill.enabled).toBe(true); // the kill switch this merge depends on
+
+      // Own docs first: agent-doc.md, then shared.md (the path the skill also attaches).
+      const attachAgent = await app.inject({
+        method: 'POST',
+        url: `/agents/${agent.id}/context`,
+        payload: { paths: ['specs/agent-doc.md', 'specs/shared.md'] },
+      });
+      expect(attachAgent.statusCode).toBe(200);
+
+      // The skill re-attaches the SAME shared.md (first occurrence must win) plus its own doc.
+      const attachSkill = await app.inject({
+        method: 'POST',
+        url: `/skills/${skill.id}/context`,
+        payload: { paths: ['specs/shared.md', 'specs/skill-doc.md'] },
+      });
+      expect(attachSkill.statusCode).toBe(200);
+
+      const linked = await app.inject({
+        method: 'POST',
+        url: `/agents/${agent.id}/skills`,
+        payload: { skill_ids: [skill.id] },
+      });
+      expect(linked.statusCode).toBe(200);
+
+      const body = (
+        await app.inject({ method: 'POST', url: `/pulls/${pr.id}/review`, payload: { agentId: agent.id } })
+      ).json();
+      const runId = body.runs[0].run_id;
+      await waitForPrRuns(pg.handle.db, pr.id, { expected: 1 });
+      await waitForRunTrace(pg.handle.db, runId);
+
+      const trace = (await app.inject({ method: 'GET', url: `/runs/${runId}/trace` })).json();
+      // Own docs first (agent-doc.md, shared.md), THEN the skill's docs — with
+      // shared.md kept only once, at its first (agent's) occurrence.
+      expect(trace.specs_read).toEqual(['specs/agent-doc.md', 'specs/shared.md', 'specs/skill-doc.md']);
+      expect(trace.prompt_assembly.specs).toContain('Agent-only doc');
+      expect(trace.prompt_assembly.specs).toContain('Skill-only doc');
+      // shared.md's content appears exactly once — the dedupe didn't just hide
+      // the duplicate PATH while still packing the content twice.
+      const sharedOccurrences = (
+        (trace.prompt_assembly.specs as string).match(/Shared doc/g) ?? []
+      ).length;
+      expect(sharedOccurrences).toBe(1);
+
+      // SPEC-01 AC-37/AC-38/AC-39/AC-43 (b, f, Recommendations §2) — the
+      // summary counters, the per-doc source attribution, and the AC-43
+      // path/order parity against `trace.specs_read` all live in this ONE
+      // test, so a resolution/log drift fails a single assertion rather than
+      // passing two tests that split the invariant across them.
+      const contextLines = (trace.log as { msg: string }[])
+        .map((l) => l.msg)
+        .filter((m) => m.startsWith('Project context:'));
+      expect(contextLines[0]).toBe(`Project context: ${trace.specs_read.length} doc(s) attached, 0 skipped`);
+      // Own docs — agent-doc.md and the FIRST occurrence of shared.md — both
+      // attribute to `agent`, even though the skill also attaches shared.md
+      // (AC-39: own wins over inherited on the same path).
+      expect(contextLines[1]).toMatch(/^Project context: attached specs\/agent-doc\.md \(agent, ~\d+ tokens\)$/);
+      expect(contextLines[2]).toMatch(/^Project context: attached specs\/shared\.md \(agent, ~\d+ tokens\)$/);
+      // The skill's own doc attributes to the skill, by the SAME name+version
+      // the run's `Skills:` line used (AC-38/AC-43).
+      const skillsLine = (trace.log as { msg: string }[]).find((l) => l.msg.startsWith('Skills: '));
+      expect(skillsLine?.msg).toContain(`${skill.name} v${skill.version}`);
+      expect(contextLines[3]).toMatch(
+        new RegExp(
+          `^Project context: attached specs/skill-doc\\.md \\(via skill ${skill.name} v${skill.version}, ~\\d+ tokens\\)$`,
+        ),
+      );
+      // AC-43 — the attached-line PATHS, in order, equal `trace.specs_read`.
+      const attachedPaths = contextLines
+        .slice(1)
+        .map((m) => m.match(/^Project context: attached (\S+) /)![1]);
+      expect(attachedPaths).toEqual(trace.specs_read);
+
+      await app.close();
+    } finally {
+      await rm(clonePath, { recursive: true, force: true });
+    }
+  });
+
+  it('L05/SPEC-01 AC-40: a DISABLED linked skill\'s docs are mentioned in NO line — not attached, not skipped, not counted', async () => {
+    const clonePath = await mkdtemp(join(tmpdir(), 'devdigest-reviews-context-disabled-'));
+    try {
+      await mkdir(join(clonePath, 'specs'), { recursive: true });
+      await writeFile(
+        join(clonePath, 'specs', 'agent-doc.md'),
+        '# Agent-only doc\n\nOnly the agent attaches this.',
+        'utf8',
+      );
+      await writeFile(
+        join(clonePath, 'specs', 'disabled-skill-doc.md'),
+        '# Disabled skill doc\n\nAttached to a skill that gets disabled before the run.',
+        'utf8',
+      );
+
+      const app = await appWith(REVIEW_FIXTURE);
+      const { pr } = await setupRepoAndPr(pg.handle.db, workspaceId, { clonePath });
+
+      const agent = (
+        await app.inject({
+          method: 'POST',
+          url: '/agents',
+          payload: { name: 'Kill Switch Reviewer', provider: 'openai', model: 'gpt-4.1', system_prompt: 'sec' },
+        })
+      ).json();
+
+      const skill = (
+        await app.inject({
+          method: 'POST',
+          url: '/skills',
+          payload: { name: 'Disabled Skill', body: 'Should never reach the prompt once disabled.' },
+        })
+      ).json();
+
+      await app.inject({
+        method: 'POST',
+        url: `/agents/${agent.id}/context`,
+        payload: { paths: ['specs/agent-doc.md'] },
+      });
+      await app.inject({
+        method: 'POST',
+        url: `/skills/${skill.id}/context`,
+        payload: { paths: ['specs/disabled-skill-doc.md'] },
+      });
+      const linked = await app.inject({
+        method: 'POST',
+        url: `/agents/${agent.id}/skills`,
+        payload: { skill_ids: [skill.id] },
+      });
+      expect(linked.statusCode).toBe(200);
+
+      // The kill switch: disable AFTER linking, before the run.
+      const disabled = await app.inject({
+        method: 'PUT',
+        url: `/skills/${skill.id}`,
+        payload: { enabled: false },
+      });
+      expect(disabled.json().enabled).toBe(false);
+
+      const body = (
+        await app.inject({ method: 'POST', url: `/pulls/${pr.id}/review`, payload: { agentId: agent.id } })
+      ).json();
+      const runId = body.runs[0].run_id;
+      await waitForPrRuns(pg.handle.db, pr.id, { expected: 1 });
+      await waitForRunTrace(pg.handle.db, runId);
+
+      const trace = (await app.inject({ method: 'GET', url: `/runs/${runId}/trace` })).json();
+      // Only the agent's own doc reaches the prompt/trace.
+      expect(trace.specs_read).toEqual(['specs/agent-doc.md']);
+
+      const contextLines = (trace.log as { msg: string }[])
+        .map((l) => l.msg)
+        .filter((m) => m.startsWith('Project context:'));
+      // AC-40: the summary counts ONLY the agent's doc — the disabled skill's
+      // doc is neither attached nor skipped, so it never touches either counter.
+      expect(contextLines[0]).toBe('Project context: 1 doc(s) attached, 0 skipped');
+      // AC-40: no line of ANY kind mentions the disabled skill's doc or name.
+      const mentionsDisabled = (trace.log as { msg: string }[]).some(
+        (l) => l.msg.includes('disabled-skill-doc.md') || l.msg.includes('Disabled Skill'),
+      );
+      expect(mentionsDisabled).toBe(false);
+
+      await app.close();
+    } finally {
+      await rm(clonePath, { recursive: true, force: true });
+    }
+  });
+
+  it('L05: an attached document adds zero LLM calls (AC-21, NFR "reading documents does not add model calls")', async () => {
+    const provider = new MockLLMProvider('openai', { structured: REVIEW_FIXTURE });
+    const app = await buildApp({
+      config: config(),
+      db: pg.handle.db,
+      overrides: {
+        embedder: new MockEmbedder(),
+        git: new MockGitClient({ diff: DIFF }),
+        llm: {
+          openai: provider,
+          openrouter: new MockLLMProvider('openai', { structured: INTENT_FIXTURE }),
+        },
+      },
+    });
+    const callsOf = (method: string) => provider.calls.filter((c) => c.method === method).length;
+
+    // Baseline: no attachments — exactly ONE completeStructured call (single-pass,
+    // one changed file).
+    const { pr: prBaseline } = await setupRepoAndPr(pg.handle.db, workspaceId);
+    const agentBaseline = (
+      await app.inject({
+        method: 'POST',
+        url: '/agents',
+        payload: { name: 'No Context Calls', provider: 'openai', model: 'gpt-4.1', system_prompt: 's' },
+      })
+    ).json();
+    await app.inject({
+      method: 'POST',
+      url: `/pulls/${prBaseline.id}/review`,
+      payload: { agentId: agentBaseline.id },
+    });
+    await waitForPrRuns(pg.handle.db, prBaseline.id, { expected: 1 });
+    const callsAfterBaseline = callsOf('completeStructured');
+    expect(callsAfterBaseline).toBe(1);
+
+    // Same shape, but with a document attached — reading it from disk must add
+    // ZERO provider calls: the delta from baseline is still exactly 1.
+    const clonePath = await mkdtemp(join(tmpdir(), 'devdigest-reviews-context-calls-'));
+    try {
+      await mkdir(join(clonePath, 'specs'), { recursive: true });
+      await writeFile(join(clonePath, 'specs', 'note.md'), '# Note\n\nSome guidance.', 'utf8');
+
+      const { pr } = await setupRepoAndPr(pg.handle.db, workspaceId, { clonePath });
+      const agent = (
+        await app.inject({
+          method: 'POST',
+          url: '/agents',
+          payload: { name: 'With Context Calls', provider: 'openai', model: 'gpt-4.1', system_prompt: 's' },
+        })
+      ).json();
+      const attach = await app.inject({
+        method: 'POST',
+        url: `/agents/${agent.id}/context`,
+        payload: { paths: ['specs/note.md'] },
+      });
+      expect(attach.statusCode).toBe(200);
+
+      const body = (
+        await app.inject({ method: 'POST', url: `/pulls/${pr.id}/review`, payload: { agentId: agent.id } })
+      ).json();
+      const runId = body.runs[0].run_id;
+      await waitForPrRuns(pg.handle.db, pr.id, { expected: 1 });
+
+      // Fix pass 2, item 3: the call-count delta alone holds whether the
+      // document was read, skipped, or never resolved — a broken Project
+      // Context would leave this test green. Pin that the document actually
+      // reached the prompt (its sibling above at 'own docs come first…' does
+      // the same via `trace.specs_read` / `trace.prompt_assembly.specs`), so
+      // the "zero extra calls" number rests on a real attachment, not a
+      // no-op.
+      const trace = (await app.inject({ method: 'GET', url: `/runs/${runId}/trace` })).json();
+      expect(trace.specs_read).toEqual(['specs/note.md']);
+      expect(trace.prompt_assembly.specs).toContain('specs/note.md');
+      expect(trace.prompt_assembly.specs).toContain('Some guidance.');
+
+      expect(callsOf('completeStructured') - callsAfterBaseline).toBe(1);
+    } finally {
+      await rm(clonePath, { recursive: true, force: true });
+    }
+
+    await app.close();
+  });
+
+  it('L05: a cancelled run still records the docs read before the checkpoint threw (AC-24)', async () => {
+    const clonePath = await mkdtemp(join(tmpdir(), 'devdigest-reviews-context-cancel-'));
+    try {
+      await mkdir(join(clonePath, 'specs'), { recursive: true });
+      await writeFile(
+        join(clonePath, 'specs', 'security.md'),
+        '# Security baseline\n\nAlways read secrets from the environment.',
+        'utf8',
+      );
+
+      const runIdBox: { current?: string } = {};
+      const provider = new CancelOnSecondChunkProvider(REVIEW_FIXTURE, runIdBox);
+      const app = await buildApp({
+        config: config(),
+        db: pg.handle.db,
+        overrides: {
+          embedder: new MockEmbedder(),
+          git: new MockGitClient({ diff: TWO_FILE_DIFF }),
+          llm: {
+            openai: provider,
+            openrouter: new MockLLMProvider('openai', { structured: INTENT_FIXTURE }),
+          },
+        },
+      });
+      const { pr } = await setupRepoAndPr(pg.handle.db, workspaceId, { clonePath });
+
+      const agent = (
+        await app.inject({
+          method: 'POST',
+          url: '/agents',
+          payload: {
+            name: 'Cancel Mid-Run',
+            provider: 'openai',
+            model: 'gpt-4.1',
+            system_prompt: 'sec',
+            strategy: 'map-reduce',
+          },
+        })
+      ).json();
+
+      const attach = await app.inject({
+        method: 'POST',
+        url: `/agents/${agent.id}/context`,
+        payload: { paths: ['specs/security.md'] },
+      });
+      expect(attach.statusCode).toBe(200);
+
+      const body = (
+        await app.inject({ method: 'POST', url: `/pulls/${pr.id}/review`, payload: { agentId: agent.id } })
+      ).json();
+      const runId = body.runs[0].run_id;
+      // Arm the cancellation only NOW that the runId exists — see the class
+      // comment above for why the run's own pre-work gives this time to land
+      // before the first chunk's LLM call.
+      runIdBox.current = runId;
+
+      await waitForPrRuns(pg.handle.db, pr.id, { expected: 1 });
+
+      const [run] = await pg.handle.db.select().from(t.agentRuns).where(eq(t.agentRuns.id, runId));
+      expect(run!.status).toBe('cancelled');
+
+      const trace = (await app.inject({ method: 'GET', url: `/runs/${runId}/trace` })).json();
+      // Project Context is resolved ONCE, before the map-reduce loop even
+      // starts (`run-executor.ts:264-270`, hoisted into `contextSpecs`/
+      // `contextSpecsRead`) — a cancellation mid-loop must not blank it out.
+      expect(trace.specs_read).toEqual(['specs/security.md']);
+      expect(trace.prompt_assembly.specs).toContain('specs/security.md');
+      expect(trace.prompt_assembly.specs).toContain('Always read secrets from the environment.');
+
+      await app.close();
+    } finally {
+      await rm(clonePath, { recursive: true, force: true });
+    }
   });
 
   it('PR list surfaces a per-severity finding_counts breakdown', async () => {

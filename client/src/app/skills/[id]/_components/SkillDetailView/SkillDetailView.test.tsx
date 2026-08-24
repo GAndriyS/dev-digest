@@ -3,6 +3,7 @@ import { render, screen, cleanup } from "@testing-library/react";
 import { NextIntlClientProvider } from "next-intl";
 import type { Skill } from "@devdigest/shared";
 import messages from "../../../../../../messages/en/skills.json";
+import contextMessages from "../../../../../../messages/en/context.json";
 import { ToastProvider } from "@/lib/toast";
 import { ApiError } from "@/lib/api";
 
@@ -16,10 +17,6 @@ vi.mock("next/navigation", () => ({
 
 const mutation = { mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false, error: null };
 
-vi.mock("@/components/app-shell", () => ({
-  AppShell: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-}));
-
 vi.mock("@/lib/hooks/skills", () => ({
   useSkill: () => ({
     data: state.skill ?? undefined,
@@ -30,6 +27,22 @@ vi.mock("@/lib/hooks/skills", () => ({
   }),
   useDeleteSkill: () => mutation,
   useUpdateSkill: () => mutation,
+  // SkillEvalRunProvider wraps the header (Run on evals) and SkillEditor's
+  // Evals tab — mounted whenever the skill resolves, so it needs these even
+  // though the default tab is Config.
+  useSkillEvalCases: () => ({ data: [], isLoading: false, isError: false, refetch: vi.fn() }),
+  useRunEvalCase: () => mutation,
+  useRunAllEvals: () => mutation,
+}));
+
+// ConfigTab's "Project context to use" section (AC-15) mounts the shared
+// ContextDocPicker, which needs these — stub them so this view's tests stay
+// free of a real QueryClientProvider.
+vi.mock("@/lib/hooks/core", () => ({
+  useContextFiles: () => ({ data: { files: [], total: 0, truncated: false, roots: [], scanned_at: "" }, isLoading: false, isError: false }),
+  useOwnerContext: () => ({ data: { paths: [] }, isLoading: false, isError: false }),
+  useSetOwnerContext: () => mutation,
+  useContextDoc: () => ({ data: undefined, isLoading: false, isError: false }),
 }));
 
 import { SkillDetailView } from "./SkillDetailView";
@@ -47,7 +60,7 @@ const SKILL: Skill = {
 
 function renderView() {
   return render(
-    <NextIntlClientProvider locale="en" messages={{ skills: messages }}>
+    <NextIntlClientProvider locale="en" messages={{ skills: messages, context: contextMessages }}>
       <ToastProvider>
         <SkillDetailView />
       </ToastProvider>
@@ -70,6 +83,14 @@ describe("SkillDetailView", () => {
     expect(screen.getAllByText("Disabled").length).toBeGreaterThan(0);
     expect(screen.getByText("untrusted source")).toBeInTheDocument();
     expect(screen.getByText(/came from an untrusted source/)).toBeInTheDocument();
+  });
+
+  it("shows Run on evals next to Delete skill, disabled with no eval cases", () => {
+    renderView();
+    const runEvals = screen.getByText("Run on evals").closest("button");
+    expect(runEvals).toBeInTheDocument();
+    expect(runEvals).toBeDisabled();
+    expect(screen.getByText("Delete skill").closest("button")).toBeInTheDocument();
   });
 
   it("treats a 404 as 'not found' rather than a transport failure", () => {

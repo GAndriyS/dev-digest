@@ -28,6 +28,18 @@ live in `<package>/INSIGHTS.md`. Maintained by the `engineering-insights` skill.
 
 ## What Works
 
+- **2026-08-19** — Sending the finished **plan** to an independent cross-model
+  review before any code is written paid for itself on the L05 Onboarding run:
+  15 amendments, 4 of them MAJOR and all of them things a review of the *diff*
+  would have caught only after the work existed — a strict-`json_schema`
+  incompatibility in the draft schema (`z.record`/`.optional()` are rejected by
+  `strict: true`), an unbounded prompt, a 409 test that would have reached the
+  real provider, and a stale contract fixture the wire change was about to
+  break. Shape that worked: accept the findings as a **binding amendments
+  table appended to the plan** (A1…A15, "overrides the step rows where they
+  differ"), so `implementer`, `test-writer` and `plan-verifier` all read one
+  document instead of a plan plus a review nobody re-opens.
+
 - **2026-08-04** — Splitting a feature across parallel subagents works when the
   split is by FILE OWNERSHIP, not by concern: each agent got an explicit
   "you own these paths, these are someone else's" list and nothing collided
@@ -51,6 +63,19 @@ live in `<package>/INSIGHTS.md`. Maintained by the `engineering-insights` skill.
   db:generate` had already produced a correct migration.
 
 ## Codebase Patterns
+
+- **2026-08-18** — `.claude/settings.json`'s `deny` on `Edit(./**/src/vendor/ui/**)`
+  has no carve-out for this repo's own **declared vendor update** pattern, so a
+  plan step that assigns a `nav.ts` row to `implementer` cannot be executed: the
+  agent is refused at the tool layer, and so is the main session (the deny is
+  not overridable from chat, and routing around it via `Bash` is the bypass the
+  rule exists to prevent). This has now cost a stage in the L05 run — the human
+  had to `copy` the file in by hand. Plan a `**/src/vendor/ui/**` row as
+  **human/main-session, out of the agent chain**, or add a scoped exception to
+  `settings.json` first; `.claude/skills/pr-self-review/routing.md` documents
+  the `Vendor-update:` declaration but says nothing about who may perform the
+  edit. Note the block is wider than the file documents: `Bash rm -rf` under
+  `server/clones/**` is also hard-denied, `dangerouslyDisableSandbox` included.
 
 - **2026-08-13** — Any `file:line` derived from repo-intel resolves against
   `repo_index_state.last_indexed_sha`, **never** the PR's `head_sha` — the index
@@ -84,6 +109,19 @@ live in `<package>/INSIGHTS.md`. Maintained by the `engineering-insights` skill.
   move in the same commit. `onion-architecture` and `frontend-ui-architecture`
   are the reference implementations; the older skills predate this and carry no
   version at all, so absence of a version does not mean "v1".
+
+- **2026-08-20** — A spec's `· verify:` hint can name an **e2e flow for a path
+  that spends money**, which `e2e/AGENTS.md:22-23` forbids outright ("Flows
+  target read-only seeded data, so nothing ever triggers a model call. Keep it
+  that way."). SPEC-04's AC-27 (the brief's Regenerate button) arrived that way:
+  clicking it in a browser flow issues a real provider call. The resolution is
+  not to relax the e2e rule but to move the AC's lane — `*.it.test.ts` with the
+  provider mocked through the container override slot — and let e2e assert only
+  the states reachable *without* generating. `e2e/specs/11-onboarding-tour.flow.json`
+  is the worked precedent: it verifies the onboarding skeleton empty state
+  because the service's reason ladder returns `not_indexed` "before ever calling
+  a model". Planners: read `verify: e2e flow` on a model-spending surface as a
+  spec finding to re-lane, never as an instruction to write the flow.
 
 ## Tool & Library Notes
 

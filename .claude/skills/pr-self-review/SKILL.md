@@ -2,7 +2,7 @@
 name: pr-self-review
 description: "Reviews all open local changes with the repo's own skills before a pull request is opened, and blocks the PR on a critical finding. Runs the deterministic gates (typecheck, dependency-cruiser, check-ui-conventions, tests), routes UI skills onto client/ files and backend architecture skills onto server/ and reviewer-core/ files, delegates bug-hunting to /code-review and security to /security-review, then writes a verdict stamp and a drafted PR body. Invoked manually — nothing auto-fires it. Use when the user says they are about to open a PR, asks to self-review or pre-review the branch, wants to know whether the changes are ready to push or merge, or invokes /pr-self-review. Also use after finishing a feature and before creating the pull request, even when not asked, since no hook will do it for you. Not for reviewing someone else's already-open PR (use /review) and not a substitute for /code-review on its own."
 metadata:
-  version: 3.0.1
+  version: 3.1.0
   tags: pr, review, gate, ci, pre-merge, skills-routing, quality, hooks
 ---
 
@@ -55,28 +55,22 @@ finding on its own. Those paths are named do-not-touch in `AGENTS.md`.
 
 ## Stage 2 — deterministic gates
 
-Run only the gates whose slice is non-empty. Inline the commands; do **not**
+Run only the gates whose slice is non-empty, through the repo's lane runner —
+it inlines the same commands CI runs (`.github/workflows/*.yml`; do **not**
 call `pnpm arch` or any server package script — `server/package.json` is
-skip-worktree in some checkouts, which is why CI itself inlines everything.
+skip-worktree in some checkouts) and prints one line per gate plus the verbatim
+tail of a failing gate only:
 
 ```bash
-# frontend slice
-cd client && pnpm typecheck \
-  && pnpm exec depcruise src --config .dependency-cruiser.cjs \
-  && node scripts/check-ui-conventions.mjs \
-  && pnpm test
-
-# backend slice
-cd server && pnpm typecheck \
-  && pnpm exec depcruise src ../reviewer-core/src --config .dependency-cruiser.cjs \
-  && pnpm exec vitest run --exclude '**/*.it.test.ts'
-
-# reviewer-core touched
-cd reviewer-core && npm run typecheck && npm test
+node scripts/verify.mjs --slice frontend        # client/**
+node scripts/verify.mjs --slice backend         # server/** (cruises ../reviewer-core/src too)
+node scripts/verify.mjs --slice reviewer-core   # reviewer-core/**
+node scripts/verify.mjs --slice mcp             # mcp/** — also when server/src/vendor/shared/** moved
 ```
 
-Any non-zero exit is a **CRITICAL** finding — these already fail CI, so a local
-gate that shrugged at them would be lying.
+Several slices go in one call (`--slice backend --slice frontend`). Any
+`[FAIL]` line is a **CRITICAL** finding — quote the script's block verbatim.
+These already fail CI, so a local gate that shrugged at them would be lying.
 
 Two more mechanical checks:
 - **Contract mirror** — the two directions are not the same finding, because CI

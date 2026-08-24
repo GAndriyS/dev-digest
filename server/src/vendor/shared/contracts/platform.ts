@@ -280,8 +280,61 @@ export const SpecFile = z.object({
   content: z.string().nullish(),
   size: z.number().int().nullish(),
   updated_at: z.string().nullish(),
+  /**
+   * Configured root the file was found under (e.g. `specs`), doubles as its
+   * badge. May also carry a badge derived from a matched file name (e.g.
+   * `insights` for a file matched by `PROJECT_CONTEXT_FILES` rather than by
+   * root) — the field's shape does not change, only what can produce a value.
+   */
+  root: z.string().nullish(),
+  /** Deterministic size-based estimate, never a real tokenizer count — see MAX_CONTEXT_DOC_BYTES. */
+  tokens_est: z.number().int().nullish(),
+  /** How many agents currently have this path attached. Listing-only; never set on a single-doc read. */
+  used_by_agents: z.number().int().nullish(),
 });
 export type SpecFile = z.infer<typeof SpecFile>;
+
+/** Response body for GET /repos/:id/context — a bounded, badge-able directory listing. */
+export const ContextListing = z.object({
+  files: z.array(SpecFile),
+  /** Total matching files under the configured roots, even past the truncation cap. */
+  total: z.number().int(),
+  /** True when `files` stops short of `total` because the walk hit its cap. */
+  truncated: z.boolean(),
+  /** Configured root names that were scanned (e.g. `["specs", "docs", "insights"]`). */
+  roots: z.array(z.string()),
+  /** Configured document file names that were matched by name (e.g. `["INSIGHTS.md"]`). */
+  file_names: z.array(z.string()),
+  scanned_at: z.string(),
+});
+export type ContextListing = z.infer<typeof ContextListing>;
+
+/** Longest a single attached path may be — bounds the set-write body, not the walk. */
+export const MAX_CONTEXT_PATH_LEN = 400;
+/** Most paths a single agent/skill attachment write may carry. */
+export const MAX_CONTEXT_PATHS = 500;
+
+/**
+ * Repo-relative POSIX path to an attachable `.md` document. This is wire-level
+ * shape validation only — it does NOT prove the file exists inside the clone
+ * or stayed there (symlinks). The guarded reader on the run path re-checks
+ * every path against the real clone at read time; a path that parses here is
+ * never sufficient license to open a file.
+ */
+const ContextDocPath = z
+  .string()
+  .min(1)
+  .max(MAX_CONTEXT_PATH_LEN)
+  .refine((p) => !p.startsWith('/'), 'must be repo-relative (no leading slash)')
+  .refine((p) => !p.includes('\\'), 'must be a POSIX path (no backslashes)')
+  .refine((p) => !p.split('/').some((seg) => seg === '..' || seg === '.'), 'must not contain . or .. segments')
+  .refine((p) => p.toLowerCase().endsWith('.md'), 'must be a .md file');
+
+/** Body for POST /agents/:id/context and POST /skills/:id/context — the whole set, in order. */
+export const ContextPaths = z.object({
+  paths: z.array(ContextDocPath).max(MAX_CONTEXT_PATHS),
+});
+export type ContextPaths = z.infer<typeof ContextPaths>;
 
 export const IndexStatus = z.object({
   status: z.enum(['idle', 'cloning', 'parsing', 'embedding', 'done', 'error']),

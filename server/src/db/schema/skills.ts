@@ -40,3 +40,22 @@ export const skillVersions = pgTable(
  * which imports this one). Declaring it here would close a runtime import cycle
  * skills → runs → agents → skills, which dependency-cruiser rejects.
  */
+
+/**
+ * Project Context documents attached directly to a skill (Project Context
+ * feature) — inherited by every agent that links this skill and has it
+ * enabled. `path` is repo-relative `.md`, validated at the contract edge
+ * (`ContextPaths`); the run path re-checks it against the live clone with the
+ * guarded reader. PK `(skill_id, path)` doubles as the FK index.
+ */
+export const skillContextDocs = pgTable(
+  'skill_context_docs',
+  {
+    skillId: uuid('skill_id')
+      .notNull()
+      .references(() => skills.id, { onDelete: 'cascade' }),
+    path: text('path').notNull(),
+    position: integer('position').notNull().default(0),
+  },
+  (t) => ({ pk: primaryKey({ columns: [t.skillId, t.path] }) }),
+);

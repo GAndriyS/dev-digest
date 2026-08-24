@@ -58,12 +58,22 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("StatsTab", () => {
-  it("shows the four KPI tiles", () => {
+  it("shows the five KPI tiles", () => {
     renderTab();
     expect(screen.getByText("USED BY")).toBeInTheDocument();
     expect(screen.getByText("7")).toBeInTheDocument();
+    // AC-22: pull_count_30d=7 / runs_total=10 → 70%, the same pullFrequency()
+    // formula the list card's usage line reads.
+    expect(screen.getByText("PULL FREQUENCY")).toBeInTheDocument();
+    expect(screen.getByText("70%")).toBeInTheDocument();
     expect(screen.getByText("75%")).toBeInTheDocument();
     expect(screen.getByText("12")).toBeInTheDocument();
+  });
+
+  it("reads runs_total = 0 as a 0% pull-frequency tile, not a division by zero", () => {
+    state.stats = { ...STATS, pull_count_30d: 3, runs_total: 0 };
+    renderTab();
+    expect(screen.getByText("0%")).toBeInTheDocument();
   });
 
   it("renders a placeholder rather than 0% when nothing was triaged", () => {
@@ -77,6 +87,12 @@ describe("StatsTab", () => {
     expect(screen.getByText("Security Reviewer")).toBeInTheDocument();
     expect(screen.getByText("position 2")).toBeInTheDocument();
     expect(screen.getByText("disabled")).toBeInTheDocument();
+  });
+
+  it("links each agent row to its own editor, opened on the Skills tab (AC-21)", () => {
+    renderTab();
+    const open = screen.getByText("Open").closest("a");
+    expect(open).toHaveAttribute("href", "/agents/a1?tab=skills");
   });
 
   it("says the finding attribution is run-level, not per-finding", () => {
@@ -98,6 +114,7 @@ describe("StatsTab", () => {
     renderTab();
     expect(screen.getByText("No agent has this skill linked yet.")).toBeInTheDocument();
     expect(screen.getByText("No findings recorded in the last 30 days.")).toBeInTheDocument();
+    expect(screen.queryByText("Open")).not.toBeInTheDocument();
   });
 
   it("surfaces a load failure with a retry", () => {

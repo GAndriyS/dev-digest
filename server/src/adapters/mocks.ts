@@ -31,6 +31,7 @@ import type {
   AuthWorkspace,
   SecretsProvider,
   SecretKey,
+  BlastRadius,
 } from '@devdigest/shared';
 import { parseUnifiedDiff } from './git/diff-parser.js';
 
@@ -305,6 +306,33 @@ export class MockCodeIndex implements CodeIndex {
   }
   async references(_repo: RepoRef, symbol: string): Promise<CodeReference[]> {
     return [{ fromPath: 'src/api/public/index.ts', toSymbol: symbol, line: 23 }];
+  }
+}
+
+// ---------- Mock Blast ----------
+export interface MockBlastOptions {
+  blast?: BlastRadius;
+}
+
+/**
+ * Deterministic mock for `container.blast` (L05, `modules/brief/**`).
+ * Structurally satisfies `modules/blast/types.js`'s `Blast` — adapters/ is
+ * the outermost ring and must not import from modules/
+ * (`infrastructure-points-inward`), so this does not `implements Blast`.
+ */
+export class MockBlast {
+  constructor(private opts: MockBlastOptions = {}) {}
+
+  async getBlast(_workspaceId: string, _prId: string): Promise<BlastRadius> {
+    return (
+      this.opts.blast ?? {
+        changed_symbols: [],
+        downstream: [],
+        summary: '0 changed symbol(s); 0 caller(s) across 0 file(s); 0 endpoint(s), 0 cron(s) affected.',
+        status: 'full',
+        indexed_sha: 'a1b2c3d4',
+      }
+    );
   }
 }
 

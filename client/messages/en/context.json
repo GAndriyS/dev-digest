@@ -20,5 +20,38 @@
     "loadError": "Couldn’t load spec",
     "save": "Save",
     "saving": "Saving…"
+  },
+  "page": {
+    "searchPlaceholder": "Search documents…",
+    "loadErrorTitle": "Couldn’t load this repo’s context",
+    "footer": "Indexed: {files} files · {tokens} tokens total · last scan {time}",
+    "truncatedBanner": "Showing the first {shown} of {total} files — narrow the search to find one outside this range.",
+    "usedByAgents": "Used by {count} agents",
+    "selectPrompt": "Select a document to preview it.",
+    "previewLoadError": "Couldn’t load this document",
+    "empty": {
+      "title": "No documents found",
+      "body": "Add markdown files under {roots}, or files named {file_names}, in this repo. Every agent and skill can attach them as context."
+    }
+  },
+  "picker": {
+    "title": "Project context",
+    "skillTitle": "Project context to use",
+    "hint": "Order matters — earlier documents appear earlier in the assembled prompt. Toggle to attach.",
+    "skillHint": "Any agent using this skill inherits these documents.",
+    "attachedCount": "{attached} of {total} attached",
+    "filterPlaceholder": "Filter documents…",
+    "attachedHeading": "Attached",
+    "availableHeading": "Available",
+    "noMatches": "No documents match “{query}”.",
+    "loadError": "Couldn’t load project context.",
+    "emptyTitle": "No documents to attach",
+    "emptyBody": "Add markdown files under {roots}, or files named {file_names}, in this repo, then attach them here.",
+    "missing": "missing — deleted from the repo",
+    "moveUp": "Move {path} earlier in the prompt",
+    "moveDown": "Move {path} later in the prompt",
+    "footerTokens": "≈ {count} tokens",
+    "preview": "Preview",
+    "hidePreview": "Hide preview"
   }
 }

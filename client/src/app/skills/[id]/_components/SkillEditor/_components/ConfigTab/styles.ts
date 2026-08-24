@@ -15,4 +15,6 @@ export const s = {
   } satisfies CSSProperties,
   actions: { display: "flex", alignItems: "center", gap: 12, marginTop: 10 } satisfies CSSProperties,
   dirtyNote: { fontSize: 13, color: "var(--warn)", fontWeight: 600 } satisfies CSSProperties,
+  bodyMeta: { display: "flex", alignItems: "center", gap: 10 } satisfies CSSProperties,
+  tokenCount: { fontSize: 12, color: "var(--text-muted)", fontVariantNumeric: "tabular-nums" } satisfies CSSProperties,
 } as const;

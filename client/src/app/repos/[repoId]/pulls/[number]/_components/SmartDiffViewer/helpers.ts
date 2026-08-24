@@ -67,6 +67,19 @@ export function buildFileMeta(
   return meta;
 }
 
+/** Builds `fileMeta` for exactly one target file — `defaultOpen: true`, no
+    annotations. SPEC-04 (`?file=` navigation from a ReviewFocusPanel row,
+    AC-34) needs the SAME `defaultOpen` lever this module already owns for
+    Smart order (`buildFileMeta` above), but Amendment A3 forbids a second
+    writer of `defaultOpen` for the same path. Rather than reach into
+    `SmartDiffViewer`'s own grouped render to inject a target there, DiffTab
+    calls this directly and renders `DiffViewer` on its own (R3) — the two
+    assembly points never run against the same file in the same render, so
+    there is still exactly one owner, just two mutually-exclusive callers. */
+export function targetFileMeta(path: string): Record<string, FileMetaEntry> {
+  return { [path]: { defaultOpen: true } };
+}
+
 /** Client-side join of the PR's findings onto its files, replacing the
     server's frozen (and now-dead) `finding_lines`: the contract carries
     neither `id` nor `severity`, both of which the annotation needs, and
