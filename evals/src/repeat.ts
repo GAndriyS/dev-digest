@@ -70,10 +70,14 @@ function printTest(agg: NodeAggregate, times: number): void {
 
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
-  // Cap runs at 2 to keep token spend bounded — LLM sessions are expensive, and 2 runs is enough
-  // to catch a blatantly flaky case. Bump MAX_TIMES if you deliberately want a fuller stability run.
-  const MAX_TIMES = 2;
-  let times = MAX_TIMES;
+  // Default to 2 runs — LLM sessions are expensive, and 2 is enough to catch a blatantly flaky
+  // case. The CAP is separate and higher: at n=2 every rate is 0/50/100%, so one coin-flip moves a
+  // practice by 50 points and an A/B delta is indistinguishable from noise (measured 2026-08-25 on
+  // the architecture-reviewer citation A/B). `-n 5` is what the stats layer wants — below 5,
+  // printTest() itself stamps the stddev "indicative only" — so let a deliberate run ask for it.
+  const DEFAULT_TIMES = 2;
+  const MAX_TIMES = 5;
+  let times = DEFAULT_TIMES;
   let label: string | undefined;
   const vitestArgs: string[] = [];
   for (let i = 0; i < argv.length; i++) {
@@ -83,7 +87,7 @@ async function main(): Promise<void> {
     else vitestArgs.push(a);
   }
   if (vitestArgs.length === 0 || !Number.isFinite(times) || times < 1) {
-    console.error("usage: pnpm eval:repeat <vitest pattern> [-n times<=2] [-t testNamePattern] [--label name]");
+    console.error("usage: pnpm eval:repeat <vitest pattern> [-n times<=5, default 2] [-t testNamePattern] [--label name]");
     process.exit(1);
   }
   if (times > MAX_TIMES) {

@@ -421,13 +421,18 @@ pnpm vitest run src/records/stats.test.ts       # the only non-model unit test (
 ### `eval:repeat` — stability of one thing
 
 ```bash
-pnpm eval:repeat <vitest pattern> [-n times=5] [-t testNamePattern] [--label name]
+pnpm eval:repeat <vitest pattern> [-n times<=5, default 2] [-t testNamePattern] [--label name]
 pnpm eval:repeat skills/onion-architecture -n 5 --label baseline
 ```
 Runs the pattern N times, then prints per-test pass rate, a per-**practice** table
 (`passed/total (pct)`), and metric stats (`turns`, `duration_ms`, `tokens_out` as mean ± stddev;
 n<5 prints an "indicative only" caveat). `--label` saves the aggregate to
 `results/repeat-<label>.json` for delta.
+
+**`-n` defaults to 2 and is capped at 5** — anything higher is clamped with a notice. Two runs
+catch a blatantly flaky case cheaply, but they are *not* enough for a delta: at n=2 every rate is
+0/50/100%, so one coin-flip moves a practice by 50 points. **Pass `-n 5` for any A/B you intend to
+draw a conclusion from.**
 
 ### `eval:delta` — version vs version (the canonical loop)
 

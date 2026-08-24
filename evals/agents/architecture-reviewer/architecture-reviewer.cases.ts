@@ -7,13 +7,25 @@ const REVIEW_PROMPT = `Audit this diff against DevDigest's documented structural
 
 ${fx("checkout-service.diff")}`;
 
-// A second real diff whose violations map onto DevDigest-SPECIFIC rule names
-// (`reviewer-core-zero-io`, `reviewer-core-ground-findings-gate`) that a competent model will
-// describe in prose but will not spontaneously name unless the agent forces a citation. This is
-// the discriminating case for the strict-vs-lite A/B: both variants should FIND both problems,
-// but only the strict variant (which keeps the "cite the exact documented rule per finding" hard
-// rule) should reliably emit the identifier. The checkout diff's textbook violations don't
-// discriminate — the model volunteers `inward-only-dependencies`/`di-discipline` either way.
+// A second real diff whose fs-import violation maps onto a DevDigest-SPECIFIC dependency-cruiser
+// rule name (`core-has-no-io`, server/.dependency-cruiser.cjs:123) that a competent model will
+// describe in prose ("the iron rule", "no I/O in the core") but will not spontaneously name
+// unless the agent forces a citation. This is the discriminating case for the strict-vs-lite A/B:
+// both variants should FIND both problems, but only the strict variant (which keeps the "cite the
+// exact documented rule per finding" hard rule) should reliably emit the identifier and locator.
+// The checkout diff's violations don't discriminate — the model volunteers a prose attribution
+// either way.
+//
+// MEASURED, 2026-08-25 — do NOT reintroduce a rule name without grepping for it first. The
+// original practices here demanded `reviewer-core-zero-io` and `reviewer-core-ground-findings-gate`.
+// Neither string exists anywhere in this repo: across 16 baseline runs the agent said "iron rule"
+// (9×) and `core-has-no-io` (1×), so both practices scored 0% in BOTH arms of the A/B and the
+// designated discriminator had zero headroom to fall. An expectation that names an identifier the
+// repo does not document measures the fixture author's memory, not the agent.
+//
+// The skipped-`groundFindings()` gate has NO rule identifier at all — the contract is prose in
+// reviewer-core/AGENTS.md:20 ("Grounding is mandatory"). Its practice therefore grades the
+// citation BEHAVIOUR (a named contract plus a locator) rather than a literal string.
 const REVIEWER_CORE_PROMPT = `Audit this diff against DevDigest's documented structural contracts.
 
 ${fx("reviewer-core-gate.diff")}`;
@@ -38,10 +50,18 @@ export const cases: AgentCase[] = [
     practices: [
       "flags the domain file (checkout.ts) importing a type from 'fastify' as a violation of the inward-only dependency rule between Domain and Presentation layers",
       "flags the `new PgCheckoutRepository()` call inside service.ts as a violation of DI discipline (concrete adapters/repositories must be constructed only in the composition root / container)",
-      "names the specific documented rule identifier for EVERY finding (e.g. `inward-only-dependencies`, `di-discipline`) rather than describing the problem only in prose",
+      // Neither of this diff's violations is caught by a dependency-cruiser rule — `domain/checkout.ts`
+      // is outside `service-stays-http-agnostic`'s path filter, and an inline `new` inside a module is
+      // outside `no-direct-adapter-clients`. Both are judgement findings, so the citable contract is a
+      // named section of the onion-architecture skill, not a rule id. Grading the BEHAVIOUR is what
+      // makes this satisfiable; demanding a literal id here graded a string the repo never defines.
+      "attributes EVERY finding to a named documented contract with a locator — a dependency-cruiser rule name, or a named rule/section of the onion-architecture skill or AGENTS.md — rather than describing the problem only in prose",
       "assigns a severity (critical/high/medium/low/info) to each finding",
       "quotes the offending line verbatim as evidence for each finding, not a paraphrase",
-      "ends with an explicit PASS/FAIL gate verdict based on whether any critical or high findings exist",
+      // The agent's own scale is PASS | BLOCKED, never FAIL. The earlier "PASS/FAIL" wording scored 0%
+      // on every diff that HAD violations (12 BLOCKED vs 4 PASS across the baseline runs) — it was
+      // failing the agent for using its documented vocabulary.
+      "ends with an explicit gate verdict on the PASS / BLOCKED scale, derived from whether any critical findings exist",
     ],
     threshold: 1.0,
     maxTurns: 25,
@@ -51,23 +71,30 @@ export const cases: AgentCase[] = [
     kind: "quality",
     prompt: REVIEW_PROMPT,
     practices: [
-      "does not invent an architecture-contract violation for the optional `reply?: FastifyReply` parameter beyond the inward-only-dependencies import issue itself (no runtime bug/security finding fabricated as an architecture rule)",
-      "stays scoped to structural/layering/DI findings and does not comment on naming, style, or test coverage",
+      "does not invent an architecture-contract violation for the optional `reply?: FastifyReply` parameter beyond the layering violation of the fastify import itself (no runtime bug/security finding fabricated as an architecture rule)",
+      // Scoped to what lands in FINDINGS. The agent's return format makes an `### Out of scope` section
+      // mandatory, and that section names tests and typecheck by design — the earlier "does not comment
+      // on … test coverage" wording therefore scored 0% in both arms for obeying the artifact.
+      "raises no FINDING about naming, style, formatting or test coverage — routing such an observation to the report's `Out of scope` / `Not flagged` section is correct and does not count as commenting on it",
     ],
     threshold: 1.0,
     maxTurns: 25,
   },
   {
-    name: "cites the DevDigest-specific rule identifier for reviewer-core violations",
+    name: "cites the DevDigest-specific documented contract for reviewer-core violations",
     kind: "quality",
     prompt: REVIEWER_CORE_PROMPT,
     practices: [
       "flags the `import { readFileSync } from 'node:fs'` added to reviewer-core/src/pipeline/run.ts as a violation (reviewer-core must do no I/O except the injected LLMProvider)",
       "flags that runPipeline now returns `deduped` directly, skipping the mandatory `groundFindings()` gate before emitting findings",
-      "names the exact documented rule identifier `reviewer-core-zero-io` for the fs-import finding rather than only describing it in prose",
-      "names the exact documented rule identifier `reviewer-core-ground-findings-gate` for the skipped-gate finding rather than only describing it in prose",
+      // The one real identifier in this fixture — server/.dependency-cruiser.cjs:123. This is THE
+      // discriminating practice of the whole A/B: the model reaches for "the iron rule" in prose
+      // unless the agent forces the citation.
+      "names the exact dependency-cruiser rule identifier `core-has-no-io` for the fs-import finding rather than only describing it in prose",
+      // No identifier exists for the grounding gate, so this grades the citation behaviour instead.
+      "attributes the skipped-gate finding to a named documented contract with a locator (the mandatory grounding gate in reviewer-core — `reviewer-core/AGENTS.md`, or the `groundFindings()` step of the pipeline) rather than describing it only in prose",
       "quotes the offending line verbatim as evidence for each finding, not a paraphrase",
-      "ends with an explicit PASS/FAIL gate verdict based on whether any critical or high findings exist",
+      "ends with an explicit gate verdict on the PASS / BLOCKED scale, derived from whether any critical findings exist",
     ],
     threshold: 1.0,
     maxTurns: 25,
