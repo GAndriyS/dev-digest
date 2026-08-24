@@ -18,6 +18,7 @@ Reusable AI skills that provide specialized knowledge and workflows. Canonical l
 | [typescript-expert](typescript-expert/SKILL.md) | Full-stack | Type-level programming, performance, tooling, migrations |
 | [security](security/SKILL.md) | Full-stack | OWASP Top 10:2025, auth, injection, uploads, secrets |
 | [mermaid-diagram](mermaid-diagram/SKILL.md) | Shared | Mermaid diagrams in markdown (flowcharts, sequence, ERD, …) |
+| [dependency-checker](dependency-checker/SKILL.md) `v1.0.0` | Meta | External npm + internal path-alias dependencies of all six packages: graph, per-package weight, P0/P1/P2/Info findings, prioritised summary. Facts come from [`scripts/deps-report.mjs`](../../scripts/deps-report.mjs); [eval set](../../evals/skills/dependency-checker) grades the report structure |
 | [engineering-insights](engineering-insights/SKILL.md) | Meta | Captures session findings into per-module INSIGHTS.md (append-only learnings loop) |
 | [pr-self-review](pr-self-review/SKILL.md) `v3.1.0` | Meta | Reviews the local diff with the routed skills before a PR is opened; run manually, CI enforces the mechanical half |
 | [implement](implement/SKILL.md) `v1.1.0` | Meta | `/implement <plan>` — runs an approved plan: implementer → architecture-reviewer ∥ /code-review ∥ /security-review → fix loop → plan-verifier → doc-writer → /pr-self-review, with human gates, a shared handoff brief and a per-stage cost log in `.claude/sdd/` |

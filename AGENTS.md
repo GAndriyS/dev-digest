@@ -99,6 +99,11 @@ a package — read its own `AGENTS.md` (`server/`, `client/`, `reviewer-core/`,
   before it, never from it. `test-writer` is off the default chain (token
   budget) — delegate to it by hand when a feature needs a test pass. Why the
   order → read `.claude/agents/README.md`.
+- Auditing dependencies (what we depend on, what it weighs, what to fix first)
+  → run `/dependency-checker`; the fact base is `node scripts/deps-report.mjs
+  [--json]` — offline by default, `--outdated`/`--audit` hit the registry and are
+  opt-in. It measures and recommends; it never edits a `package.json` or a
+  lockfile. Reports land in `docs/dependencies/`.
 - Running a CI lane locally (any agent, any session) → `node scripts/verify.mjs
   --slice <frontend|backend|reviewer-core|mcp|integration>` — one line per
   gate, failure output only. Do not inline `tsc`/`depcruise`/`vitest` in

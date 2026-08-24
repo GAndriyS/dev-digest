@@ -5,9 +5,9 @@ import type { WorkflowCase } from "../src/index.js";
  * loaded via settingSources:["project"]) behaves as documented. Organized by scenario, not by a
  * single artifact, because these behaviors are cross-cutting.
  *
- * Budget: 5 Claude sessions total.
- *   - 3 × trace     → 1 session each                      = 3
- *   - 1 × activation pair (positive + near-miss negative) = 2
+ * Budget: 7 Claude sessions total.
+ *   - 3 × trace     → 1 session each                       = 3
+ *   - 2 × activation pair (positive + near-miss negative)  = 4
  *
  * `trace` folds several assertions into ONE session (cheaper, coarser) and stops early once its
  * evidence is in — so a dispatch-bearing trace never waits out the nested subagent's full run.
@@ -74,6 +74,33 @@ export const cases: WorkflowCase[] = [
     prompt:
       "Поясни, як у pgvector працюють розмірності колонок і чому невідповідність повертає нуль рядків.",
     skill: "engineering-insights",
+    shouldActivate: false,
+    maxTurns: 4,
+  },
+
+  // --- activation pair (2 sessions): dependency-checker vs its nearest neighbour ---------------
+  // The skill's description is long and trigger-heavy ("dependencies", "node_modules size",
+  // "unused dependency", "залежності"), so the real risk is over-firing on anything that mentions
+  // an import. The negative is the discriminator the SKILL.md itself draws: layer boundaries
+  // INSIDE one package belong to onion-architecture, not to a dependency audit. Both prompts talk
+  // about imports and both name a package — only the intent differs.
+  {
+    kind: "activation",
+    name: "dependency-checker activates on an install-weight question",
+    prompt:
+      "node_modules у нас розрісся під півтора гігабайта, і я не розумію, що саме туди тягнеться. " +
+      "Порахуй, з чого складається наша залежність-база по пакетах і з чого варто починати чистку.",
+    skill: "dependency-checker",
+    shouldActivate: true,
+    maxTurns: 4,
+  },
+  {
+    kind: "activation",
+    name: "near-miss negative — a layer-boundary import question is onion-architecture, not a dependency audit",
+    prompt:
+      "У server/src сервісний шар імпортує тип напряму з routes, і це ламає наші шари. " +
+      "Підкажи, куди за нашими правилами має переїхати цей код.",
+    skill: "dependency-checker",
     shouldActivate: false,
     maxTurns: 4,
   },
