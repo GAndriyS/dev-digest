@@ -52,6 +52,39 @@ function metricRow(label: string, a: Stats, b: Stats): void {
   console.log(`      ${label}: ${a.mean.toFixed(0)} -> ${b.mean.toFixed(0)}  ${col}(${sign}${d.toFixed(0)})${RESET}`);
 }
 
+const shortName = (nodeid: string): string => nodeid.split(" > ").slice(-1)[0];
+
+/**
+ * Pair the two series' tests, nodeid first and test name second.
+ *
+ * An exact nodeid match is the normal case — same eval file, edited artifact between the runs.
+ * The name fallback exists for the A/B the repo is actually built for: `architecture-reviewer`
+ * and `architecture-reviewer-lite` import the SAME cases from one file, deliberately, so the two
+ * are graded on an identical task. Their nodeids differ only by the eval file they ran from, so
+ * a nodeid-only join reported every test twice at `— → X%` and compared nothing.
+ *
+ * Returns `[displayName, a?, b?]`, unmatched tests included so a missing side stays visible.
+ */
+function pair(
+  aTests: Record<string, NodeAggregate>,
+  bTests: Record<string, NodeAggregate>,
+): [string, NodeAggregate | undefined, NodeAggregate | undefined][] {
+  const bLeft = new Map(Object.entries(bTests));
+  const bByName = new Map<string, string>();
+  for (const id of bLeft.keys()) if (!bByName.has(shortName(id))) bByName.set(shortName(id), id);
+
+  const out: [string, NodeAggregate | undefined, NodeAggregate | undefined][] = [];
+  for (const [id, ta] of Object.entries(aTests).sort(([x], [y]) => x.localeCompare(y))) {
+    const matchId = bLeft.has(id) ? id : bByName.get(shortName(id));
+    const tb = matchId ? bLeft.get(matchId) : undefined;
+    if (matchId) bLeft.delete(matchId);
+    out.push([shortName(id), ta, tb]);
+  }
+  // Whatever B still holds had no counterpart in A at all.
+  for (const [id, tb] of [...bLeft].sort(([x], [y]) => x.localeCompare(y))) out.push([shortName(id), undefined, tb]);
+  return out;
+}
+
 function main(): void {
   const [labelA, labelB] = process.argv.slice(2);
   if (!labelA || !labelB) {
@@ -63,11 +96,7 @@ function main(): void {
   console.log(`A = ${labelA}  sha ${a.git_sha}${a.dirty ? "-dirty" : ""}  (${a.times} runs)`);
   console.log(`B = ${labelB}  sha ${b.git_sha}${b.dirty ? "-dirty" : ""}  (${b.times} runs)`);
 
-  const nodeids = [...new Set([...Object.keys(a.tests), ...Object.keys(b.tests)])].sort();
-  for (const id of nodeids) {
-    const ta = a.tests[id];
-    const tb = b.tests[id];
-    const shortId = id.split(" > ").slice(-1)[0];
+  for (const [shortId, ta, tb] of pair(a.tests, b.tests)) {
     rateRow("\n  ", shortId, ta?.pass, tb?.pass);
 
     const practiceTexts = [...new Set([...Object.keys(ta?.practices ?? {}), ...Object.keys(tb?.practices ?? {})])];

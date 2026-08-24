@@ -32,13 +32,44 @@ function parseVerdict(text: string): Verdict["results"] {
   return obj.results;
 }
 
+const normalize = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+
+/**
+ * Re-key the judge's verdicts onto the CANONICAL practice strings from the case file.
+ *
+ * The judge echoes each practice back, and it does not always echo it byte-for-byte — a dropped
+ * pair of backticks is enough. Everything downstream keys on that string: `aggregate()` buckets
+ * per-practice pass rates by it, and `eval:delta` matches the two series by it. So a single
+ * paraphrase splits one practice into two rows in a repeat summary (observed 2026-08-25: the same
+ * practice reported as `1/1` and `4/4` in one series) and renders `— → X%` in the delta instead of
+ * the real movement — a silently lost comparison in exactly the tool built for comparing.
+ *
+ * The judge is prompted with a numbered list and replies in order, so the index is the reliable
+ * join. Normalized text matching is the fallback for a reordered or short reply; anything that
+ * still matches nothing keeps the judge's own wording rather than being dropped.
+ */
+function rekey(results: Verdict["results"], practices: string[]): Verdict["results"] {
+  if (results.length === practices.length) return results.map((r, i) => ({ ...r, practice: practices[i] }));
+  const byNorm = new Map(practices.map((p) => [normalize(p), p]));
+  return results.map((r) => {
+    const canonical = byNorm.get(normalize(r.practice));
+    return canonical ? { ...r, practice: canonical } : r;
+  });
+}
+
 /** Judge an output against a list of practices. Model defaults to the stronger judge family. */
 export async function llmJudge(output: string, practices: string[], model = EVAL_JUDGE_MODEL): Promise<Verdict> {
   const listed = practices.map((p, i) => `${i + 1}. ${p}`).join("\n");
   const prompt = `${JUDGE_RUBRIC}\n\n## PRACTICES\n${listed}\n\n## OUTPUT\n${output}\n\nReturn the JSON now.`;
   const res = await runContent(prompt, { allowedTools: [], maxTurns: 1, model });
-  const results = parseVerdict(res.text);
-  const total = results.length || 1;
+  const results = rekey(parseVerdict(res.text), practices);
+  if (results.length !== practices.length) {
+    console.error(`  judge returned ${results.length} verdicts for ${practices.length} practices — scoring the missing ones as unmet`);
+  }
+  // Denominator is what the CASE asked for, not what the judge chose to answer. Scoring over
+  // `results.length` let a judge that silently dropped a practice inflate the score — worst at
+  // threshold 1.0, where a 5-of-5 reply to a 6-practice case reads as a perfect pass.
+  const total = practices.length || 1;
   const passed = results.filter((r) => r.passed).length;
   return { results, passed, total, score: passed / total };
 }
