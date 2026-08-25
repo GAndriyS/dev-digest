@@ -3,6 +3,7 @@
  * view, each side backed by N runs. Diffs at three levels: per-test pass rate, per-practice
  * (the primary signal — which practice improved/regressed), and metrics.
  *
+ *   export EVAL_MAX_REPEATS=5                                          # n=2 makes a delta unreadable
  *   pnpm eval:repeat skills/onion-architecture -n 5 --label baseline   # BEFORE the edit
  *   ...edit...
  *   pnpm eval:repeat skills/onion-architecture -n 5 --label candidate  # AFTER

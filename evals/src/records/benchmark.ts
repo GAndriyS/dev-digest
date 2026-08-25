@@ -4,7 +4,10 @@
  * configuration, the delta, a per-practice matrix, and deterministic analyst flags. This is the
  * with_skill vs without_skill comparison from skill-creator v2.
  *
- *   pnpm eval:benchmark skills/engineering-insights -n 5
+ *   pnpm eval:benchmark skills/engineering-insights
+ *
+ * n defaults to MAX_REPEATS (2) and is capped there; every repetition costs TWO sessions per case.
+ * EVAL_MAX_REPEATS=5 for a lift number that has to hold up.
  *
  * Skills/agents only — a "no artifact" baseline is meaningless for the workflow tier, which has
  * its own control-vs-treatment design; workflow patterns are refused.
@@ -14,7 +17,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { GREEN, RED, YELLOW, DIM, RESET } from "../ansi.js";
 import { countTests, runVitestOnce } from "../run-vitest.js";
-import { EVAL_MODEL, EVAL_JUDGE_MODEL } from "../config.js";
+import { EVAL_MODEL, EVAL_JUDGE_MODEL, MAX_REPEATS } from "../config.js";
 import { RESULTS_DIR } from "../artifacts/paths.js";
 import { gitInfo } from "../git.js";
 import {
@@ -71,7 +74,11 @@ const cell = (s: Stats) => `${s.mean.toFixed(0)} ± ${s.stddev.toFixed(0)} [${s.
 
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
-  let times = 5;
+  // Benchmark is the biggest spender in the package — it runs the pattern TWICE per repetition
+  // (candidate + baseline), so its n multiplies by two before it ever reaches a session. It used
+  // to default to 5 and cap at nothing: `-n 5` over a 6-case file is 60 sessions. Same budget as
+  // repeat now, same escape hatch (EVAL_MAX_REPEATS) for a run that deliberately wants the stats.
+  let times = MAX_REPEATS;
   let label: string | undefined;
   const vitestArgs: string[] = [];
   for (let i = 0; i < argv.length; i++) {
@@ -81,8 +88,16 @@ async function main(): Promise<void> {
     else vitestArgs.push(a);
   }
   if (vitestArgs.length === 0 || !Number.isFinite(times) || times < 1) {
-    console.error("usage: pnpm eval:benchmark <vitest pattern> [-n runs] [--label name]");
+    console.error(
+      `usage: pnpm eval:benchmark <vitest pattern> [-n runs<=${MAX_REPEATS}, default ${MAX_REPEATS}] [--label name]`,
+    );
     process.exit(1);
+  }
+  if (times > MAX_REPEATS) {
+    console.error(
+      `  ${DIM}capping -n ${times} → ${MAX_REPEATS} (token economy; raise with EVAL_MAX_REPEATS=${times})${RESET}`,
+    );
+    times = MAX_REPEATS;
   }
   if (vitestArgs.some((a) => a.includes("workflow"))) {
     console.error(

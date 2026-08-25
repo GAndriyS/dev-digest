@@ -8,7 +8,7 @@
  *     SYSTEMIC effect: does a skill activate, does a subagent dispatch, does CLAUDE.md matter.
  */
 
-import { IS_BASELINE, WORKFLOW_ALLOWED_TOOLS } from "./config.js";
+import { IS_BASELINE, WORKFLOW_ALLOWED_TOOLS, WORKFLOW_DISALLOWED_TOOLS } from "./config.js";
 import { runClaude, type RunOptions } from "./runtime/run-claude.js";
 import { runContent } from "./runtime/dispatch.js";
 import { skillContent, agentContent, agentTools } from "./artifacts/load.js";
@@ -44,13 +44,15 @@ export function agentTask(prompt: string, agentName: string, opts: RunOptions = 
  * Use for workflow-level evals: skill activation, subagent dispatch, CLAUDE.md effect.
  * Ignores EVAL_CONFIG — the workflow tier has its own control-vs-treatment design.
  *
- * Safety: keep allowedTools a read-only allow-list (no Bash/Write/Edit) — a fresh session
- * with bypassPermissions could otherwise take real actions in the repo.
+ * Safety: the read-only allow-list is NOT enough on its own — under bypassPermissions a session
+ * used Write/Edit/Bash despite them being absent from it, and wrote into the real repo. The
+ * deny-list is the enforced half, and it is applied AFTER `opts` so a case cannot widen it.
  */
 export function workflowTask(prompt: string, opts: RunOptions = {}) {
   return runClaude(prompt, {
     allowedTools: WORKFLOW_ALLOWED_TOOLS,
     ...opts,
+    disallowedTools: WORKFLOW_DISALLOWED_TOOLS,
     settingSources: ["project"],
   });
 }

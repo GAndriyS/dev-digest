@@ -31,6 +31,18 @@ export interface RecordData {
   verdict?: Verdict;
   grounded?: number;
   threshold?: number;
+  /**
+   * The case's OWN verdict, when the caller knows it. Required for anything trace-asserted: a
+   * workflow case carries neither a judge nor (always) a grounding gate, so the fallback below
+   * scored `!isError` — "the session did not crash" — and called it a pass.
+   *
+   * That reads both ways. A spec-creator dispatch case that read nothing, launched nothing and
+   * merely answered in prose was recorded as 2/2 PASS; a near-miss negative whose assertions all
+   * held was recorded 0/2 FAIL because it spent one turn over its budget. Every multi-run
+   * statistic over the workflow tier — pass rate, `flaky`, `delta` — was reading that number
+   * (measured 2026-08-25).
+   */
+  outcome?: boolean;
   extra?: Record<string, unknown>;
 }
 
@@ -40,7 +52,7 @@ export interface RecordData {
  * from being silently empty.
  */
 export function record(label: string, data: RecordData): void {
-  const { result, verdict, grounded, threshold, extra } = data;
+  const { result, verdict, grounded, threshold, outcome: declared, extra } = data;
   const state = expect.getState();
   // The TEST NAME comes from the caller, never from vitest's ambient state.
   //
@@ -58,14 +70,17 @@ export function record(label: string, data: RecordData): void {
   const suite = ambient.includes(" > ") ? ambient.slice(0, ambient.lastIndexOf(" > ")) : "";
   const nodeid = `${state.testPath ?? "?"} > ${suite ? `${suite} > ` : ""}${label}`;
 
-  // outcome: grounding gate failure short-circuits to false; else the judge threshold; else
-  // "did the run itself succeed" (workflow tests have neither grounding nor a judge verdict).
+  // outcome: an explicit verdict from the caller wins; else the grounding gate short-circuits to
+  // false; else the judge threshold; else "did the run itself succeed" — the last fallback is for
+  // a case that measures nothing else, never for a trace-asserted one (see RecordData.outcome).
   const outcome =
-    grounded !== undefined && grounded < 1
-      ? false
-      : verdict && threshold !== undefined
-        ? verdict.score >= threshold
-        : !result.isError;
+    declared !== undefined
+      ? declared
+      : grounded !== undefined && grounded < 1
+        ? false
+        : verdict && threshold !== undefined
+          ? verdict.score >= threshold
+          : !result.isError;
 
   const outDir = join(OUTPUTS, RUN_ID);
   mkdirSync(outDir, { recursive: true });

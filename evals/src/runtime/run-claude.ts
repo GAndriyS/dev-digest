@@ -39,6 +39,23 @@ export interface Result {
  * sixth run produced none). A failed run is data: it belongs in the series as a failure, not as
  * an absence.
  */
+/**
+ * Take the agent name off a spawn tool's input, tolerating a malformed call.
+ *
+ * A model does not always emit clean tool-call syntax: one observed run put the whole rest of the
+ * XML into `subagent_type`, so `subagents` held
+ * `spec-creator</subagent_type>\n<parameter name="prompt">…` instead of `spec-creator`. Everything
+ * downstream compares by EXACT membership — `stopWhen`'s `subagents.includes(name)` above all — so
+ * a mangled name means the early stop never fires and the nested subagent runs to completion. That
+ * is how a dispatch case blew past the 240s vitest timeout and vanished from its run entirely
+ * (measured 2026-08-25), taking its record with it: a killed test never reaches its `finally`.
+ *
+ * Keep the leading identifier and drop whatever follows. Agent names are `[a-z0-9-]` plus an
+ * optional `plugin:agent` prefix; anything outside that set starts the garbage.
+ */
+export const agentName = (raw: unknown): string =>
+  String(raw ?? "").trim().match(/^[A-Za-z0-9][A-Za-z0-9_.:-]*/)?.[0] ?? "";
+
 export const failedResult = (err: unknown): Result => ({
   text: `RUN FAILED: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`,
   toolsUsed: [],
@@ -53,6 +70,8 @@ export const failedResult = (err: unknown): Result => ({
 export interface RunOptions {
   systemPrompt?: string;
   allowedTools?: string[];
+  /** Hard deny-list. Unlike `allowedTools`, this is enforced under bypassPermissions. */
+  disallowedTools?: string[];
   maxTurns?: number;
   cwd?: string;
   model?: string;
@@ -87,6 +106,7 @@ export async function runClaude(prompt: string, opts: RunOptions = {}): Promise<
     permissionMode: "bypassPermissions", // safe: evals only read/plan and tools are allow-listed
     systemPrompt,
     allowedTools,
+    ...(opts.disallowedTools?.length ? { disallowedTools: opts.disallowedTools } : {}),
     cwd: opts.cwd ?? REPO_ROOT,
     // Default: do NOT load on-disk config — isolates the injected artifact. workflowTask overrides.
     settingSources: opts.settingSources ?? [],
@@ -128,7 +148,7 @@ export async function runClaude(prompt: string, opts: RunOptions = {}): Promise<
             toolCallCount++;
             const input = block.input ?? {};
             if (SPAWN_TOOLS.has(block.name)) {
-              const sub = input.subagent_type ?? input.agent_type ?? input.name;
+              const sub = agentName(input.subagent_type ?? input.agent_type ?? input.name);
               if (sub) subagents.push(sub);
             }
             if (block.name === "Read") {

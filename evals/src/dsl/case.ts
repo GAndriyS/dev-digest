@@ -44,6 +44,12 @@ export type WorkflowCase =
       prompt: string;
       skill: string;
       shouldActivate: boolean;
+      /**
+       * Also assert the session dispatched NO subagent. Free to add — a negative case already
+       * pays for a session in which nothing was supposed to fire, so it may as well assert the
+       * other over-firing this harness is prone to (delegating an explain-shaped prompt).
+       */
+      forbidSubagents?: boolean;
       maxTurns?: number;
     }
   | {
@@ -65,6 +71,19 @@ export type WorkflowCase =
       expectSubagents?: string[];
       expectSkills?: string[];
       expectFilesRead?: string[];
+      /**
+       * Substrings that must ALL appear in the final text (case-insensitive, via patternMatch).
+       *
+       * The trace cannot see a rule that arrives as CONFIG rather than as a `Read`: the root
+       * CLAUDE.md is loaded by settingSources, and a package CLAUDE.md is injected by the harness
+       * when work touches that subtree — neither produces a tool call. The only evidence such a
+       * file took effect is a rule appearing in the answer that the model could not otherwise
+       * know. Pick markers that are literal repo tokens (`pnpm arch`, `devdigest_pgdata`), not
+       * paraphrasable prose.
+       *
+       * Presence of this field DISABLES the early stop — see the runner.
+       */
+      expectMentions?: string[];
       maxTurns?: number;
     };
 
@@ -150,23 +169,35 @@ export function runWorkflowCases(cases: WorkflowCase[]): void {
           }),
         );
         logTrace(c.name, result);
+        // The recorded outcome is the ASSERTION's verdict, computed here rather than inferred from
+        // the run's exit state — see RecordData.outcome for what inferring it cost.
+        const dispatched = result.subagents.includes(c.expectSubagent);
         try {
           expect(result.subagents, `subagents: ${result.subagents.join(", ")}`).toContain(c.expectSubagent);
         } finally {
-          record(c.name, { result });
+          record(c.name, { result, outcome: dispatched });
         }
       } else if (c.kind === "activation") {
         const result = await runOrRecordFailure(c.name, undefined, () =>
           workflowTask(c.prompt, { maxTurns: c.maxTurns }),
         );
         logTrace(c.name, result);
+        // Deliberately NOT gated on `isError`: an activation case asserts what the session did or
+        // did not engage, and a run that exceeded its turn budget can still have answered that
+        // question. Folding the exit state in is what marked a correct near-miss negative 0/2.
+        const passed =
+          activated(result, c.skill) === c.shouldActivate &&
+          (!c.forbidSubagents || result.subagents.length === 0);
         try {
           expect(
             activated(result, c.skill),
             `skills: ${result.skillsInvoked.join(", ")} | reads: ${result.filesRead.join(", ")}`,
           ).toBe(c.shouldActivate);
+          if (c.forbidSubagents) {
+            expect(result.subagents, `subagents: ${result.subagents.join(", ")}`).toEqual([]);
+          }
         } finally {
-          record(c.name, { result });
+          record(c.name, { result, outcome: passed });
         }
       } else if (c.kind === "trace") {
         // One session, many asserts — every provided expectation is checked against the same trace.
@@ -178,16 +209,33 @@ export function runWorkflowCases(cases: WorkflowCase[]): void {
         const skillEngaged = (p: { skillsInvoked: string[]; filesRead: string[] }, skill: string) =>
           p.skillsInvoked.some((s) => s === skill || s.endsWith(`:${skill}`)) ||
           p.filesRead.some((f) => f.includes(`skills/${skill}/SKILL.md`));
+        // Early stop breaks the message loop at a tool_use, BEFORE the result message that carries
+        // the final answer — `result.text` is then only the assistant text accumulated so far. A
+        // case that asserts on that text must therefore run to completion, or it fails on an
+        // answer the session never got to write. Tool-only cases keep the saving.
+        const wantsText = (c.expectMentions?.length ?? 0) > 0;
         const result = await runOrRecordFailure(c.name, undefined, () =>
           workflowTask(c.prompt, {
             maxTurns: c.maxTurns,
-            stopWhen: (p) =>
-              subs.every((s) => p.subagents.includes(s)) &&
-              skls.every((s) => skillEngaged(p, s)) &&
-              files.every((f) => p.filesRead.some((r) => r.includes(f))),
+            stopWhen: wantsText
+              ? undefined
+              : (p) =>
+                  subs.every((s) => p.subagents.includes(s)) &&
+                  skls.every((s) => skillEngaged(p, s)) &&
+                  files.every((f) => p.filesRead.some((r) => r.includes(f))),
           }),
         );
         logTrace(c.name, result);
+        let grounded: number | undefined;
+        // Every facet evaluated up front, so the recorded outcome is the same conjunction the
+        // asserts below check — including `isError`, which a trace case does assert on.
+        if (c.expectMentions?.length) grounded = patternMatch(result.text, c.expectMentions);
+        const passed =
+          subs.every((s) => result.subagents.includes(s)) &&
+          skls.every((s) => activated(result, s)) &&
+          files.every((f) => result.filesRead.some((r) => r.includes(f))) &&
+          (grounded === undefined || grounded === 1) &&
+          !result.isError;
         try {
           for (const sub of c.expectSubagents ?? []) {
             expect(result.subagents, `subagents: ${result.subagents.join(", ")}`).toContain(sub);
@@ -204,9 +252,17 @@ export function runWorkflowCases(cases: WorkflowCase[]): void {
               `${file} not read | reads: ${result.filesRead.join(", ")}`,
             ).toBe(true);
           }
+          if (c.expectMentions?.length) {
+            const missing = c.expectMentions.filter(
+              (m) => !result.text.toLowerCase().includes(m.toLowerCase()),
+            );
+            expect(grounded, `missing mentions: ${missing.join(", ")}\noutput:\n${result.text}`).toBe(1);
+          }
           expect(result.isError).toBe(false);
         } finally {
-          record(c.name, { result });
+          // `grounded` rides along so a mentions-bearing trace is a MEASURED series (repeat/delta
+          // can show the coverage drifting), not just a red/green test.
+          record(c.name, { result, grounded, outcome: passed });
         }
       } else {
         // contrast: treatment (real harness) vs control (empty tmpdir, no on-disk config).
@@ -233,14 +289,16 @@ export function runWorkflowCases(cases: WorkflowCase[]): void {
         }
         logTrace(`${c.name} [treatment]`, treatment);
         logTrace(`${c.name} [control]`, control);
+        const treatmentRead = treatment.filesRead.some((f) => f.includes(c.expectFileRead));
+        const controlRead = control.filesRead.some((f) => f.includes(c.expectFileRead));
         try {
-          const treatmentRead = treatment.filesRead.some((f) => f.includes(c.expectFileRead));
-          const controlRead = control.filesRead.some((f) => f.includes(c.expectFileRead));
           expect(treatmentRead, `treatment reads: ${treatment.filesRead.join(", ")}`).toBe(true);
           expect(controlRead, `control reads: ${control.filesRead.join(", ")}`).toBe(false);
         } finally {
-          record(`${c.name} [treatment]`, { result: treatment });
-          record(`${c.name} [control]`, { result: control });
+          // Each row carries what ITS half was supposed to show: the treatment reads the file,
+          // the control does not. A control that stayed clean is a passing control.
+          record(`${c.name} [treatment]`, { result: treatment, outcome: treatmentRead });
+          record(`${c.name} [control]`, { result: control, outcome: !controlRead });
         }
       }
     });

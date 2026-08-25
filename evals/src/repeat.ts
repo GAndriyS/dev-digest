@@ -4,7 +4,10 @@
  * only -n/--times and --label are consumed here. Aggregates the records written during the runs
  * into per-test pass rate, a per-practice breakdown, and metric stats (mean ± stddev).
  *
- *   pnpm eval:repeat skills/onion-architecture -n 5 --label baseline
+ *   pnpm eval:repeat skills/onion-architecture --label baseline
+ *
+ * -n defaults to MAX_REPEATS and cannot exceed it (2 unless EVAL_MAX_REPEATS raises it) — a delta
+ * drawn from n=2 is noise, so an A/B has to opt into the cost explicitly.
  *
  * --label saves the aggregate to results/repeat-<label>.json so two labeled series can be diffed
  * with `pnpm eval:delta baseline candidate`.
@@ -14,6 +17,7 @@ import { mkdirSync, writeFileSync, existsSync, statSync, readdirSync } from "nod
 import { join } from "node:path";
 import { GREEN, RED, DIM, RESET, rateColor } from "./ansi.js";
 import { gitInfo } from "./git.js";
+import { MAX_REPEATS } from "./config.js";
 import { countTests, runVitestOnce } from "./run-vitest.js";
 import { RESULTS_DIR } from "./artifacts/paths.js";
 import { aggregate, loadRecords, recordCount, type NodeAggregate, type Stats } from "./records/stats.js";
@@ -77,13 +81,11 @@ function printTest(agg: NodeAggregate, times: number): void {
 
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
-  // Default to 2 runs — LLM sessions are expensive, and 2 is enough to catch a blatantly flaky
-  // case. The CAP is separate and higher: at n=2 every rate is 0/50/100%, so one coin-flip moves a
-  // practice by 50 points and an A/B delta is indistinguishable from noise (measured 2026-08-25 on
-  // the architecture-reviewer citation A/B). `-n 5` is what the stats layer wants — below 5,
-  // printTest() itself stamps the stddev "indicative only" — so let a deliberate run ask for it.
-  const DEFAULT_TIMES = 2;
-  const MAX_TIMES = 5;
+  // Default AND cap both come from MAX_REPEATS (2 unless EVAL_MAX_REPEATS says otherwise) — see
+  // config.ts for what n=2 buys and what it costs. `-n` can only lower the number, never raise it
+  // past the cap, so a mistyped flag cannot spend a session it was not budgeted.
+  const DEFAULT_TIMES = MAX_REPEATS;
+  const MAX_TIMES = MAX_REPEATS;
   let times = DEFAULT_TIMES;
   let label: string | undefined;
   const vitestArgs: string[] = [];
@@ -94,11 +96,15 @@ async function main(): Promise<void> {
     else vitestArgs.push(a);
   }
   if (vitestArgs.length === 0 || !Number.isFinite(times) || times < 1) {
-    console.error("usage: pnpm eval:repeat <vitest pattern> [-n times<=5, default 2] [-t testNamePattern] [--label name]");
+    console.error(
+      `usage: pnpm eval:repeat <vitest pattern> [-n times<=${MAX_TIMES}, default ${DEFAULT_TIMES}] [-t testNamePattern] [--label name]`,
+    );
     process.exit(1);
   }
   if (times > MAX_TIMES) {
-    console.error(`  ${DIM}capping -n ${times} → ${MAX_TIMES} (token economy)${RESET}`);
+    console.error(
+      `  ${DIM}capping -n ${times} → ${MAX_TIMES} (token economy; raise with EVAL_MAX_REPEATS=${times})${RESET}`,
+    );
     times = MAX_TIMES;
   }
   vitestArgs.splice(0, vitestArgs.length, ...resolveEvalPatterns(vitestArgs));
@@ -131,6 +137,22 @@ async function main(): Promise<void> {
     console.log("  (no records produced — check the pattern / -t filter)");
   }
   for (const id of nodeids) printTest(tests[id], times);
+
+  // A case with ZERO records is invisible: the summary is built from records, so it silently
+  // shrinks and the remaining cases read as a clean sweep. printTest's `n < times` caveat cannot
+  // catch it — that fires per case, and this case has no rows to print at all.
+  //
+  // This is not hypothetical. A dispatch case whose early stop failed ran past the 240s vitest
+  // timeout; the kill left its `finally` unreached, so it wrote nothing, and a 6-case run reported
+  // "5/5 cases" in green (measured 2026-08-25). Missing is not passing — say so.
+  if (nCases !== null && nodeids.length < nCases) {
+    console.log(
+      `\n  ${RED}${nCases - nodeids.length} of ${nCases} case(s) produced NO records and are ABSENT` +
+        ` from this summary — not passing, missing.${RESET}` +
+        `\n  ${DIM}Usual cause: the test was killed (vitest timeout) before it could record.` +
+        ` Re-run that case alone to see it fail properly.${RESET}`,
+    );
+  }
 
   if (label) {
     const git = gitInfo();

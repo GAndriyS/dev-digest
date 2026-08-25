@@ -390,6 +390,10 @@ export const cases: WorkflowCase[] = [
   { kind: "contrast",   name: "CLAUDE.md routes an API-route task to api-contracts doc",
     prompt: "I'm about to add POST /reviews/:id/rerun. Follow this repo's conventions...",
     expectFileRead: "server/docs/api-contracts.md", tools: ["Read", "Grep", "Glob"], maxTurns: 6 },
+
+  { kind: "trace",      name: "client work reaches client/AGENTS.md and its package-only rules",
+    prompt: "Adding a review-list page; data comes from the API. Follow this package's conventions...",
+    expectFilesRead: ["client/AGENTS.md"], expectMentions: ["_components", "pnpm arch"], maxTurns: 12 },
 ];
 ```
 
@@ -398,11 +402,32 @@ How each `kind` asserts:
 | `kind` | Runs | Passes when |
 |--------|------|-------------|
 | `dispatch` | `workflowTask` | `result.subagents` contains `expectSubagent` |
-| `activation` | `workflowTask` | `activated(result, skill) === shouldActivate` (positive **and** near-miss negative) |
+| `activation` | `workflowTask` | `activated(result, skill) === shouldActivate` (positive **and** near-miss negative); `forbidSubagents` additionally requires an empty `result.subagents` |
 | `contrast` | treatment (real repo) **and** control (empty tmpdir, `settingSources:[]`) | `expectFileRead` read in treatment, NOT in control |
+| `trace` | `workflowTask`, **one** session | every provided facet holds: `expectSubagents`, `expectSkills`, `expectFilesRead`, `expectMentions` |
 
 Workflow records carry an empty `practices[]` (no judge) but a full trace; `contrast` writes two
 records — `<label>:treatment` and `<label>:control`.
+
+### `trace` — the composite kind
+
+`trace` folds several assertions into ONE session. Use it to cut session count; the price is
+coarser diagnostics (a red case does not say which rule broke) and lower stability, since the
+per-facet probabilities multiply. Merge along **one task**, never by topic: if the prompt does not
+genuinely need an artifact to be answered, the model will answer from the routing table without
+opening it and `filesRead` — which counts real `Read` calls only — scores a miss.
+
+`expectMentions` asserts on the final **text** (`patternMatch`, case-insensitive, must equal 1),
+not on the trace. It exists because a rule delivered as *config* leaves no tool call: the root
+`CLAUDE.md` is loaded by `settingSources`, and a package `CLAUDE.md` is injected when work touches
+that subtree. A repo-unique token in the answer (`pnpm arch`, `devdigest_pgdata`) is the only
+evidence those files took effect — and, being unguessable, doubles as its own control, so no
+second run is needed to establish causality. Pick literal tokens, not paraphrasable prose.
+
+Presence of `expectMentions` **disables the early stop**: `stopWhen` breaks the loop at a
+`tool_use`, before the result message that carries the final answer, so a text assertion would be
+judging an answer the session never wrote. Tool-only traces keep the saving. The coverage number is
+persisted as `grounded`, so `repeat`/`delta` can show it drifting instead of only flipping red.
 
 ## Commands & parameters
 
@@ -421,18 +446,25 @@ pnpm vitest run src/records/stats.test.ts       # the only non-model unit test (
 ### `eval:repeat` — stability of one thing
 
 ```bash
-pnpm eval:repeat <vitest pattern> [-n times<=5, default 2] [-t testNamePattern] [--label name]
-pnpm eval:repeat skills/onion-architecture -n 5 --label baseline
+pnpm eval:repeat <vitest pattern> [-n times<=2, default 2] [-t testNamePattern] [--label name]
+pnpm eval:repeat workflow --label baseline
 ```
 Runs the pattern N times, then prints per-test pass rate, a per-**practice** table
 (`passed/total (pct)`), and metric stats (`turns`, `duration_ms`, `tokens_out` as mean ± stddev;
 n<5 prints an "indicative only" caveat). `--label` saves the aggregate to
 `results/repeat-<label>.json` for delta.
 
-**`-n` defaults to 2 and is capped at 5** — anything higher is clamped with a notice. Two runs
-catch a blatantly flaky case cheaply, but they are *not* enough for a delta: at n=2 every rate is
-0/50/100%, so one coin-flip moves a practice by 50 points. **Pass `-n 5` for any A/B you intend to
-draw a conclusion from.**
+**`-n` defaults to 2 and is capped at 2** (`MAX_REPEATS` in `config.ts`) — anything higher is
+clamped with a notice. Two runs catch a blatantly flaky case cheaply, and a session is the
+expensive unit here, so the cap is the budget rather than a suggestion.
+
+Two runs are *not* enough for a delta: at n=2 every rate is 0/50/100%, so one coin-flip moves a
+practice by 50 points, and below n=5 `repeat` stamps its own stddev "indicative only". For an A/B
+you intend to draw a conclusion from, raise the cap deliberately for that one command:
+
+```bash
+EVAL_MAX_REPEATS=5 pnpm eval:repeat skills/onion-architecture -n 5 --label baseline
+```
 
 ### `eval:delta` — version vs version (the canonical loop)
 
@@ -440,6 +472,7 @@ The primary "before vs after a change" workflow. **Capture the baseline label BE
 there is no way to reconstruct it afterwards short of reverting.
 
 ```bash
+export EVAL_MAX_REPEATS=5                                          # a delta needs n=5 to mean anything
 pnpm eval:repeat skills/onion-architecture -n 5 --label baseline   # BEFORE the edit
 #   ...edit SKILL.md...
 pnpm eval:repeat skills/onion-architecture -n 5 --label candidate  # AFTER the edit
@@ -452,10 +485,15 @@ improved, red = regressed, dim = unchanged. A practice on one side only renders 
 ### `eval:benchmark` — measured lift (with vs without the artifact)
 
 ```bash
-pnpm eval:benchmark <vitest pattern> [-n runs=5]
-pnpm eval:benchmark skills/engineering-insights -n 5    # a skill
-pnpm eval:benchmark agents/architecture-reviewer -n 5   # an agent
+pnpm eval:benchmark <vitest pattern> [-n runs<=2, default 2]
+pnpm eval:benchmark skills/engineering-insights     # a skill
+pnpm eval:benchmark agents/architecture-reviewer    # an agent
 ```
+
+Benchmark runs the pattern **twice per repetition** (candidate + baseline), so its n doubles
+before it reaches a session: `-n 2` over a 6-case file is already 24 sessions. Same cap and same
+escape hatch as repeat — `EVAL_MAX_REPEATS=5 pnpm eval:benchmark …` when the lift number has to
+survive scrutiny.
 
 **candidate vs baseline** — the whole idea. The benchmark runs the *same test case* in two
 configurations:
@@ -569,7 +607,7 @@ tokens > 125% of baseline), `missing_data` (a config has zero records for a test
 | `CLAUDE.md` / activation / dispatch | `pnpm eval:workflow` |
 | Any artifact's structure | `pnpm eval:quality` |
 | A `SKILL.md` edit you want to **measure** | repeat/delta loop: `--label baseline` before, `--label candidate` after, then `eval:delta` |
-| New skill/agent — is it **worth its tokens**? | `pnpm eval:benchmark skills/<skill> -n 5` |
+| New skill/agent — is it **worth its tokens**? | `pnpm eval:benchmark skills/<skill>` (n=2; `EVAL_MAX_REPEATS=5` to measure properly) |
 | Adding evals for one of **your** skills/agents | `pnpm eval:scaffold <name>` (or `--agent <name>`) |
 | Model / Claude Code version | `pnpm eval` (whole suite) |
 | Stats math changed | `pnpm vitest run src/records/stats.test.ts` |
