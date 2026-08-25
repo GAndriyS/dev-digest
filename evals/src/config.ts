@@ -26,6 +26,22 @@ export const IS_BASELINE = EVAL_CONFIG === "baseline";
 // stddev "indicative only". So: n=2 to check stability, EVAL_MAX_REPEATS=5 to MEASURE a change.
 export const MAX_REPEATS = Number(process.env.EVAL_MAX_REPEATS ?? "2");
 
+// --- Time budget ------------------------------------------------------------
+// Two ceilings, and the ORDER between them is the whole point: the session's own deadline must
+// expire strictly BEFORE vitest's, or a stuck run is killed by the test runner and takes its
+// record with it — record() fires in a `finally`, and a killed test never reaches one. That is
+// how a mangled subagent name deleted a whole case from a 6-case run while `repeat` printed a
+// green "5/5" (measured 2026-08-25): the row was missing, not red.
+//
+// vitest reads TEST_TIMEOUT_MS from vitest.config.ts; runClaude() enforces RUN_TIMEOUT_MS on
+// itself and returns a partial, isError Result instead of hanging. Keep the gap wide enough for
+// everything that happens AFTER the session in the same test: a judge call is another model
+// round-trip, and record() then writes the row.
+export const TEST_TIMEOUT_MS = Number(process.env.EVAL_TEST_TIMEOUT_MS ?? "240000");
+export const RUN_TIMEOUT_MS = Number(
+  process.env.EVAL_RUN_TIMEOUT_MS ?? String(Math.max(30_000, TEST_TIMEOUT_MS - 60_000)),
+);
+
 // --- Scoring / statistics thresholds ---------------------------------------
 export const DEFAULT_THRESHOLD = 0.6; // judge score gate for a quality case
 export const FLAKY_LOW = 0.2; // pass rate strictly inside (20%, 80%) is "flaky"

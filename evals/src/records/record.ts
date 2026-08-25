@@ -100,6 +100,10 @@ export function record(label: string, data: RecordData): void {
     threshold,
     practices: verdict?.results ?? [],
     grounded,
+    // Additive to schema 1: readers that do not know the key ignore it. Present so a row that
+    // died on its own deadline is distinguishable from one whose assertions failed — the two are
+    // otherwise identical (isError + a partial trace) and call for opposite responses.
+    timed_out: Boolean(result.timedOut),
     num_turns: result.numTurns,
     metrics: result.metrics,
     trace: {

@@ -4,7 +4,7 @@
  */
 
 import { query, type Options } from "@anthropic-ai/claude-agent-sdk";
-import { EVAL_MODEL, MAX_TURNS, SPAWN_TOOLS } from "../config.js";
+import { EVAL_MODEL, MAX_TURNS, RUN_TIMEOUT_MS, SPAWN_TOOLS } from "../config.js";
 import { REPO_ROOT } from "../artifacts/paths.js";
 import { subscriptionEnv } from "./env.js";
 
@@ -25,6 +25,8 @@ export interface Result {
   filesRead: string[];
   numTurns: number;
   isError: boolean;
+  /** The session hit its own wall-clock deadline and was aborted; the trace is partial. */
+  timedOut?: boolean;
   metrics: Metrics;
 }
 
@@ -73,6 +75,12 @@ export interface RunOptions {
   /** Hard deny-list. Unlike `allowedTools`, this is enforced under bypassPermissions. */
   disallowedTools?: string[];
   maxTurns?: number;
+  /**
+   * Wall-clock ceiling for THIS session, in ms (default RUN_TIMEOUT_MS). On expiry the session is
+   * aborted and a partial `isError` Result is returned — never a throw, so the caller still gets
+   * to record the row. Must stay below vitest's testTimeout; see config.ts, "Time budget".
+   */
+  timeoutMs?: number;
   cwd?: string;
   model?: string;
   /** ["project"] loads on-disk CLAUDE.md + skills/agents; default [] keeps the run isolated. */
@@ -100,8 +108,16 @@ export async function runClaude(prompt: string, opts: RunOptions = {}): Promise<
     systemPrompt = (systemPrompt ?? "") + directive;
   }
 
+  // The session's own deadline. Letting vitest kill the test instead is NOT an equivalent
+  // outcome: record() fires in a `finally` the kill never reaches, so the case leaves no row and
+  // a multi-run summary counts it as ABSENT rather than failed — a green "5/5" over six cases
+  // (measured 2026-08-25). Aborting from inside keeps the failure in the series.
+  const timeoutMs = opts.timeoutMs ?? RUN_TIMEOUT_MS;
+  const abortController = new AbortController();
+
   const options: Options = {
     model: opts.model ?? EVAL_MODEL,
+    abortController,
     maxTurns: opts.maxTurns ?? MAX_TURNS,
     permissionMode: "bypassPermissions", // safe: evals only read/plan and tools are allow-listed
     systemPrompt,
@@ -129,6 +145,7 @@ export async function runClaude(prompt: string, opts: RunOptions = {}): Promise<
   let inputTokens = 0;
   let outputTokens = 0;
   let stoppedEarly = false;
+  let timedOut = false;
   // Wall-clock fallback: on an early stop we break before the result message that carries
   // duration_ms/usage, so those stay 0. Stamp duration ourselves, and accumulate output tokens
   // off each assistant message, so an early-stopped case still reports meaningful metrics.
@@ -136,6 +153,11 @@ export async function runClaude(prompt: string, opts: RunOptions = {}): Promise<
 
   // The SDK throws on an error result (e.g. max-turns). We still want the partial output
   // and the tool/subagent trace we collected, so catch and fall through with isError=true.
+  const deadline = setTimeout(() => {
+    timedOut = true;
+    abortController.abort();
+  }, timeoutMs);
+
   try {
     loop: for await (const msg of query({ prompt, options })) {
       if (msg.type === "assistant") {
@@ -186,13 +208,30 @@ export async function runClaude(prompt: string, opts: RunOptions = {}): Promise<
     }
   } catch (err) {
     isError = true;
-    if (!resultText && textParts.length === 0) {
+    // A deadline abort is a MEASURED outcome, not a crash: fall through with the partial trace so
+    // the caller records a failing row (with whatever tools and reads did happen) instead of
+    // losing the case entirely.
+    if (timedOut) {
+      // textParts are joined with a newline downstream, so the marker lands on its own line.
+      textParts.push(`[RUN TIMED OUT after ${timeoutMs} ms — aborted by the eval harness; trace is partial]`);
+    } else if (!resultText && textParts.length === 0) {
       throw err; // nothing usable collected — surface the failure
+    }
+  } finally {
+    clearTimeout(deadline);
+  }
+
+  // The abort may end the iterator instead of throwing, in which case the catch above never runs
+  // and isError would still say "success". A run cut short by its own deadline is a failure.
+  if (timedOut) {
+    isError = true;
+    if (!textParts.some((t) => t.startsWith("[RUN TIMED OUT"))) {
+      textParts.push(`[RUN TIMED OUT after ${timeoutMs} ms — aborted by the eval harness; trace is partial]`);
     }
   }
 
-  // Early stop never reached the result message, so fall back to the wall-clock duration.
-  if (stoppedEarly && durationMs === 0) durationMs = Date.now() - startedAt;
+  // Neither an early stop nor a timeout reaches the result message, so fall back to wall clock.
+  if ((stoppedEarly || timedOut) && durationMs === 0) durationMs = Date.now() - startedAt;
 
   return {
     text: resultText || textParts.join("\n"),
@@ -202,6 +241,7 @@ export async function runClaude(prompt: string, opts: RunOptions = {}): Promise<
     filesRead: reads,
     numTurns,
     isError,
+    ...(timedOut ? { timedOut: true } : {}),
     metrics: { durationMs, inputTokens, outputTokens, toolCallCount },
   };
 }
