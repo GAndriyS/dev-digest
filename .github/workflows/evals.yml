@@ -19,27 +19,32 @@
 # Models (see "Resolve models" below — the one place they are set):
 #   content tier (skills) → deepseek/deepseek-chat, judged by google/gemini-2.5-flash. Goes DIRECT
 #                           to OpenRouter — no proxy — because src/runtime/dispatch.ts routes
-#                           content-only calls through the OpenAI-compatible client.
-#   tool tiers (agents,   → google/gemini-2.5-flash, judged by deepseek/deepseek-chat. These run
-#   workflow)               inside the Claude Agent SDK, which speaks the Anthropic wire protocol,
-#                           so they go through the bundled LiteLLM translating proxy. Gemini Flash
-#                           is the model MEASURED to actually dispatch a subagent (evals/README.md,
-#                           "Which cheap model — verified"); DeepSeek does the work inline instead,
-#                           which would fail the tool tiers for a model reason, not a harness one.
-#   Task and judge are deliberately different families in both tiers, to soften self-preference.
-#   If the judge ever returns unparseable JSON, that is the first knob to move.
-#   `workflow_dispatch` overrides all three for a one-off run (e.g. anthropic/claude-haiku-4.5,
-#   which OpenRouter's Anthropic Skin serves without the proxy).
+#                           content-only calls through the OpenAI-compatible client. Measured
+#                           2026-08-25: 4 of 5 dependency-checker cases pass on DeepSeek.
+#   tool tiers (agents,   → anthropic/claude-haiku-4.5, judged by deepseek/deepseek-chat. Served
+#   workflow)               by OpenRouter's Anthropic Skin, so the SDK talks to it directly and
+#                           NO proxy is needed on the default path.
 #
-# Cost, estimated and not yet measured: <$0.05 for a typical PR touching one skill; ~$0.2-0.5 in
-# the worst case where all three tiers fire. Replace with real numbers from the uploaded
-# results/records.jsonl once this has run.
+# Why the tool tiers are not on a cheap non-Anthropic model, though the engine supports it: these
+# cases carry thresholds up to 1.0, calibrated against claude-haiku-4-5. Run on Gemini 2.5 Flash
+# they scored 0.83 / 0.5 / 0 (2026-08-25) — chiefly on the attribution practice — so the job went
+# red for a model reason, not a harness regression, which is the fastest way to teach a team to
+# ignore a red check. A gate has to be run on the model its bar was set against.
+#
+# The cheap path is still one dispatch away: `tool_model: google/gemini-2.5-flash` brings the
+# bundled LiteLLM proxy up automatically (the steps below are conditional on the slug). Read the
+# result as indicative, not as a gate.
+#
+# Cost, MEASURED on the first full run (2026-08-25, all three tiers, 19 records): 324.5k input +
+# 15.3k output tokens, ~227s of model time — roughly $0.10-0.15 at list prices. A PR touching one
+# skill is a fraction of that. The uploaded results/records.jsonl carries the per-run numbers.
 #
 # Branch protection ramp: make `evals / gate (no model)` required now. `skills` and `agents`
-# deliberately do NOT carry continue-on-error (a job-level continue-on-error reports SUCCESS,
-# which would hide a real regression) — they are simply not required checks yet. Promote them
-# after two consecutive triggered green runs. `workflow` keeps continue-on-error because it is
-# expected to be red for reasons that are not regressions; see the comment on that job.
+# deliberately do NOT carry continue-on-error — an advisory job cannot hold the Merge button, so
+# it can never become the required check these are meant to grow into. They are simply not
+# required yet; promote them after two consecutive triggered green runs. `workflow` keeps
+# continue-on-error because it is expected to be red for reasons that are not regressions; see
+# the comment on that job.
 name: evals
 
 on:
@@ -184,7 +189,7 @@ jobs:
           IN_JUDGE: ${{ inputs.judge_model }}
         run: |
           CONTENT="${IN_CONTENT:-deepseek/deepseek-chat}"
-          TOOL="${IN_TOOL:-google/gemini-2.5-flash}"
+          TOOL="${IN_TOOL:-anthropic/claude-haiku-4.5}"
           {
             echo "content_model=$CONTENT"
             echo "content_judge=${IN_JUDGE:-google/gemini-2.5-flash}"
@@ -250,9 +255,11 @@ jobs:
           if-no-files-found: ignore
 
   # ---------------------------------------------------------------------------------------------
-  # Tool tier. Runs inside the Claude Agent SDK, so it needs the LiteLLM proxy in front of
-  # OpenRouter. max-parallel: 1 because OpenRouter throttling degrades a session to a single turn,
-  # which turns a real dispatch into a spurious failure (evals/README.md, "Two caveats").
+  # Tool tier. Runs inside the Claude Agent SDK, which speaks the Anthropic wire protocol — on the
+  # default anthropic/* slug OpenRouter's own Skin serves that shape, so no proxy is involved. The
+  # LiteLLM proxy comes up only when a workflow_dispatch points this at a non-Anthropic model.
+  # max-parallel: 1 because OpenRouter throttling degrades a session to a single turn, which turns
+  # a real dispatch into a spurious failure (evals/README.md, "Two caveats").
   # ---------------------------------------------------------------------------------------------
   agents:
     name: agents (model-backed, same-repo PRs only)
@@ -273,7 +280,6 @@ jobs:
     env:
       EVAL_BACKEND: openrouter
       OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-      OPENROUTER_BASE_URL: http://localhost:4000
       EVAL_MODEL: ${{ needs.detect.outputs.tool_model }}
       EVAL_JUDGE_MODEL: ${{ needs.detect.outputs.tool_judge }}
     steps:
@@ -289,11 +295,14 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       # The container reads OPENROUTER_API_KEY straight from the job env.
+      # Only for a non-Anthropic tool model (a workflow_dispatch override). The Anthropic Skin
+      # serves anthropic/* slugs directly, so the default path starts no container at all.
       - name: Start LiteLLM proxy
-        run: docker compose -f proxy/docker-compose.yml up -d
-
-      - name: Wait for proxy
-        run: pnpm proxy:wait
+        if: ${{ !startsWith(needs.detect.outputs.tool_model, 'anthropic/') }}
+        run: |
+          docker compose -f proxy/docker-compose.yml up -d
+          pnpm proxy:wait
+          echo "OPENROUTER_BASE_URL=http://localhost:4000" >> "$GITHUB_ENV"
 
       - name: Run agent evals
         env:
@@ -301,11 +310,11 @@ jobs:
         run: pnpm exec vitest run "agents/$NAME"
 
       - name: Proxy logs
-        if: failure()
+        if: ${{ failure() && !startsWith(needs.detect.outputs.tool_model, 'anthropic/') }}
         run: docker compose -f proxy/docker-compose.yml logs --tail 100
 
       - name: Stop proxy
-        if: always()
+        if: ${{ always() && !startsWith(needs.detect.outputs.tool_model, 'anthropic/') }}
         run: docker compose -f proxy/docker-compose.yml down
 
       - name: Summary
@@ -328,10 +337,11 @@ jobs:
   # skill activation and subagent dispatch still happen.
   #
   # continue-on-error on purpose. evals/README.md records (2026-08-25) that `activation` cases are
-  # behaviour-shaped: they assert the model invokes the Skill tool, and a capable non-Anthropic
-  # model may instead perform the underlying action directly — the right outcome, scored as a miss.
-  # Making that hold the Merge button teaches the team to ignore red. Read the result, don't gate
-  # on it; the uploaded results/ artifact carries the traces.
+  # behaviour-shaped: they assert the model invokes the Skill tool, and a capable model may
+  # instead perform the underlying action directly — the right outcome, scored as a miss.
+  # continue-on-error does NOT paint this job green (its own conclusion is still `failure`, as the
+  # 2026-08-25 run showed); what it does is stop the RUN from failing because of it. Read the
+  # result, don't gate on it; the uploaded results/ artifact carries the traces.
   # ---------------------------------------------------------------------------------------------
   workflow:
     name: workflow tier (advisory, same-repo PRs only)
@@ -348,7 +358,6 @@ jobs:
     env:
       EVAL_BACKEND: openrouter
       OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-      OPENROUTER_BASE_URL: http://localhost:4000
       EVAL_MODEL: ${{ needs.detect.outputs.tool_model }}
       EVAL_JUDGE_MODEL: ${{ needs.detect.outputs.tool_judge }}
     steps:
@@ -363,20 +372,23 @@ jobs:
           cache-dependency-path: evals/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
 
+      # Only for a non-Anthropic tool model (a workflow_dispatch override). The Anthropic Skin
+      # serves anthropic/* slugs directly, so the default path starts no container at all.
       - name: Start LiteLLM proxy
-        run: docker compose -f proxy/docker-compose.yml up -d
-
-      - name: Wait for proxy
-        run: pnpm proxy:wait
+        if: ${{ !startsWith(needs.detect.outputs.tool_model, 'anthropic/') }}
+        run: |
+          docker compose -f proxy/docker-compose.yml up -d
+          pnpm proxy:wait
+          echo "OPENROUTER_BASE_URL=http://localhost:4000" >> "$GITHUB_ENV"
 
       - run: pnpm eval:workflow
 
       - name: Proxy logs
-        if: failure()
+        if: ${{ failure() && !startsWith(needs.detect.outputs.tool_model, 'anthropic/') }}
         run: docker compose -f proxy/docker-compose.yml logs --tail 100
 
       - name: Stop proxy
-        if: always()
+        if: ${{ always() && !startsWith(needs.detect.outputs.tool_model, 'anthropic/') }}
         run: docker compose -f proxy/docker-compose.yml down
 
       # These sessions run with bypassPermissions against the live checkout. Harmless here (the

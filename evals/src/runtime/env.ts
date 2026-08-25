@@ -32,6 +32,21 @@ export function subscriptionEnv(): Record<string, string> {
     env.ANTHROPIC_BASE_URL = (process.env.OPENROUTER_BASE_URL ?? "https://openrouter.ai/api").replace(/\/$/, "");
     env.ANTHROPIC_AUTH_TOKEN = key;
     env.ANTHROPIC_API_KEY = ""; // blank, not deleted — stops the SDK falling back to Anthropic auth
+
+    // EVAL_MODEL only reaches the MAIN session (runClaude passes it to query()). A DISPATCHED
+    // subagent picks its own model from its frontmatter alias — `model: sonnet`, `model: opus` —
+    // which the SDK resolves to an Anthropic model id. That id then goes to whatever endpoint
+    // ANTHROPIC_BASE_URL names, and neither OpenRouter's Anthropic Skin nor the LiteLLM proxy
+    // knows it. Measured in CI 2026-08-25: the workflow tier dispatched `spec-creator` and the
+    // proxy answered `openrouter/claude-opus-4-8 is not a valid model ID`, while the main session
+    // ran on the configured model throughout. Pointing all three aliases at EVAL_MODEL is what
+    // makes a dispatch survive a redirected backend.
+    const model = process.env.EVAL_MODEL;
+    if (model) {
+      env.ANTHROPIC_DEFAULT_OPUS_MODEL = model;
+      env.ANTHROPIC_DEFAULT_SONNET_MODEL = model;
+      env.ANTHROPIC_DEFAULT_HAIKU_MODEL = model;
+    }
     return env;
   }
 

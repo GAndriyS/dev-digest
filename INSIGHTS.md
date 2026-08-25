@@ -78,6 +78,31 @@ live in `<package>/INSIGHTS.md`. Maintained by the `engineering-insights` skill.
 
 ## What Doesn't Work
 
+- **2026-08-25** — A dispatched subagent does not inherit the eval's model, and
+  the failure surfaces as a model-id error from an endpoint you never configured.
+  `runClaude()` passes `EVAL_MODEL` to the main `query()` only; a subagent resolves
+  the alias in its OWN frontmatter (`model: sonnet`, `model: opus` — nine of the
+  agents in `.claude/agents` carry one) to an Anthropic model id, which then goes
+  to whatever `ANTHROPIC_BASE_URL` points at. On the first CI run the workflow
+  tier dispatched `spec-creator` and the LiteLLM proxy answered
+  `openrouter/claude-opus-4-8 is not a valid model ID` while the main session ran
+  happily on the configured model the whole time — the model even narrated the
+  contradiction in its own trace. Any redirected backend needs
+  `ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU}_MODEL` pinned alongside the model option
+  (`evals/src/runtime/env.ts`); the option alone covers one session, not the tree.
+
+- **2026-08-25** — A pass threshold is calibrated against a MODEL, not only
+  against an artifact, so moving the runner to a cheaper model silently redefines
+  what the suite measures. The `architecture-reviewer` cases sit at
+  `threshold: 1` on `claude-haiku-4-5`; the first CI run put them on
+  `google/gemini-2.5-flash` and they measured 0.83 / 0.5 / 0, losing mostly the
+  attribution practice — a real difference between models, indistinguishable in
+  the report from the artifact regressing. The content tier makes the same point
+  from the other side: DeepSeek passed 4 of 5 `dependency-checker` cases, whose
+  thresholds are 0.75. **Run a gate on the model its bar was set against**, or
+  lower the bar deliberately and treat the two as separate series — which is what
+  the practice-identity rule already implies for a reworded practice.
+
 - **2026-08-25** — A CI trigger keyed on the literal name `CLAUDE.md` cannot
   fire in this repo, and nothing about it looks broken. `CLAUDE.md` is a
   two-line `@AGENTS.md` import; every rule lives in an `AGENTS.md`, which is
@@ -518,21 +543,15 @@ live in `<package>/INSIGHTS.md`. Maintained by the `engineering-insights` skill.
   a subagent). Most of the value was not the YAML: `ci-detect.mjs` had shipped
   unreferenced with a workflow trigger that could never fire, and its
   "artifact has evals" check would have gated on an A/B baseline. Both are now
-  covered by `evals/src/ci-detect.test.ts` in the model-free lane. The YAML
-  itself is unverified until the first PR opens against it.
+  covered by `evals/src/ci-detect.test.ts` in the model-free lane.
+  - **follow-up, same day** — the first real run answered three things at once:
+    the wiring works end to end (routing, proxy, artifacts) and `evals/` does
+    install under pnpm 10; a dispatched subagent ignores `EVAL_MODEL`; and the
+    tool-tier thresholds are model-calibrated, so those tiers moved to
+    `anthropic/claude-haiku-4.5` via the Anthropic Skin, which needs no proxy at
+    all. Measured cost for all three tiers: 324.5k in / 15.3k out, ~$0.10-0.15.
 
 ## Open Questions
-
-- **2026-08-25** — Does `evals/` install cleanly under **pnpm 10** in CI? The
-  esbuild build approval is version-split — `pnpm.onlyBuiltDependencies`
-  (`evals/package.json`) is what pnpm 10 reads, `allowBuilds`
-  (`evals/pnpm-workspace.yaml`) what pnpm 11 reads — and every workflow in the
-  repo pins `pnpm/action-setup` `version: 10` while `evals/` has only ever been
-  installed locally. Both keys are present and `AGENTS.md` now says to keep
-  both, but no pnpm-10 install of this package has ever run. The answer is one
-  line in the first `evals / gate` log: `Ignored build scripts: esbuild`, or a
-  vitest start-up failure naming esbuild's binary. Fix if it fires: add
-  `"packageManager": "pnpm@10.34.5"` to `evals/package.json`.
 
 - **2026-08-25** — A fixture that is PASTED rather than applied cannot produce
   gate output, and no expectation should be written as if it could. The

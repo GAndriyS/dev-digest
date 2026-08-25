@@ -171,7 +171,7 @@ workflow cases:
 | `deepseek/deepseek-chat` | ✅ | ❌ does the work inline instead of dispatching |
 | `openai/gpt-4.1-mini` | ✅ | ❌ |
 
-**Two caveats for the tool tiers on cheap models:**
+**Three caveats for the tool tiers on cheap models:**
 
 1. **Rate-limit flakiness under load.** Running the whole suite back-to-back can get throttled by
    OpenRouter, degrading runs to a single turn (so a dispatch that passes in isolation may fail in a
@@ -181,6 +181,12 @@ workflow cases:
    file), which the test counts as a miss even though it did the right thing. Treat `activation` as
    **indicative, not blocking** when running on non-Anthropic models. (On the Anthropic path the
    model invokes the Skill tool, so it passes.)
+3. **A threshold is calibrated against a model, not only against an artifact.** The bundled
+   agent cases sit at `threshold: 1`, set on `claude-haiku-4-5`. On `google/gemini-2.5-flash` the
+   same cases measured 0.83 / 0.5 / 0 in CI (2026-08-25), mostly losing the attribution practice.
+   That is a real difference between models, not a regression in the artifact — so either run the
+   gate on the model its bar was set against, or lower the bar deliberately and treat the two
+   numbers as separate series.
 
 > **Isolation note.** `workflowTask` runs with `settingSources:["project"]` + `bypassPermissions`
 > against the live repo. A model that decides to `Write` can touch real files (e.g. your local
@@ -229,38 +235,55 @@ default and hands them to the other jobs as outputs:
 | Tier | Model under test | Judge | Proxy |
 |---|---|---|---|
 | content (`skills`) | `deepseek/deepseek-chat` | `google/gemini-2.5-flash` | no — goes direct |
-| tool (`agents`, `workflow`) | `google/gemini-2.5-flash` | `deepseek/deepseek-chat` | yes — LiteLLM |
+| tool (`agents`, `workflow`) | `anthropic/claude-haiku-4.5` | `deepseek/deepseek-chat` | no — the Anthropic Skin |
 
-Gemini Flash on the tool tiers is not a preference, it is the [measurement](#which-cheap-model--verified):
-DeepSeek does the work inline instead of dispatching a subagent, so it would fail those tiers for a
-model reason rather than a harness one. Task and judge are different families in both tiers, which
-is the same self-preference argument as [Two scorers](#two-scorers-both-subscription-only); if a
-judge ever returns unparseable JSON, that is the first knob to move.
+**Why the tool tiers are not on a cheap model, though the engine supports it.** A threshold is a
+property of the model as much as of the artifact. These cases carry thresholds up to `1.0`,
+calibrated against `claude-haiku-4-5`; run on Gemini 2.5 Flash they scored 0.83 / 0.5 / 0 in CI
+(2026-08-25), mostly on the attribution practice. Red for a model reason is not a harness
+regression, and a check that goes red for reasons nobody can act on stops being read. **Run a gate
+on the model its bar was set against** — or lower the bar deliberately and know that the two
+numbers no longer belong to the same series. The content tier is the exception that proves it:
+DeepSeek passes 4 of 5 `dependency-checker` cases, whose thresholds sit at 0.75.
+
+Task and judge are still different families in both tiers, which is the same self-preference
+argument as [Two scorers](#two-scorers-both-subscription-only); if a judge ever returns
+unparseable JSON, that is the first knob to move.
 
 **Overriding the model for one run.** `workflow_dispatch` takes `content_model`, `tool_model` and
 `judge_model` (OpenRouter slugs) plus `force_workflow_tier`. Nothing is exposed in a UI beyond that
-dialog. `anthropic/claude-haiku-4.5` is the useful override — the Anthropic Skin serves it without
-the proxy, so it answers "does the harness still work on a real Claude model".
+dialog. Setting `tool_model` to a non-Anthropic slug **brings the LiteLLM proxy up automatically** —
+the proxy steps are conditional on `startsWith(tool_model, 'anthropic/')`, so the default path
+starts no container at all. Read a cheap-model tool-tier run as indicative, never as a gate.
 
 **Blocking policy.** `gate` is the required check. `skills` and `agents` go red on failure but are
-deliberately *not* required yet — promote them after two consecutive triggered green runs. Do not
-reach for `continue-on-error` as the ramp: at job level it reports **success**, which hides exactly
-the regression the job exists to find. `workflow` does carry `continue-on-error`, for the one
-honest reason — `activation` cases are behaviour-shaped and a capable non-Anthropic model may do
-the action directly instead of invoking the `Skill` tool (see the caveats above).
+deliberately *not* required yet — promote them after two consecutive triggered green runs.
+`continue-on-error` is not the ramp, for a simpler reason than it first appears: it does **not**
+paint a job green (a job that fails with it still has conclusion `failure` — confirmed on the
+2026-08-25 run); what it does is stop the *run* from failing. An advisory job therefore cannot
+hold the Merge button, which is exactly what these two are meant to grow into. `workflow` does
+carry it, for the one honest reason — `activation` cases are behaviour-shaped and a capable model
+may do the action directly instead of invoking the `Skill` tool (see the caveats above).
 
 **Fork PRs** get no secrets, so only `gate` runs; the other jobs skip via a job `if:` and `gate`
 writes one line into the step summary saying why.
 
 Notes:
-- ubuntu runners ship Docker + `docker compose`, so the proxy needs no extra setup. The container
-  reads `OPENROUTER_API_KEY` straight from the job `env`.
+- The default path starts no container. When a dispatch override does start the proxy, ubuntu
+  runners ship Docker + `docker compose` so it needs no extra setup, and the container reads
+  `OPENROUTER_API_KEY` straight from the job `env`.
 - The tool-tier matrices run `max-parallel: 1` — OpenRouter throttling degrades a session to a
   single turn, which turns a real dispatch into a spurious failure.
 - Each model-backed job uploads `evals/results` as an artifact (7 days). A red run is unreadable
   without it.
-- Cost is an **estimate, not a measurement**: under $0.05 for a PR touching one skill, roughly
-  $0.2–0.5 when all three tiers fire. The first real run's `results/records.jsonl` replaces it.
+- Cost, **measured** on the first full run (2026-08-25, all three tiers, 19 records): 324.5k
+  input + 15.3k output tokens and ~227 s of model time — roughly $0.10–0.15 at list prices, well
+  under the $0.2–0.5 that had been estimated. A PR touching one skill is a fraction of that.
+- A dispatched subagent does not inherit `EVAL_MODEL`: it resolves its own frontmatter alias
+  (`model: sonnet`, `model: opus`) to an Anthropic model id, which no redirected backend knows.
+  `src/runtime/env.ts` pins `ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU}_MODEL` to `EVAL_MODEL` for this
+  reason — without it the workflow tier's dispatch dies on
+  `claude-opus-4-8 is not a valid model ID`.
 
 ## Module layout — `src/` (the engine)
 
