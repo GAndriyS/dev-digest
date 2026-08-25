@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { test, expect } from "vitest";
 import { DEFAULT_THRESHOLD } from "../config.js";
 import { skillTask, agentTask, workflowTask } from "../tasks.js";
-import { runClaude, type Result, type RunOptions } from "../runtime/run-claude.js";
+import { runClaude, failedResult, type Result, type RunOptions } from "../runtime/run-claude.js";
 import { patternMatch } from "../scoring/pattern-match.js";
 import { llmJudge, type Verdict } from "../scoring/llm-judge.js";
 import { logTrace, logVerdict } from "../logging/log.js";
@@ -79,11 +79,33 @@ export function activated(result: Result, skill: string): boolean {
 
 type Task = (prompt: string, artifact: string, opts?: RunOptions) => Promise<Result>;
 
+/**
+ * Run the model call so that a THROWN run still lands in the series.
+ *
+ * record() lives in a `finally` further down, but the task call that feeds it sits before the
+ * try — so an SDK error (throttling, a dead session) produced no row at all and the case simply
+ * vanished from that run. `repeat` kept reporting `times: 5` while one case held 4 rows and
+ * another 3, and `delta` put those rates next to each other as if the denominators matched.
+ *
+ * The failure is recorded as a failure and then rethrown unchanged, so the test still goes red
+ * with its original error — this widens what gets measured, it does not swallow anything.
+ */
+async function runOrRecordFailure(label: string, threshold: number | undefined, run: () => Promise<Result>): Promise<Result> {
+  try {
+    return await run();
+  } catch (err) {
+    record(label, { result: failedResult(err), threshold });
+    throw err;
+  }
+}
+
 function runQualityCases(artifact: string, cases: QualityCase[], task: Task): void {
   for (const c of cases) {
     test(c.name, async () => {
       const threshold = c.threshold ?? DEFAULT_THRESHOLD;
-      const result = await task(c.prompt, artifact, { maxTurns: c.maxTurns });
+      const result = await runOrRecordFailure(c.name, threshold, () =>
+        task(c.prompt, artifact, { maxTurns: c.maxTurns }),
+      );
       logTrace(c.name, result);
 
       // measure → record → assert. Everything measurable runs in the try; record() fires in the
@@ -121,10 +143,12 @@ export function runWorkflowCases(cases: WorkflowCase[]): void {
       if (c.kind === "dispatch") {
         // Stop the moment the subagent is launched — no need to wait out its nested session.
         const expect1 = c.expectSubagent;
-        const result = await workflowTask(c.prompt, {
-          maxTurns: c.maxTurns,
-          stopWhen: (p) => p.subagents.includes(expect1),
-        });
+        const result = await runOrRecordFailure(c.name, undefined, () =>
+          workflowTask(c.prompt, {
+            maxTurns: c.maxTurns,
+            stopWhen: (p) => p.subagents.includes(expect1),
+          }),
+        );
         logTrace(c.name, result);
         try {
           expect(result.subagents, `subagents: ${result.subagents.join(", ")}`).toContain(c.expectSubagent);
@@ -132,7 +156,9 @@ export function runWorkflowCases(cases: WorkflowCase[]): void {
           record(c.name, { result });
         }
       } else if (c.kind === "activation") {
-        const result = await workflowTask(c.prompt, { maxTurns: c.maxTurns });
+        const result = await runOrRecordFailure(c.name, undefined, () =>
+          workflowTask(c.prompt, { maxTurns: c.maxTurns }),
+        );
         logTrace(c.name, result);
         try {
           expect(
@@ -152,13 +178,15 @@ export function runWorkflowCases(cases: WorkflowCase[]): void {
         const skillEngaged = (p: { skillsInvoked: string[]; filesRead: string[] }, skill: string) =>
           p.skillsInvoked.some((s) => s === skill || s.endsWith(`:${skill}`)) ||
           p.filesRead.some((f) => f.includes(`skills/${skill}/SKILL.md`));
-        const result = await workflowTask(c.prompt, {
-          maxTurns: c.maxTurns,
-          stopWhen: (p) =>
-            subs.every((s) => p.subagents.includes(s)) &&
-            skls.every((s) => skillEngaged(p, s)) &&
-            files.every((f) => p.filesRead.some((r) => r.includes(f))),
-        });
+        const result = await runOrRecordFailure(c.name, undefined, () =>
+          workflowTask(c.prompt, {
+            maxTurns: c.maxTurns,
+            stopWhen: (p) =>
+              subs.every((s) => p.subagents.includes(s)) &&
+              skls.every((s) => skillEngaged(p, s)) &&
+              files.every((f) => p.filesRead.some((r) => r.includes(f))),
+          }),
+        );
         logTrace(c.name, result);
         try {
           for (const sub of c.expectSubagents ?? []) {
@@ -183,14 +211,26 @@ export function runWorkflowCases(cases: WorkflowCase[]): void {
       } else {
         // contrast: treatment (real harness) vs control (empty tmpdir, no on-disk config).
         const tools = c.tools ?? ["Read", "Grep", "Glob"];
-        const treatment = await workflowTask(c.prompt, { allowedTools: tools, maxTurns: c.maxTurns });
+        const treatment = await runOrRecordFailure(`${c.name} [treatment]`, undefined, () =>
+          workflowTask(c.prompt, { allowedTools: tools, maxTurns: c.maxTurns }),
+        );
         const emptyCwd = mkdtempSync(join(tmpdir(), "eval-control-"));
-        const control = await runClaude(c.prompt, {
-          allowedTools: tools,
-          maxTurns: c.maxTurns,
-          cwd: emptyCwd,
-          settingSources: [],
-        });
+        let control: Result;
+        try {
+          control = await runClaude(c.prompt, {
+            allowedTools: tools,
+            maxTurns: c.maxTurns,
+            cwd: emptyCwd,
+            settingSources: [],
+          });
+        } catch (err) {
+          // Written out rather than routed through the helper: the treatment half already
+          // succeeded, and a contrast case is only readable as a PAIR. Recording the control
+          // failure alone would leave a treatment row with nothing to contrast against.
+          record(`${c.name} [treatment]`, { result: treatment });
+          record(`${c.name} [control]`, { result: failedResult(err) });
+          throw err;
+        }
         logTrace(`${c.name} [treatment]`, treatment);
         logTrace(`${c.name} [control]`, control);
         try {

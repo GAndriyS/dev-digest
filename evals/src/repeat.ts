@@ -65,7 +65,14 @@ function printTest(agg: NodeAggregate, times: number): void {
   console.log(statLine("turns   ", agg.metrics.numTurns));
   console.log(statLine("duration", agg.metrics.durationMs));
   console.log(statLine("tok_out ", agg.metrics.outputTokens));
-  if (times < 5) console.log(`      ${DIM}(n=${times}: stddev indicative only)${RESET}`);
+  // Caveat on the ACTUAL row count, not on what was requested. A case that lost runs to a dead
+  // session is the one whose stddev deserves the caveat most, and it is exactly the case that
+  // used to escape it by being counted at the requested n.
+  const n = agg.pass.total;
+  if (n < times) {
+    console.log(`      ${RED}n=${n} of ${times} requested — ${times - n} run(s) produced no record${RESET}`);
+  }
+  if (n < 5) console.log(`      ${DIM}(n=${n}: stddev indicative only)${RESET}`);
 }
 
 async function main(): Promise<void> {

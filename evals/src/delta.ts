@@ -97,7 +97,13 @@ function main(): void {
   console.log(`B = ${labelB}  sha ${b.git_sha}${b.dirty ? "-dirty" : ""}  (${b.times} runs)`);
 
   for (const [shortId, ta, tb] of pair(a.tests, b.tests)) {
-    rateRow("\n  ", shortId, ta?.pass, tb?.pass);
+    // Two percentages are only comparable if you can see what they are percentages OF. A run
+    // lost to a dead session shrinks one side silently, and 100% of 4 next to 20% of 5 read as a
+    // clean delta unless the denominators are on screen.
+    const na = ta?.pass.total ?? 0;
+    const nb = tb?.pass.total ?? 0;
+    const nNote = na !== nb ? `  ${RED}[n ${na} vs ${nb}]${RESET}` : "";
+    rateRow("\n  ", shortId + nNote, ta?.pass, tb?.pass);
 
     const practiceTexts = [...new Set([...Object.keys(ta?.practices ?? {}), ...Object.keys(tb?.practices ?? {})])];
     for (const text of practiceTexts) {

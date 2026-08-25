@@ -28,6 +28,28 @@ export interface Result {
   metrics: Metrics;
 }
 
+/**
+ * A stand-in Result for a run that never produced one — the SDK threw, the session was throttled
+ * away, the process died mid-call.
+ *
+ * A thrown run used to leave NO record at all, because the task call sits outside the try that
+ * owns record(). The series then silently shrank: a 5-run repeat kept `times: 5` while one case
+ * held 4 rows and another 3, and repeat/delta went on presenting those rates side by side as
+ * though both had the same denominator (measured 2026-08-25 — one run lost 5 records and a whole
+ * sixth run produced none). A failed run is data: it belongs in the series as a failure, not as
+ * an absence.
+ */
+export const failedResult = (err: unknown): Result => ({
+  text: `RUN FAILED: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`,
+  toolsUsed: [],
+  subagents: [],
+  skillsInvoked: [],
+  filesRead: [],
+  numTurns: 0,
+  isError: true,
+  metrics: { durationMs: 0, inputTokens: 0, outputTokens: 0, toolCallCount: 0 },
+});
+
 export interface RunOptions {
   systemPrompt?: string;
   allowedTools?: string[];
