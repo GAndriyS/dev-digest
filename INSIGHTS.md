@@ -66,6 +66,20 @@ live in `<package>/INSIGHTS.md`. Maintained by the `engineering-insights` skill.
 
 ## What Doesn't Work
 
+- **2026-08-25** — Deriving a test's recorded outcome from the RUN's exit state
+  instead of from its assertions reports both false greens and false reds, and
+  nothing looks wrong. `evals/src/records/record.ts` fell back to
+  `!result.isError` whenever a case had no judge and no grounding gate — i.e.
+  for every trace-asserted workflow case. A dispatch case that read nothing,
+  launched nothing and merely answered in prose was recorded **2/2 PASS**
+  (the session exited fine); a near-miss negative whose assertions all held was
+  recorded **0/2 FAIL** (it spent one turn over `maxTurns`). Both flipped the
+  moment the runners passed an explicit verdict. `repeat`, `delta` and
+  `flaky` all read that column, so the whole workflow tier was being scored on
+  "did the session crash". **A trace-asserted case must record the conjunction
+  its asserts check — and deliberately exclude `isError` where the case does not
+  assert on it, or a turn-budget overrun reads as a behavioural failure.**
+
 - **2026-08-25** — An eval expectation that names an identifier from memory
   scores 0% in BOTH arms of an A/B and silently removes the case from the
   measurement. `evals/agents/architecture-reviewer` demanded the rule ids
@@ -80,6 +94,15 @@ live in `<package>/INSIGHTS.md`. Maintained by the `engineering-insights` skill.
   definition. **Grep every identifier and every vocabulary word an expectation
   quotes before writing it**; fixing these took two cases from 0% and 50% to
   100%.
+  - **2026-08-25 follow-up** — the same grep also has to check the file
+    ABOVE the one under test. A workflow case asserted a read of
+    `server/AGENTS.md` while scoring on `vendor/shared` and `.it.test.ts` —
+    both of which the ROOT `AGENTS.md` also states, and the root file loads
+    automatically. One run answered correctly in a single turn with `grounded:
+    1` and an empty `reads`, so only the file assertion failed and the case sat
+    at 50% for a reason that had nothing to do with routing. Re-keying it on
+    `422` and `test/helpers/pg.ts` (root=0, client=0, server=1) took it to
+    100%: **a marker only tests an artifact if it is unreachable without it.**
 
 - **2026-08-25** — A cosmetic edit is not an A/B manipulation. Removing the
   citation rule from two lines of `architecture-reviewer`'s return-format
@@ -101,6 +124,19 @@ live in `<package>/INSIGHTS.md`. Maintained by the `engineering-insights` skill.
   db:generate` had already produced a correct migration.
 
 ## Codebase Patterns
+
+- **2026-08-25** — A prohibition in `AGENTS.md` that offers no sanctioned route
+  to the goal gets an exception invented for it. The `Never docker compose down
+  -v` rule stated its consequence and still lost: asked for a clean Postgres, the
+  agent quoted the rule, decided it was "about ACCIDENTAL deletion", and put
+  `down -v` on line one of its instructions. Nothing was wrong with the wording —
+  the rule was a dead end, and the legitimate intent had nowhere else to go.
+  Adding the allowed path (reset the schemas, keep the volume) plus an explicit
+  "a deliberate wipe is not an exception" flipped the behaviour: the same prompt
+  now answers `НЕ робити: docker compose down -v` and reproduces the reset
+  verbatim. **Write a ban as ban + sanctioned alternative; a rule with no exit
+  is an invitation to reason around it.** Verified by
+  `evals/workflow` — the case that caught it is `destructive cleanup`.
 
 - **2026-08-18** — `.claude/settings.json`'s `deny` on `Edit(./**/src/vendor/ui/**)`
   has no carve-out for this repo's own **declared vendor update** pattern, so a
@@ -162,6 +198,38 @@ live in `<package>/INSIGHTS.md`. Maintained by the `engineering-insights` skill.
   spec finding to re-lane, never as an instruction to write the flow.
 
 ## Tool & Library Notes
+
+- **2026-08-25** — In the Claude Agent SDK, `allowedTools` is a DECLARATION,
+  not a restriction: under `permissionMode: "bypassPermissions"` a session
+  reaches for tools that are not on the list. `evals/src/tasks.ts` ran the
+  workflow tier with a read-only `allowedTools` and the traces still showed
+  `Write`, `Edit` and `Bash` — and the `engineering-insights` activation case
+  wrote its synthetic pgvector finding straight into the real
+  `server/INSIGHTS.md`. `disallowedTools` is the half the SDK enforces; with
+  `["Write","Edit","NotebookEdit","Bash"]` added, a re-run left `git status`,
+  `specs/` and every `INSIGHTS.md` checksum untouched while the model still
+  *attempted* Write (a trace records the REQUEST, not the outcome — a blocked
+  tool still appears in `toolsUsed`, and costs turns: 21 instead of the usual
+  3–4). **Any headless session pointed at a real checkout needs a deny-list;
+  the allow-list alone will not hold.** Note what it does not cover: a
+  dispatched subagent carries its own tool set, so a dispatch case still
+  depends on `stopWhen` tearing the session down at launch.
+
+- **2026-08-25** — A model can emit malformed tool-call syntax, and one bad
+  string silently deletes a whole test case from a run. An observed dispatch put
+  the rest of the XML into `subagent_type`, so `subagents` held
+  `spec-creator</subagent_type>\n<parameter name="prompt">…`. Everything
+  downstream compares by EXACT membership — above all `stopWhen`'s
+  `subagents.includes(name)` — so the early stop never fired, the nested
+  subagent ran to completion, the case blew past vitest's 240 s `testTimeout`,
+  and **the kill left its `finally` unreached, so it wrote no record at all**.
+  `repeat` builds its summary from records, so a 6-case run printed a green
+  "5/5 cases" with the sixth simply absent. Two fixes, both needed:
+  normalise the name at extraction (`agentName()` in
+  `evals/src/runtime/run-claude.ts`, unit-tested), and make `repeat` compare
+  `countTests` against the summary and say so. **Never let a killed test be
+  indistinguishable from a passing one — and never key control flow on a string
+  the model formatted.**
 
 - **2026-08-25** — vitest's `expect.getState().currentTestName` is AMBIENT, not
   bound to the test that read it. `evals/src/records/record.ts` built each
@@ -377,7 +445,26 @@ live in `<package>/INSIGHTS.md`. Maintained by the `engineering-insights` skill.
   measured cleanly at −80 points on the attribution practice with every control
   flat. Also shipped `dependency-checker` 1.0.0 with `scripts/deps-report.mjs`.
 
+- **2026-08-25** — Lab 6b: built the workflow (systemic) eval tier — six
+  composite cases over `CLAUDE.md` routing, package `AGENTS.md`, skill
+  activation and subagent dispatch, run as 6 sessions instead of 10 by merging
+  along one task each. Added `expectMentions` so a trace case can also score the
+  final text, which is the only way to see a rule delivered as CONFIG (root and
+  package `CLAUDE.md` produce no `Read`). Most of the session went into the
+  instrument again: the allow-list that was not enforcing, an outcome column
+  measuring "did not crash", and a mangled subagent name that deleted a case
+  from a run. All six cases end green (M3 at 5/5); the tier's first real finding
+  was a hole in `AGENTS.md`, not in the code.
+
 ## Open Questions
+
+- **2026-08-25** — A vitest timeout still costs a workflow case its record:
+  `record()` fires in a `finally`, and a killed test never gets there, so the
+  row is missing rather than red. The 2026-08-25 cause (mangled subagent name →
+  no early stop) is fixed and `repeat` now reports the gap, but any other way to
+  exceed 240 s reproduces it. Real fixes: write the record as soon as the result
+  is in hand rather than in the `finally`, or give `runClaude` its own wall-clock
+  limit below vitest's so the session fails itself while it can still record.
 
 - **2026-08-25** — `evals/agents/architecture-reviewer`'s `core-has-no-io`
   expectation cannot pass on its current fixture and sat at 25% in both arms:
