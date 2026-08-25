@@ -188,62 +188,79 @@ workflow cases:
 > checkout is disposable); locally, prefer the Anthropic path or a throwaway clone for the workflow
 > tier.
 
-### Wiring it into GitHub Actions (per-PR)
+### In CI — `.github/workflows/evals.yml` (per-PR)
 
-The engine is CI-ready: bring the proxy up as a step, wait for it, run the tier, tear it down. Put
-the OpenRouter key in the repo's **Actions secrets** as `OPENROUTER_API_KEY` (Settings → Secrets and
-variables → Actions). Create `.github/workflows/<name>.yml` in your repo:
+This repo runs the evals on every pull request that touches the harness. The workflow file is the
+source of truth; what follows is why it is shaped the way it is.
 
-```yaml
-name: evals
-on:
-  pull_request:
-    paths: ['evals/**', '.claude/**', 'CLAUDE.md']   # only when the harness/artifacts change
+**Prerequisite (once):** put the OpenRouter key in the repo's **Actions secrets** as
+`OPENROUTER_API_KEY` (Settings → Secrets and variables → Actions).
 
-permissions:
-  contents: read
+**Five jobs.**
 
-jobs:
-  workflow-evals:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: evals
-    env:
-      EVAL_BACKEND: openrouter
-      OPENROUTER_BASE_URL: http://localhost:4000
-      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}   # repo Actions secret
-      EVAL_MODEL: google/gemini-2.5-flash
-      EVAL_JUDGE_MODEL: google/gemini-2.5-flash
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with: { version: 10 }
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-          cache-dependency-path: evals/pnpm-lock.yaml
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm typecheck
+| Job | Fires when | Runs | Cost |
+|---|---|---|---|
+| `gate` | any PR matching the path filter, **forks included** | `pnpm typecheck`, `pnpm eval:quality`, `pnpm vitest run src/` | 0 tokens |
+| `detect` | same | `evals/scripts/ci-detect.mjs` over the PR diff | 0 tokens |
+| `skills` | matrix, one leg per changed skill that has evals | `pnpm vitest run skills/<name>` | content tier |
+| `agents` | matrix, one leg per changed agent that has evals | `pnpm vitest run agents/<name>` | tool tier + proxy |
+| `workflow` | an `AGENTS.md`/`CLAUDE.md`, any agent, or the engine changed | `pnpm eval:workflow` | tool tier + proxy |
 
-      # --- the engine ---
-      - run: docker compose -f proxy/docker-compose.yml up -d   # OPENROUTER_API_KEY from job env
-      - run: pnpm proxy:wait                                     # block until the proxy answers
-      - run: pnpm eval:workflow                                  # or eval:agents / eval:skills / eval
-      - if: failure()
-        run: docker compose -f proxy/docker-compose.yml logs --tail 100
-      - if: always()
-        run: docker compose -f proxy/docker-compose.yml down
-```
+**The `paths:` filter does not do the routing.** It only decides whether the workflow starts.
+Which suite runs comes from `ci-detect.mjs`, which reads the actual diff and emits
+`skills` / `agents` / `run_workflow` / `skipped_skills` / `skipped_agents`. Three of its rules are
+easy to get wrong, so they are pinned by `src/ci-detect.test.ts` in the model-free lane:
+
+- The workflow trigger matches **any `AGENTS.md`**, at any depth — not just `CLAUDE.md`. In this
+  repo `CLAUDE.md` is a two-line `@AGENTS.md` import, so a detector keyed on that literal name is a
+  trigger that cannot fire.
+- `.claude/agents/README.md` is the catalog, not an agent.
+- The frozen half of an [A/B pair](#ab-pairs--the-manipulation-is-equipment-too) never enters the
+  blocking matrix — it is *supposed* to score lower. Editing either half is already caught by
+  `checkPairs()` in the zero-token `gate`.
+
+**A changed artifact with no evals is not a failure.** It prints `SKIP <name> (no evals)` in the
+`detect` job's summary and nothing runs for it. Most skills and agents are in that state; that is
+the designed behaviour, not a gap.
+
+**Models — one place to change them.** The `Resolve models` step in the `detect` job holds every
+default and hands them to the other jobs as outputs:
+
+| Tier | Model under test | Judge | Proxy |
+|---|---|---|---|
+| content (`skills`) | `deepseek/deepseek-chat` | `google/gemini-2.5-flash` | no — goes direct |
+| tool (`agents`, `workflow`) | `google/gemini-2.5-flash` | `deepseek/deepseek-chat` | yes — LiteLLM |
+
+Gemini Flash on the tool tiers is not a preference, it is the [measurement](#which-cheap-model--verified):
+DeepSeek does the work inline instead of dispatching a subagent, so it would fail those tiers for a
+model reason rather than a harness one. Task and judge are different families in both tiers, which
+is the same self-preference argument as [Two scorers](#two-scorers-both-subscription-only); if a
+judge ever returns unparseable JSON, that is the first knob to move.
+
+**Overriding the model for one run.** `workflow_dispatch` takes `content_model`, `tool_model` and
+`judge_model` (OpenRouter slugs) plus `force_workflow_tier`. Nothing is exposed in a UI beyond that
+dialog. `anthropic/claude-haiku-4.5` is the useful override — the Anthropic Skin serves it without
+the proxy, so it answers "does the harness still work on a real Claude model".
+
+**Blocking policy.** `gate` is the required check. `skills` and `agents` go red on failure but are
+deliberately *not* required yet — promote them after two consecutive triggered green runs. Do not
+reach for `continue-on-error` as the ramp: at job level it reports **success**, which hides exactly
+the regression the job exists to find. `workflow` does carry `continue-on-error`, for the one
+honest reason — `activation` cases are behaviour-shaped and a capable non-Anthropic model may do
+the action directly instead of invoking the `Skill` tool (see the caveats above).
+
+**Fork PRs** get no secrets, so only `gate` runs; the other jobs skip via a job `if:` and `gate`
+writes one line into the step summary saying why.
 
 Notes:
-- ubuntu runners ship Docker + `docker compose`, so no extra setup is needed.
-- The proxy container reads `OPENROUTER_API_KEY` straight from the job `env` (which is fed by the
-  secret) — you don't pass it to `docker compose` explicitly.
-- Because tool tiers cost real tokens, gate on `paths:` (only when the harness/artifacts change) and
-  keep the case count small. For a stricter gate, split into a required `eval:agents`/`eval:skills`
-  job and a non-blocking `eval:workflow` job (activation flakiness, above).
+- ubuntu runners ship Docker + `docker compose`, so the proxy needs no extra setup. The container
+  reads `OPENROUTER_API_KEY` straight from the job `env`.
+- The tool-tier matrices run `max-parallel: 1` — OpenRouter throttling degrades a session to a
+  single turn, which turns a real dispatch into a spurious failure.
+- Each model-backed job uploads `evals/results` as an artifact (7 days). A red run is unreadable
+  without it.
+- Cost is an **estimate, not a measurement**: under $0.05 for a PR touching one skill, roughly
+  $0.2–0.5 when all three tiers fire. The first real run's `results/records.jsonl` replaces it.
 
 ## Module layout — `src/` (the engine)
 
@@ -278,6 +295,7 @@ src/
     stats.ts            # pure: calcStats(), loadRecords(), aggregate(), byConfig(), computeFlags()
     stats.test.ts       # non-model unit tests — the statistics math
     benchmark.ts        # eval:benchmark CLI (with vs without artifact)
+  ci-detect.test.ts     # non-model unit tests — the CI routing in scripts/ci-detect.mjs
   trend-reporter.ts     # vitest reporter: pass/fail rows → results/history.jsonl
   compare.ts            # eval:compare — run-flip view over history.jsonl
   repeat.ts             # eval:repeat — N runs of one pattern → stability stats (reads records.jsonl)
@@ -611,7 +629,8 @@ tokens > 125% of baseline), `missing_data` (a config has zero records for a test
 |--------|-----|
 | A skill's `SKILL.md` (quick check) | `pnpm vitest run skills/<skill>` |
 | A subagent file (quick check) | `pnpm vitest run agents/<agent>` |
-| `CLAUDE.md` / activation / dispatch | `pnpm eval:workflow` |
+| Any `AGENTS.md` (or `CLAUDE.md`) / activation / dispatch | `pnpm eval:workflow` |
+| The CI routing itself (`scripts/ci-detect.mjs`) | `pnpm vitest run src/` — it is covered by `src/ci-detect.test.ts` |
 | Any artifact's structure | `pnpm eval:quality` |
 | A `SKILL.md` edit you want to **measure** | repeat/delta loop: `--label baseline` before, `--label candidate` after, then `eval:delta` |
 | New skill/agent — is it **worth its tokens**? | `pnpm eval:benchmark skills/<skill>` (n=2; `EVAL_MAX_REPEATS=5` to measure properly) |
@@ -619,6 +638,10 @@ tokens > 125% of baseline), `missing_data` (a config has zero records for a test
 | Model / Claude Code version | `pnpm eval` (whole suite) |
 | Stats math, trace extraction, the pair guard | `pnpm vitest run src/` |
 | An A/B pair's SOURCE artifact edited | `pnpm eval:quality` — then re-sync the variant and update both hashes in `src/artifacts/pairs.ts` |
+
+On a pull request the same table is applied automatically, from the diff, by
+[`.github/workflows/evals.yml`](../.github/workflows/evals.yml) — you do not run these by hand for
+a PR. The rows above are for the local loop.
 
 ## Deadlines — why a session times itself out
 

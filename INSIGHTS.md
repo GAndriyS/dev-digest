@@ -78,6 +78,33 @@ live in `<package>/INSIGHTS.md`. Maintained by the `engineering-insights` skill.
 
 ## What Doesn't Work
 
+- **2026-08-25** — A CI trigger keyed on the literal name `CLAUDE.md` cannot
+  fire in this repo, and nothing about it looks broken. `CLAUDE.md` is a
+  two-line `@AGENTS.md` import; every rule lives in an `AGENTS.md`, which is
+  what `evals/workflow/review-workflow.cases.ts` asserts on by name
+  (`server/AGENTS.md`, `client/AGENTS.md`). `evals/scripts/ci-detect.mjs`
+  shipped with `f === "CLAUDE.md" || f === ".claude/CLAUDE.md"` as its whole
+  workflow-tier predicate — so the trigger that exists to notice the ruleset
+  changing would never have run once. It now matches
+  `/(^|\/)(AGENTS|CLAUDE)\.md$/`. The same trap has a second shape one layer
+  up: in a GitHub Actions `paths:` filter the `**/` prefix requires a
+  directory segment, so `'**/AGENTS.md'` does NOT match the repo-root file and
+  both forms have to be listed. **Anything that watches "the instructions" must
+  watch `AGENTS.md`; `CLAUDE.md` is a pointer, not the content.**
+
+- **2026-08-25** — "Does this artifact have an eval file?" is the wrong gate for
+  deciding what CI blocks on. `evals/agents/architecture-reviewer-lite/` holds a
+  real `*.eval.ts` that deliberately re-imports the STRICT agent's cases,
+  practices and threshold — the frozen half of an A/B pair is *supposed* to score
+  lower, that is the measurement. A `hasEvals()`-shaped check therefore routes a
+  deliberately-degraded artifact straight into a blocking matrix, where it is red
+  by design and teaches everyone to ignore the job. `ci-detect.mjs` now excludes
+  every `variant` declared in `src/artifacts/pairs.ts` (scraped as text, since
+  the detector is dependency-free `.mjs`), failing OPEN with a test row that
+  pins the scrape still matches. Editing either half of a pair is already caught
+  by `checkPairs()` in the zero-token gate, so nothing is lost by not gating on
+  it twice.
+
 - **2026-08-25** — Deriving a test's recorded outcome from the RUN's exit state
   instead of from its assertions reports both false greens and false reds, and
   nothing looks wrong. `evals/src/records/record.ts` fell back to
@@ -483,7 +510,29 @@ live in `<package>/INSIGHTS.md`. Maintained by the `engineering-insights` skill.
   from a run. All six cases end green (M3 at 5/5); the tier's first real finding
   was a hole in `AGENTS.md`, not in the code.
 
+- **2026-08-25** — Lab 6c: wired the harness evals into GitHub Actions
+  (`.github/workflows/evals.yml`): a zero-token `gate`, a `detect` job that
+  routes from the PR diff, and matrix'd `skills` / `agents` / `workflow` tiers
+  on OpenRouter (DeepSeek for content, Gemini 2.5 Flash + the bundled LiteLLM
+  proxy for the tool tiers, which are the only ones measured to actually dispatch
+  a subagent). Most of the value was not the YAML: `ci-detect.mjs` had shipped
+  unreferenced with a workflow trigger that could never fire, and its
+  "artifact has evals" check would have gated on an A/B baseline. Both are now
+  covered by `evals/src/ci-detect.test.ts` in the model-free lane. The YAML
+  itself is unverified until the first PR opens against it.
+
 ## Open Questions
+
+- **2026-08-25** — Does `evals/` install cleanly under **pnpm 10** in CI? The
+  esbuild build approval is version-split — `pnpm.onlyBuiltDependencies`
+  (`evals/package.json`) is what pnpm 10 reads, `allowBuilds`
+  (`evals/pnpm-workspace.yaml`) what pnpm 11 reads — and every workflow in the
+  repo pins `pnpm/action-setup` `version: 10` while `evals/` has only ever been
+  installed locally. Both keys are present and `AGENTS.md` now says to keep
+  both, but no pnpm-10 install of this package has ever run. The answer is one
+  line in the first `evals / gate` log: `Ignored build scripts: esbuild`, or a
+  vitest start-up failure naming esbuild's binary. Fix if it fires: add
+  `"packageManager": "pnpm@10.34.5"` to `evals/package.json`.
 
 - **2026-08-25** — A fixture that is PASTED rather than applied cannot produce
   gate output, and no expectation should be written as if it could. The

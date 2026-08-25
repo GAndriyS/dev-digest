@@ -18,13 +18,19 @@ a package — read its own `AGENTS.md` (`server/`, `client/`, `reviewer-core/`,
   `reviewer-core/`, `e2e/`, `mcp/` → **npm**. Installing at the repo root does
   nothing. Cross-package code resolves via tsconfig path aliases, not published
   modules.
-- `evals/` is the harness eval package (skills, subagents, workflow traces) and
-  is **not** part of any CI slice — `scripts/verify.mjs` does not know it. It
+- `evals/` is the harness eval package (skills, subagents, workflow traces). It
+  is **not** a `scripts/verify.mjs` slice — that script must never bill tokens —
+  but it does run in CI, in its own workflow `.github/workflows/evals.yml`, on
+  PRs touching `.claude/**`, any `AGENTS.md`/`CLAUDE.md`, or `evals/**`. Which
+  suite runs is routed from the diff by `evals/scripts/ci-detect.mjs`; a changed
+  artifact with no evals is a printed SKIP, not a failure. Only the zero-token
+  `gate` job is a required check. It
   reads `.claude/skills/*` and `.claude/agents/*` by relative path, which is why
   it lives in the repo instead of `node_modules`. Its `pnpm.onlyBuiltDependencies`
   is dead config under pnpm 11 — the esbuild build approval lives in
   `evals/pnpm-workspace.yaml` (`allowBuilds: esbuild: true`); without it vitest
-  installs unbuilt.
+  installs unbuilt. CI pins pnpm **10**, where the live key is the other one —
+  keep both, they are not redundant.
 - Migrations are NOT applied on boot — `cd server && pnpm db:migrate`.
 - `@devdigest/shared` exists **twice**: `server/src/vendor/shared` (canonical,
   also used by reviewer-core) and `client/src/vendor/shared` (trimmed copy, has
@@ -84,7 +90,9 @@ a package — read its own `AGENTS.md` (`server/`, `client/`, `reviewer-core/`,
   the A/B pairs) and `pnpm vitest run src/` (stats, trace extraction, the
   session deadline, the pair guard) — neither spends a token. Model-backed lanes
   (`pnpm eval*`) spend subscription or OpenRouter budget — run them by hand,
-  never as a side effect of another task.
+  never as a side effect of another task. CI is the one exception, and it is
+  budgeted: `.github/workflows/evals.yml` runs only the suites the diff touches,
+  on OpenRouter.
 - Deep dives → read `docs/` · current work → read `specs/` · findings → read
   `INSIGHTS.md` · skills catalog → read `.claude/skills/README.md` · subagents
   catalog → read `.claude/agents/README.md`
