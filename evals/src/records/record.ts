@@ -42,7 +42,21 @@ export interface RecordData {
 export function record(label: string, data: RecordData): void {
   const { result, verdict, grounded, threshold, extra } = data;
   const state = expect.getState();
-  const nodeid = `${state.testPath ?? "?"} > ${state.currentTestName ?? label}`;
+  // The TEST NAME comes from the caller, never from vitest's ambient state.
+  //
+  // `currentTestName` is ambient and mutable, and this function fires from a `finally` after a
+  // 40-70s model call. By then it has been observed pointing at a NEIGHBOURING case, so records
+  // were filed under the wrong test: in one 5-run series a single test collected 6 records while
+  // another collected 0, and each per-practice rate was then computed over a denominator
+  // belonging to some other case. Every multi-run statistic in this package — repeat, delta,
+  // benchmark — was silently affected (measured 2026-08-25).
+  //
+  // The SUITE prefix ("agent:architecture-reviewer") is still taken from the ambient name, which
+  // is safe: it is the same for every case in a file, so a stale read yields the right prefix
+  // anyway. Only the trailing test name is replaced with the label the caller passed in.
+  const ambient = state.currentTestName ?? "";
+  const suite = ambient.includes(" > ") ? ambient.slice(0, ambient.lastIndexOf(" > ")) : "";
+  const nodeid = `${state.testPath ?? "?"} > ${suite ? `${suite} > ` : ""}${label}`;
 
   // outcome: grounding gate failure short-circuits to false; else the judge threshold; else
   // "did the run itself succeed" (workflow tests have neither grounding nor a judge verdict).
