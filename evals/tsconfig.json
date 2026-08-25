@@ -6,6 +6,10 @@
     "strict": true,
     "noEmit": true,
     "esModuleInterop": true,
+    // The CI change detector is plain dependency-free .mjs (its CI job runs it without an
+    // install), and src/ci-detect.test.ts imports it — so the JS has to be resolvable here.
+    // allowJs only; checkJs stays off, so the .mjs is type-inferred, not type-checked.
+    "allowJs": true,
     "skipLibCheck": true,
     "types": ["node"],
     "allowImportingTsExtensions": true,
