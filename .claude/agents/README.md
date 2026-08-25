@@ -29,7 +29,12 @@ directory because the eval loader reads `.claude/agents/<name>.md` by relative
 path, which is also why it is a copy rather than an include.
 
 **Re-sync it from `architecture-reviewer.md` before trusting a new measurement.**
-The pair will drift, and a delta across a drifted pair measures the drift.
+The pair will drift, and a delta across a drifted pair measures the drift — so
+that is no longer left to prose. `evals/src/artifacts/pairs.ts` holds a hash of
+both files plus one marker per place the removed dimension appears, and both
+`cd evals && pnpm eval:quality` and `pnpm vitest run src/` fail when either side
+moves or a marker survives into the copy. After a deliberate re-sync, update the
+two hashes there in the same commit; the failure message prints them.
 
 The `skills:` field **preloads full skill bodies** into the agent's startup
 context, on every run, and it cannot express a condition. That makes it the

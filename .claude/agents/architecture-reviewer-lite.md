@@ -13,7 +13,10 @@ plus `**Why:**` line). Everything else is byte-identical on purpose: the A/B is 
 attribution is the ONLY difference.
 
 Re-sync this file from architecture-reviewer.md before trusting a new measurement — the two WILL
-drift, and a delta across a drifted pair measures the drift, not the rule.
+drift, and a delta across a drifted pair measures the drift, not the rule. That is checked, not
+trusted: evals/src/artifacts/pairs.ts hashes both files and greps this one for every place the
+citation requirement used to appear, and `pnpm eval:quality` fails on either. Update both hashes
+there in the same commit as a re-sync.
 -->
 
 # Architecture reviewer
