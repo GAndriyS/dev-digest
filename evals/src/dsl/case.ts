@@ -87,12 +87,18 @@ export type WorkflowCase =
       maxTurns?: number;
     };
 
-/** Did a skill engage? Either an explicit Skill tool-call, or reading its SKILL.md. */
-export function activated(result: Result, skill: string): boolean {
-  const bySkill = result.skillsInvoked.some((s) => s === skill || s.endsWith(`:${skill}`));
-  const byRead = result.filesRead.some((f) => f.includes(`skills/${skill}/SKILL.md`));
-  return bySkill || byRead;
-}
+/**
+ * Did a skill engage? Either an explicit Skill tool-call, or reading its SKILL.md.
+ *
+ * Takes a PARTIAL trace so the same rule answers the question mid-session (inside `stopWhen`) and
+ * after it (`activated`). Two copies of this predicate is how an early stop starts disagreeing
+ * with the assertion it was supposed to anticipate.
+ */
+const engagedIn = (p: Pick<Result, "skillsInvoked" | "filesRead">, skill: string): boolean =>
+  p.skillsInvoked.some((s) => s === skill || s.endsWith(`:${skill}`)) ||
+  p.filesRead.some((f) => f.includes(`skills/${skill}/SKILL.md`));
+
+export const activated = (result: Result, skill: string): boolean => engagedIn(result, skill);
 
 // --- Runners ----------------------------------------------------------------
 
@@ -178,8 +184,19 @@ export function runWorkflowCases(cases: WorkflowCase[]): void {
           record(c.name, { result, outcome: dispatched });
         }
       } else if (c.kind === "activation") {
+        // The verdict is settled the moment the skill engages: either it was supposed to (the
+        // assert holds) or it was not (the assert has already failed). Everything after that is
+        // paid-for turns with nothing to measure — and not merely wasteful. The positive
+        // engineering-insights case, left to run on, did what the skill says to do and WROTE its
+        // synthetic pgvector finding into the repo's own server/INSIGHTS.md (measured
+        // 2026-08-25). The deny-list stops the main session; it does not stop a dispatched
+        // subagent, which is why a forbidden dispatch ends the session here too.
         const result = await runOrRecordFailure(c.name, undefined, () =>
-          workflowTask(c.prompt, { maxTurns: c.maxTurns }),
+          workflowTask(c.prompt, {
+            maxTurns: c.maxTurns,
+            stopWhen: (p) =>
+              engagedIn(p, c.skill) || (c.forbidSubagents === true && p.subagents.length > 0),
+          }),
         );
         logTrace(c.name, result);
         // Deliberately NOT gated on `isError`: an activation case asserts what the session did or
@@ -206,9 +223,6 @@ export function runWorkflowCases(cases: WorkflowCase[]): void {
         const subs = c.expectSubagents ?? [];
         const skls = c.expectSkills ?? [];
         const files = c.expectFilesRead ?? [];
-        const skillEngaged = (p: { skillsInvoked: string[]; filesRead: string[] }, skill: string) =>
-          p.skillsInvoked.some((s) => s === skill || s.endsWith(`:${skill}`)) ||
-          p.filesRead.some((f) => f.includes(`skills/${skill}/SKILL.md`));
         // Early stop breaks the message loop at a tool_use, BEFORE the result message that carries
         // the final answer — `result.text` is then only the assistant text accumulated so far. A
         // case that asserts on that text must therefore run to completion, or it fails on an
@@ -221,7 +235,7 @@ export function runWorkflowCases(cases: WorkflowCase[]): void {
               ? undefined
               : (p) =>
                   subs.every((s) => p.subagents.includes(s)) &&
-                  skls.every((s) => skillEngaged(p, s)) &&
+                  skls.every((s) => engagedIn(p, s)) &&
                   files.every((f) => p.filesRead.some((r) => r.includes(f))),
           }),
         );
