@@ -9,7 +9,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, expect } from "vitest";
-import { DEFAULT_THRESHOLD } from "../config.js";
+import { DEFAULT_THRESHOLD, RETRIES } from "../config.js";
 import { skillTask, agentTask, workflowTask } from "../tasks.js";
 import { runClaude, failedResult, type Result, type RunOptions } from "../runtime/run-claude.js";
 import { patternMatch } from "../scoring/pattern-match.js";
@@ -155,7 +155,7 @@ function runQualityCases(artifact: string, cases: QualityCase[], task: Task): vo
       if (verdict) {
         expect(verdict.score, JSON.stringify(verdict.results)).toBeGreaterThanOrEqual(threshold);
       }
-    });
+    }, { retry: RETRIES });
   }
 }
 
@@ -315,6 +315,6 @@ export function runWorkflowCases(cases: WorkflowCase[]): void {
           record(`${c.name} [control]`, { result: control, outcome: !controlRead });
         }
       }
-    });
+    }, { retry: RETRIES });
   }
 }

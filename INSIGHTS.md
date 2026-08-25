@@ -78,6 +78,19 @@ live in `<package>/INSIGHTS.md`. Maintained by the `engineering-insights` skill.
 
 ## What Doesn't Work
 
+- **2026-08-26** — A judge-scored case at `threshold: 1.0` is a CONJUNCTION
+  over N stochastic binary judgements, so it passes at roughly p^N: six
+  practices backed by a model that is right 19 times in 20 goes red about one run
+  in four with nothing wrong. Measured across four CI runs — two of them with an
+  IDENTICAL configuration, scoring the same case 1.0 then 0.83, and the workflow
+  tier 6/6 then 5/6 — while the 2- and 3-practice cases never moved, which is
+  exactly what the arithmetic predicts. Chasing that with model swaps wasted
+  three runs. **Count the practices before reading a red case as a regression**,
+  and do not spend 1.0 on a conjunction: the levers are grounding for the
+  mechanical half, a threshold that tolerates one miss, and EVAL_RETRY in CI.
+  Retry keeps the data honest because record() fires per ATTEMPT — the gate goes
+  lenient, results/records.jsonl does not.
+
 - **2026-08-25** — A weak judge is noise in **both** directions, and one swap
   proved it in a single run. With `deepseek/deepseek-chat` judging, the
   `architecture-reviewer` cases failed attribution 3 times (often with an empty

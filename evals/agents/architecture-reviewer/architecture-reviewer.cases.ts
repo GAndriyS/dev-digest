@@ -47,6 +47,12 @@ export const cases: AgentCase[] = [
     name: "flags both violations in the checkout diff with severity and a citable rule",
     kind: "quality",
     prompt: REVIEW_PROMPT,
+    // Deterministic pre-gate, checked before the judge is paid. These are the MECHANICAL half of
+    // the practices below — the identifiers the report must quote and the verdict line it must
+    // end on — so they are graded by substring rather than by a stochastic judge. Every string
+    // here was observed verbatim in real outputs across CI runs; a grounding gate must never be a
+    // guess, because a miss fails the case hard and skips the judge entirely.
+    grounding: ["FastifyReply", "PgCheckoutRepository", "Verdict:"],
     practices: [
       "flags the domain file (checkout.ts) importing a type from 'fastify' as a violation of the inward-only dependency rule between Domain and Presentation layers",
       "flags the `new PgCheckoutRepository()` call inside service.ts as a violation of DI discipline (concrete adapters/repositories must be constructed only in the composition root / container)",
@@ -63,7 +69,13 @@ export const cases: AgentCase[] = [
       // failing the agent for using its documented vocabulary.
       "ends with an explicit gate verdict on the PASS / BLOCKED scale, derived from whether any critical findings exist",
     ],
-    threshold: 1.0,
+    // 0.83 = five of six, NOT a softened bar: a threshold of 1.0 over six independently judged
+    // practices is a conjunction, so a case whose practices each hold at p passes at p^6 — 73% at
+    // p=0.95, i.e. red about one run in four with nothing wrong. Measured here: this case scored
+    // 1.0 and then 0.83 on two runs with an IDENTICAL configuration (2026-08-25). Tolerating one
+    // miss buys back the stability the conjunction spends; the non-negotiables moved up into
+    // `grounding`, where they are checked deterministically and cannot be the tolerated miss.
+    threshold: 0.83,
     maxTurns: 25,
   },
   {
@@ -84,6 +96,12 @@ export const cases: AgentCase[] = [
     name: "cites the DevDigest-specific documented contract for reviewer-core violations",
     kind: "quality",
     prompt: REVIEWER_CORE_PROMPT,
+    // Deterministic pre-gate, checked before the judge is paid. These are the MECHANICAL half of
+    // the practices below — the identifiers the report must quote and the verdict line it must
+    // end on — so they are graded by substring rather than by a stochastic judge. Every string
+    // here was observed verbatim in real outputs across CI runs; a grounding gate must never be a
+    // guess, because a miss fails the case hard and skips the judge entirely.
+    grounding: ["readFileSync", "groundFindings", "Verdict:"],
     practices: [
       "flags the `import { readFileSync } from 'node:fs'` added to reviewer-core/src/pipeline/run.ts as a violation (reviewer-core must do no I/O except the injected LLMProvider)",
       "flags that runPipeline now returns `deduped` directly, skipping the mandatory `groundFindings()` gate before emitting findings",
@@ -108,7 +126,11 @@ export const cases: AgentCase[] = [
       "quotes the offending line verbatim as evidence for each finding, not a paraphrase",
       "ends with an explicit gate verdict on the PASS / BLOCKED scale, derived from whether any critical findings exist",
     ],
-    threshold: 1.0,
+    // Same conjunction argument as the checkout case above. Note this case has scored 0 on every
+    // CI run so far, which is NOT what the threshold addresses: that is the open question about a
+    // pasted fixture never reaching a machine gate, recorded in the repo's INSIGHTS. Stabilising
+    // the bar makes that failure reproducible instead of intermittent — it does not hide it.
+    threshold: 0.83,
     maxTurns: 25,
   },
   {

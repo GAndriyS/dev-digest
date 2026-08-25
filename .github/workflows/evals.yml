@@ -236,6 +236,10 @@ jobs:
         name: ${{ fromJSON(needs.detect.outputs.skills) }}
     env:
       EVAL_BACKEND: openrouter
+      # One retry on a FAILED case only. A judge-scored case is a conjunction over stochastic
+      # judgements, so it goes red now and then with nothing wrong; record() still writes a row per
+      # ATTEMPT, so the gate gets lenient while results/records.jsonl stays honest. See config.ts.
+      EVAL_RETRY: "1"
       OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
       EVAL_MODEL: ${{ needs.detect.outputs.content_model }}
       EVAL_JUDGE_MODEL: ${{ needs.detect.outputs.content_judge }}
@@ -297,6 +301,10 @@ jobs:
         name: ${{ fromJSON(needs.detect.outputs.agents) }}
     env:
       EVAL_BACKEND: openrouter
+      # One retry on a FAILED case only. A judge-scored case is a conjunction over stochastic
+      # judgements, so it goes red now and then with nothing wrong; record() still writes a row per
+      # ATTEMPT, so the gate gets lenient while results/records.jsonl stays honest. See config.ts.
+      EVAL_RETRY: "1"
       OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
       EVAL_MODEL: ${{ needs.detect.outputs.tool_model }}
       EVAL_JUDGE_MODEL: ${{ needs.detect.outputs.tool_judge }}
@@ -379,6 +387,10 @@ jobs:
     timeout-minutes: 40
     env:
       EVAL_BACKEND: openrouter
+      # One retry on a FAILED case only. A judge-scored case is a conjunction over stochastic
+      # judgements, so it goes red now and then with nothing wrong; record() still writes a row per
+      # ATTEMPT, so the gate gets lenient while results/records.jsonl stays honest. See config.ts.
+      EVAL_RETRY: "1"
       OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
       EVAL_MODEL: ${{ needs.detect.outputs.tool_model }}
       EVAL_JUDGE_MODEL: ${{ needs.detect.outputs.tool_judge }}

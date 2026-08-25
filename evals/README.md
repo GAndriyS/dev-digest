@@ -625,6 +625,7 @@ Cheap and orthogonal; the `TrendReporter` keeps writing test-level outcome rows 
 | `EVAL_CONFIG` | `candidate` | `benchmark` sets this to `baseline` to skip artifact injection |
 | `EVAL_TEST_TIMEOUT_MS` | `240000` | vitest's per-test ceiling (read by `vitest.config.ts`) |
 | `EVAL_RUN_TIMEOUT_MS` | `TEST_TIMEOUT_MS - 60s` | the SESSION's own ceiling. Must stay below the one above — see [Deadlines](#deadlines--why-a-session-times-itself-out) |
+| `EVAL_RETRY` | `0` | re-runs of a FAILED model-backed case before it is called red; CI sets `1` |
 | `EVAL_QUIET` | unset | suppress per-run trace spam during multi-run aggregation |
 
 ## Records, statistics, flags
@@ -678,6 +679,46 @@ tokens > 125% of baseline), `missing_data` (a config has zero records for a test
 On a pull request the same table is applied automatically, from the diff, by
 [`.github/workflows/evals.yml`](../.github/workflows/evals.yml) — you do not run these by hand for
 a PR. The rows above are for the local loop.
+
+## Stability — why a judged case goes red with nothing wrong
+
+A judge-scored case at `threshold: 1.0` is a **conjunction over N stochastic binary judgements**.
+If each practice independently holds at probability *p*, the case passes at *p^N*:
+
+| practices | p = 0.95 | p = 0.90 |
+|---|---|---|
+| 2 | 90% | 81% |
+| 3 | 86% | 73% |
+| 6 | **74%** | **53%** |
+
+So a six-practice case backed by a model that is right 19 times out of 20 still goes red about
+one run in four, with nothing wrong anywhere. This is not a hypothetical: on 2026-08-25 two CI
+runs with an **identical** configuration scored the same case 1.0 and then 0.83, and the workflow
+tier went 6/6 then 5/6. The cases that never moved were the ones with two and three practices —
+exactly what the arithmetic predicts.
+
+Three levers, in the order they are worth reaching for:
+
+1. **Move the mechanical half into `grounding`.** A deterministic substring gate takes the judge
+   out of the loop for the parts that are literally string presence (an identifier the report must
+   quote, the verdict line it must end on). It removes *judge* variance, not model variance — and
+   it is a hard gate, so every string in it must be one you have actually observed in real output.
+2. **Do not use `1.0` as a conjunction over many practices.** `0.83` over six tolerates exactly one
+   miss and takes the same case from ~74% to ~97%. That IS a deliberate loosening; the compensation
+   is that the non-negotiables moved up into `grounding`, where they cannot be the tolerated miss.
+3. **`EVAL_RETRY=1` in CI.** Only a failed case re-runs, so it is nearly free. It costs sensitivity
+   in one narrow band — a case that degraded from "always" to "usually" now goes green — and it
+   does **not** distort the data: `record()` fires per attempt, so both rows land in
+   `results/records.jsonl` and the recorded rate stays honest while the checkmark is lenient.
+
+What none of this buys is a green check on a case that is genuinely failing. The point is to make
+red **reproducible**: after these changes a red case means a real, repeatable gap, which is the
+only kind of red a team keeps reading.
+
+> The tool tiers have one variance source that cannot be closed here: `run-openrouter.ts` pins
+> `temperature: 0`, but the Claude Agent SDK exposes no sampling controls, so `agentTask` and
+> `workflowTask` run at the provider default. Compensate in the case design, above — there is no
+> knob.
 
 ## Deadlines — why a session times itself out
 

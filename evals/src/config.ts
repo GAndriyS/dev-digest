@@ -69,3 +69,18 @@ export const WORKFLOW_DISALLOWED_TOOLS = ["Write", "Edit", "NotebookEdit", "Bash
 // --- Output verbosity -------------------------------------------------------
 // Set EVAL_QUIET to suppress per-run trace/verdict spam during multi-run aggregation.
 export const QUIET = Boolean(process.env.EVAL_QUIET);
+
+// --- Retries ----------------------------------------------------------------
+// How many times vitest re-runs a FAILED model-backed eval before calling it red. 0 locally, so a
+// failure is seen as it happened; CI sets 1.
+//
+// The justification is arithmetic, not tolerance for noise. A judge-scored case is a conjunction
+// over N stochastic binary judgements, so a case whose practices each hold at p passes at ~p^N —
+// six practices at p=0.95 is a 73% pass rate, i.e. red roughly one run in four with nothing wrong.
+// One retry turns that into ~93%. What it costs is sensitivity in a narrow band: a case that
+// really degraded from "always" to "usually" now goes green.
+//
+// What it does NOT distort is the measurement. record() fires per ATTEMPT, so a retried case
+// leaves both rows in results/records.jsonl and the recorded pass rate stays honest even while
+// the gate is lenient. Read the records, not the checkmark, when asking how an artifact is doing.
+export const RETRIES = Number(process.env.EVAL_RETRY ?? "0");
