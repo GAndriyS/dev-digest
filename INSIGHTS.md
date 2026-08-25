@@ -28,6 +28,19 @@ live in `<package>/INSIGHTS.md`. Maintained by the `engineering-insights` skill.
 
 ## What Works
 
+- **2026-08-25** — Measured what `architecture-reviewer`'s "cite the documented
+  rule per finding" requirement actually buys, against
+  `architecture-reviewer-lite` (same cases, dimension removed everywhere), n=5:
+  the attribution practice fell **100% → 20%** and its case 75% → 20%, while both
+  unrelated cases sat at 100% on BOTH sides and the remaining practices in the
+  same case were flat or drifted up. Without the rule the agent still finds every
+  violation, still quotes the offending line verbatim, still assigns severity —
+  it just stops tying a finding to the contract it breaks. It is not free:
+  lite ran 452 output tokens and 3 turns cheaper on that case. **Do not trim this
+  rule for token economy** — that is the whole of what it holds up. Re-sync
+  `architecture-reviewer-lite.md` from the strict file before any re-measurement;
+  a delta across a drifted pair measures the drift.
+
 - **2026-08-19** — Sending the finished **plan** to an independent cross-model
   review before any code is written paid for itself on the L05 Onboarding run:
   15 amendments, 4 of them MAJOR and all of them things a review of the *diff*
@@ -52,6 +65,31 @@ live in `<package>/INSIGHTS.md`. Maintained by the `engineering-insights` skill.
   construction.
 
 ## What Doesn't Work
+
+- **2026-08-25** — An eval expectation that names an identifier from memory
+  scores 0% in BOTH arms of an A/B and silently removes the case from the
+  measurement. `evals/agents/architecture-reviewer` demanded the rule ids
+  `reviewer-core-zero-io` and `reviewer-core-ground-findings-gate`; neither
+  string exists anywhere in the repo (the real rule is `core-has-no-io`,
+  `server/.dependency-cruiser.cjs:123`, and the grounding gate has no id at
+  all — it is prose in `reviewer-core/AGENTS.md:20`). Same class of error in the
+  same file: "PASS/FAIL verdict" against an agent whose scale is `PASS |
+  BLOCKED` (12 BLOCKED / 4 PASS / 0 FAIL across 16 runs), and "does not comment
+  on test coverage" against a return format that makes an `Out of scope` section
+  naming tests mandatory. All three were failing the agent for obeying its own
+  definition. **Grep every identifier and every vocabulary word an expectation
+  quotes before writing it**; fixing these took two cases from 0% and 50% to
+  100%.
+
+- **2026-08-25** — A cosmetic edit is not an A/B manipulation. Removing the
+  citation rule from two lines of `architecture-reviewer`'s return-format
+  template moved the target practice by −20 while an untouched control practice
+  moved −40 — pure noise, because the same requirement still appeared in three
+  other places (Step 2's "quote the violated rule name", Step 2's read-the-config
+  block, Step 3's per-observation `Skill` column). The same experiment against
+  `architecture-reviewer-lite`, which has the dimension removed everywhere,
+  measured −80 with every control flat. **Grep the artifact for the dimension
+  and remove all of it, or measure nothing.**
 
 - **2026-08-04** — Declaring a table in the schema file it "belongs" to can
   close an import cycle that dependency-cruiser rejects: `run_skills` references
@@ -124,6 +162,21 @@ live in `<package>/INSIGHTS.md`. Maintained by the `engineering-insights` skill.
   spec finding to re-lane, never as an instruction to write the flow.
 
 ## Tool & Library Notes
+
+- **2026-08-25** — vitest's `expect.getState().currentTestName` is AMBIENT, not
+  bound to the test that read it. `evals/src/records/record.ts` built each
+  record's `nodeid` from it, and because it runs in a `finally` after a 40–70 s
+  model call, the ambient name had already moved to a neighbouring case:
+  in one 5-run series over four cases, one test collected 6 records, another 0,
+  and a third never appeared, so every per-practice rate was computed over
+  another case's denominator. `repeat`, `delta` and `benchmark` all aggregate by
+  `nodeid`, so all three had been quietly comparing the wrong rows — nothing
+  failed, the numbers just meant something else. **Never use ambient test state
+  as identity for anything written after an `await`; pass the name in.** The
+  symptom to look for is a per-practice list containing practices that belong to
+  a different case. Related trap in the same package: the LLM judge echoes each
+  practice back and does not echo it byte-for-byte (a dropped pair of backticks
+  was enough), so judge output must never be a join key either.
 
 - **2026-08-05** — Every CI workflow pins `pnpm` **10** via
   `pnpm/action-setup@v4`, but nothing in the repo pinned it locally, so corepack
@@ -314,6 +367,23 @@ live in `<package>/INSIGHTS.md`. Maintained by the `engineering-insights` skill.
   pass; the behavioural probes are deferred to a fresh session for the
   registry reason recorded above.
 
+- **2026-08-25** — Lab 6: ran the `architecture-reviewer` citation A/B and spent
+  most of it fixing the measuring instrument. Three harness defects fell out, in
+  rising order of damage: expectations quoting identifiers the repo never
+  documents; practice rates keyed on the judge's echoed text; and records filed
+  under whichever test vitest's ambient state happened to be pointing at, which
+  had been corrupting every `repeat`/`delta`/`benchmark` denominator. With those
+  fixed and the manipulation made real (`architecture-reviewer-lite`), the effect
+  measured cleanly at −80 points on the attribution practice with every control
+  flat. Also shipped `dependency-checker` 1.0.0 with `scripts/deps-report.mjs`.
+
 ## Open Questions
 
-_None open._
+- **2026-08-25** — `evals/agents/architecture-reviewer`'s `core-has-no-io`
+  expectation cannot pass on its current fixture and sat at 25% in both arms:
+  the agent runs depcruise against the LIVE repo (green), while the fixture diff
+  is pasted text that is never applied, so the rule name never appears in any
+  gate output and the agent would have to go read the config unprompted. Either
+  the fixture has to be materialised into a scratch tree the gate can actually
+  cruise, or the expectation should grade attribution behaviour like its
+  neighbours do. Until then it contributes nothing to the A/B.
