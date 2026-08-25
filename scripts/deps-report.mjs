@@ -9,7 +9,7 @@
  * the whole picture, and "which version of zod do we actually ship" is a
  * question no one can answer by reading one file. Every number here is
  * measured, never estimated — the agent that runs this script (see
- * .claude/skills/dependencies-checker/SKILL.md) supplies the judgement, this
+ * .claude/skills/dependency-checker/SKILL.md) supplies the judgement, this
  * script supplies the facts.
  *
  * Offline by default: it reads manifests, lockfile-driven `ls` output and the
