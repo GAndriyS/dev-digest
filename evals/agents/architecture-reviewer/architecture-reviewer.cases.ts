@@ -7,14 +7,14 @@ const REVIEW_PROMPT = `Audit this diff against DevDigest's documented structural
 
 ${fx("checkout-service.diff")}`;
 
-// A second real diff whose fs-import violation maps onto a DevDigest-SPECIFIC dependency-cruiser
-// rule name (`core-has-no-io`, server/.dependency-cruiser.cjs:123) that a competent model will
-// describe in prose ("the iron rule", "no I/O in the core") but will not spontaneously name
-// unless the agent forces a citation. This is the discriminating case for the strict-vs-lite A/B:
-// both variants should FIND both problems, but only the strict variant (which keeps the "cite the
-// exact documented rule per finding" hard rule) should reliably emit the identifier and locator.
-// The checkout diff's violations don't discriminate — the model volunteers a prose attribution
-// either way.
+// A second real diff whose fs-import violation maps onto a DevDigest-SPECIFIC documented contract
+// (`core-has-no-io`, server/.dependency-cruiser.cjs:123, and the same rule in prose at
+// reviewer-core/AGENTS.md) that a competent model will describe as "the iron rule" but will not
+// spontaneously ATTRIBUTE unless the agent forces a citation. This is the discriminating case for
+// the strict-vs-lite A/B: both variants should FIND both problems, but only the strict variant
+// (which keeps the "cite the documented rule per finding" hard rule) should reliably tie each
+// finding to a named contract with a locator. The checkout diff's violations don't discriminate —
+// the model volunteers a prose attribution either way.
 //
 // MEASURED, 2026-08-25 — do NOT reintroduce a rule name without grepping for it first. The
 // original practices here demanded `reviewer-core-zero-io` and `reviewer-core-ground-findings-gate`.
@@ -87,10 +87,22 @@ export const cases: AgentCase[] = [
     practices: [
       "flags the `import { readFileSync } from 'node:fs'` added to reviewer-core/src/pipeline/run.ts as a violation (reviewer-core must do no I/O except the injected LLMProvider)",
       "flags that runPipeline now returns `deduped` directly, skipping the mandatory `groundFindings()` gate before emitting findings",
-      // The one real identifier in this fixture — server/.dependency-cruiser.cjs:123. This is THE
-      // discriminating practice of the whole A/B: the model reaches for "the iron rule" in prose
-      // unless the agent forces the citation.
-      "names the exact dependency-cruiser rule identifier `core-has-no-io` for the fs-import finding rather than only describing it in prose",
+      // THE discriminating practice of the A/B — and it grades the citation BEHAVIOUR, not one
+      // literal identifier.
+      //
+      // MEASURED, 2026-08-25: the identifier-only wording (`core-has-no-io`, the real rule at
+      // server/.dependency-cruiser.cjs:123) sat at 25% in BOTH arms and contributed nothing. The
+      // fixture is a PASTED diff that is never applied, and the agent runs depcruise against the
+      // live repo — which is green — so the rule name appears in no gate output anywhere in the
+      // session. To emit it the agent would have to open the config unprompted, which it does
+      // about one run in six. An expectation only measures an artifact if the fixture makes the
+      // evidence reachable; this one made it a memory test with a 75% floor of noise.
+      //
+      // Naming the rule still counts — it is the strongest form of the answer, and the wording
+      // keeps it first — but so does any named contract with a locator, which is precisely the
+      // dimension the lite variant loses. Re-tightening this to a bare string is a regression:
+      // materialise the diff into a tree the gate can actually cruise first.
+      "attributes the fs-import finding to a named documented contract with a locator — the `core-has-no-io` rule in `server/.dependency-cruiser.cjs`, or the no-I/O rule stated in `reviewer-core/AGENTS.md` — rather than describing it only in prose (\"the iron rule\", \"no I/O in the core\")",
       // No identifier exists for the grounding gate, so this grades the citation behaviour instead.
       "attributes the skipped-gate finding to a named documented contract with a locator (the mandatory grounding gate in reviewer-core — `reviewer-core/AGENTS.md`, or the `groundFindings()` step of the pipeline) rather than describing it only in prose",
       "quotes the offending line verbatim as evidence for each finding, not a paraphrase",
