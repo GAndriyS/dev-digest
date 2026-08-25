@@ -34,7 +34,9 @@ you, not hidden in `node_modules`.
 
 ## Three tiers
 
-1. **Static gate (no model)** — `pnpm eval:quality` checks SKILL.md structure/frontmatter/links.
+1. **Static gate (no model)** — `pnpm eval:quality` checks SKILL.md structure/frontmatter/links,
+   every agent's frontmatter (`name` is the dispatch address; `tools` is what the eval grants), and
+   the [A/B pairs](#ab-pairs--the-manipulation-is-equipment-too).
 2. **Quality evals (LLM-judged)** — per skill/agent, isolate the artifact's *content* and judge it.
 3. **Workflow evals (trace-asserted)** — load the real harness and check *systemic* behavior:
    does a subagent get dispatched, does a skill activate, does `CLAUDE.md` change what gets read.
@@ -262,6 +264,8 @@ src/
     paths.ts            # REPO_ROOT / SKILLS_DIR / AGENTS_DIR / RESULTS_DIR anchors
     load.ts             # skillContent() (SKILL.md + references/*.md), agentContent()
     fixture.ts          # fixtureReader(import.meta.url) — inline a case's fixtures into a prompt
+    pairs.ts            # A/B pairs (source ↔ frozen variant): hashes + "the dimension is gone"
+    pairs.test.ts       # the pair guard, as a test (no model)
   tasks.ts              # skillTask / agentTask / workflowTask — compose runtime + artifacts;
                         #   skill/agentTask skip injection under EVAL_CONFIG=baseline (benchmark lift)
   scoring/
@@ -272,14 +276,14 @@ src/
   records/
     record.ts           # record() → results/records.jsonl + full output to results/outputs/<run>/<slug>.md
     stats.ts            # pure: calcStats(), loadRecords(), aggregate(), byConfig(), computeFlags()
-    stats.test.ts       # the only non-model unit tests — the statistics math
+    stats.test.ts       # non-model unit tests — the statistics math
     benchmark.ts        # eval:benchmark CLI (with vs without artifact)
   trend-reporter.ts     # vitest reporter: pass/fail rows → results/history.jsonl
   compare.ts            # eval:compare — run-flip view over history.jsonl
   repeat.ts             # eval:repeat — N runs of one pattern → stability stats (reads records.jsonl)
   delta.ts              # eval:delta — diff two labeled repeat runs
   scaffold.ts           # eval:scaffold — list skills/agents, generate template eval files
-  skill-quality.ts      # eval:quality — static SKILL.md gate (no model)
+  skill-quality.ts      # eval:quality — static gate over skills, agents and A/B pairs (no model)
   dsl/
     describe.ts         # describeSkill / describeAgent / describeWorkflow — labeled groups
     case.ts             # SkillCase / AgentCase / WorkflowCase types; runSkillCases / runAgentCases / runWorkflowCases
@@ -402,7 +406,7 @@ How each `kind` asserts:
 | `kind` | Runs | Passes when |
 |--------|------|-------------|
 | `dispatch` | `workflowTask` | `result.subagents` contains `expectSubagent` |
-| `activation` | `workflowTask` | `activated(result, skill) === shouldActivate` (positive **and** near-miss negative); `forbidSubagents` additionally requires an empty `result.subagents` |
+| `activation` | `workflowTask`, stopping as soon as the skill engages (or a forbidden subagent launches) — the verdict is settled at that point either way | `activated(result, skill) === shouldActivate` (positive **and** near-miss negative); `forbidSubagents` additionally requires an empty `result.subagents` |
 | `contrast` | treatment (real repo) **and** control (empty tmpdir, `settingSources:[]`) | `expectFileRead` read in treatment, NOT in control |
 | `trace` | `workflowTask`, **one** session | every provided facet holds: `expectSubagents`, `expectSkills`, `expectFilesRead`, `expectMentions` |
 
@@ -440,7 +444,8 @@ pnpm eval:skills         # just skills/
 pnpm eval:agents         # just agents/
 pnpm eval:workflow       # just workflow/
 pnpm vitest run skills/onion-architecture       # one artifact
-pnpm vitest run src/records/stats.test.ts       # the only non-model unit test (stats math)
+pnpm vitest run src/                            # every non-model unit test (stats, trace
+                                                #   extraction, the deadline, the A/B pairs)
 ```
 
 ### `eval:repeat` — stability of one thing
@@ -564,6 +569,8 @@ Cheap and orthogonal; the `TrendReporter` keeps writing test-level outcome rows 
 | `OPENROUTER_BASE_URL` | OpenRouter | override to point at a local LiteLLM proxy for non-Anthropic tool-tier models |
 | `EVAL_MAX_TURNS` | `8` | max agent turns per case |
 | `EVAL_CONFIG` | `candidate` | `benchmark` sets this to `baseline` to skip artifact injection |
+| `EVAL_TEST_TIMEOUT_MS` | `240000` | vitest's per-test ceiling (read by `vitest.config.ts`) |
+| `EVAL_RUN_TIMEOUT_MS` | `TEST_TIMEOUT_MS - 60s` | the SESSION's own ceiling. Must stay below the one above — see [Deadlines](#deadlines--why-a-session-times-itself-out) |
 | `EVAL_QUIET` | unset | suppress per-run trace spam during multi-run aggregation |
 
 ## Records, statistics, flags
@@ -579,7 +586,7 @@ Record schema (`schema: 1`):
   "nodeid": "…/onion-architecture.eval.ts > skill:onion-architecture > review flags ...", "label": "...",
   "outcome": true, "score": 0.8, "threshold": 0.6,
   "practices": [ { "practice": "...", "passed": true, "evidence": "verbatim quote" } ],
-  "grounded": 1, "num_turns": 1,
+  "grounded": 1, "timed_out": false, "num_turns": 1,
   "metrics": { "durationMs": 0, "inputTokens": 0, "outputTokens": 0, "toolCallCount": 0 },
   "trace": { "tools": [], "subagents": [], "skills": [], "reads": [] }, "output_file": "..." }
 ```
@@ -610,8 +617,41 @@ tokens > 125% of baseline), `missing_data` (a config has zero records for a test
 | New skill/agent — is it **worth its tokens**? | `pnpm eval:benchmark skills/<skill>` (n=2; `EVAL_MAX_REPEATS=5` to measure properly) |
 | Adding evals for one of **your** skills/agents | `pnpm eval:scaffold <name>` (or `--agent <name>`) |
 | Model / Claude Code version | `pnpm eval` (whole suite) |
-| Stats math changed | `pnpm vitest run src/records/stats.test.ts` |
+| Stats math, trace extraction, the pair guard | `pnpm vitest run src/` |
+| An A/B pair's SOURCE artifact edited | `pnpm eval:quality` — then re-sync the variant and update both hashes in `src/artifacts/pairs.ts` |
 
+## Deadlines — why a session times itself out
+
+There are two ceilings and the ORDER between them is load-bearing. `runClaude()` aborts itself at
+`RUN_TIMEOUT_MS`; vitest kills the test at `TEST_TIMEOUT_MS`. The session must lose that race.
+
+`record()` fires from a `finally`, and a test killed by its runner never reaches one — so a run
+that ends on vitest's timeout leaves **no row at all**. Not a red row: an absent one. `repeat`
+builds its summary from records, so a 6-case run once printed a green `5/5` with the sixth case
+silently missing (2026-08-25). A run that dies on its own deadline instead comes back as a normal
+`Result` — `isError: true`, `timedOut: true`, the partial trace intact — and the case is recorded
+as the failure it was.
+
+Keep the gap wide enough for everything that happens after the session inside the same test: the
+judge is another model round-trip, and `record()` then writes the row. Both knobs live in
+`src/config.ts`; `vitest.config.ts` imports the outer one rather than repeating the number.
+
+## A/B pairs — the manipulation is equipment too
+
+A with-vs-without measurement over two artifacts (`architecture-reviewer` vs
+`architecture-reviewer-lite`) is only valid while the **only** difference between them is the
+dimension under test. Two ways that stops being true, both measured on 2026-08-25:
+
+- **The dimension was removed in one place, not all of them.** A cosmetic two-line edit moved the
+  target practice by −20 while an untouched control moved −40 — noise. Removing the requirement
+  everywhere it appeared measured −80 with every control flat.
+- **The source drifted after the copy was cut.** The variant is frozen; the original is a live
+  artifact someone will edit. A delta across a drifted pair reports the drift.
+
+`src/artifacts/pairs.ts` holds each pair, a hash of both normalised bodies, and one marker per
+place the dimension appears. `pnpm eval:quality` and `pnpm vitest run src/` both check it: an edit
+to either file, or a marker that survived into the variant, fails with what to do about it. After
+a deliberate re-sync, update both hashes in the same commit — the failure message prints them.
 ## Safety
 
 Sessions run with `permissionMode: "bypassPermissions"`, so `workflowTask` keeps a **read-only

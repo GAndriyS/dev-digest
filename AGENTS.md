@@ -80,7 +80,9 @@ a package — read its own `AGENTS.md` (`server/`, `client/`, `reviewer-core/`,
 - MCP-server / coding-agent tool work → read `mcp/AGENTS.md`
 - Measuring a skill, subagent or the harness itself (static gate, LLM-judged
   quality, workflow traces, with/without benchmark) → read `evals/README.md`;
-  the model-free gate is `cd evals && pnpm eval:quality`. Model-backed lanes
+  the model-free lanes are `cd evals && pnpm eval:quality` (skills, agents and
+  the A/B pairs) and `pnpm vitest run src/` (stats, trace extraction, the
+  session deadline, the pair guard) — neither spends a token. Model-backed lanes
   (`pnpm eval*`) spend subscription or OpenRouter budget — run them by hand,
   never as a side effect of another task.
 - Deep dives → read `docs/` · current work → read `specs/` · findings → read

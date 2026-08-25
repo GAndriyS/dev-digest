@@ -28,6 +28,18 @@ live in `<package>/INSIGHTS.md`. Maintained by the `engineering-insights` skill.
 
 ## What Works
 
+- **2026-08-25** — A rule that protects a MEASUREMENT has to fail a lane, not sit
+  in prose. Two of this branch's own findings had been written down as warnings —
+  "re-sync `architecture-reviewer-lite` before trusting a delta" and "remove the
+  dimension everywhere or measure nothing" — in exactly the shape the eval package
+  exists to stop trusting. Both are now mechanical: `evals/src/artifacts/pairs.ts`
+  holds a hash of each side of the pair plus one marker per place the removed
+  dimension appeared, and `pnpm eval:quality` and `pnpm vitest run src/` fail when
+  either file moves or a marker survives into the copy. The check costs nothing —
+  it reads two files — and it is the only thing standing between a re-synced pair
+  and a delta that reports the drift. The same gate grew an agent lane: `name`
+  matching the filename is the dispatch address, and nothing had ever checked it.
+
 - **2026-08-25** — Measured what `architecture-reviewer`'s "cite the documented
   rule per finding" requirement actually buys, against
   `architecture-reviewer-lite` (same cases, dimension removed everywhere), n=5:
@@ -198,6 +210,21 @@ live in `<package>/INSIGHTS.md`. Maintained by the `engineering-insights` skill.
   spec finding to re-lane, never as an instruction to write the flow.
 
 ## Tool & Library Notes
+
+- **2026-08-25** — A headless session must expire BEFORE the test runner that
+  owns it, or the failure is unrecordable. `record()` fires from a `finally`, and
+  a test killed by vitest never reaches one, so a run that hits vitest's 240 s
+  ceiling leaves no row — not a red row, an absent one, which `repeat` then
+  reports as a green 5/5 over six cases. The fix is the SDK's own
+  `Options.abortController`: `runClaude()` arms a timer at `RUN_TIMEOUT_MS`
+  (`TEST_TIMEOUT_MS - 60 s`, both in `evals/src/config.ts`, with
+  `vitest.config.ts` importing the outer one so the two cannot drift apart), and
+  an expired run returns a normal `Result` — `isError`, `timedOut`, partial trace
+  intact — instead of throwing. The gap has to clear everything that runs after
+  the session inside the same test: the judge is another model round-trip. A
+  `timed_out` column now distinguishes a run that died on its deadline from one
+  whose assertions failed; they are otherwise identical and call for opposite
+  responses. Unit-tested against a mocked SDK session that hangs until aborted.
 
 - **2026-08-25** — In the Claude Agent SDK, `allowedTools` is a DECLARATION,
   not a restriction: under `permissionMode: "bypassPermissions"` a session
@@ -458,19 +485,16 @@ live in `<package>/INSIGHTS.md`. Maintained by the `engineering-insights` skill.
 
 ## Open Questions
 
-- **2026-08-25** — A vitest timeout still costs a workflow case its record:
-  `record()` fires in a `finally`, and a killed test never gets there, so the
-  row is missing rather than red. The 2026-08-25 cause (mangled subagent name →
-  no early stop) is fixed and `repeat` now reports the gap, but any other way to
-  exceed 240 s reproduces it. Real fixes: write the record as soon as the result
-  is in hand rather than in the `finally`, or give `runClaude` its own wall-clock
-  limit below vitest's so the session fails itself while it can still record.
+- **2026-08-25** — A fixture that is PASTED rather than applied cannot produce
+  gate output, and no expectation should be written as if it could. The
+  `core-has-no-io` practice in `evals/agents/architecture-reviewer` has been
+  re-keyed to attribution behaviour (a named contract plus a locator, which is
+  the dimension the lite variant actually loses), so the case discriminates
+  again — but the underlying limitation stands for every future case: the agent
+  runs depcruise against the LIVE repo, which is green, so a fixture diff never
+  reaches a gate. Materialising a case's diff into a scratch tree the gate can
+  cruise is the only way to grade what a machine check actually printed. Nobody
+  has needed it enough yet to build it.
 
-- **2026-08-25** — `evals/agents/architecture-reviewer`'s `core-has-no-io`
-  expectation cannot pass on its current fixture and sat at 25% in both arms:
-  the agent runs depcruise against the LIVE repo (green), while the fixture diff
-  is pasted text that is never applied, so the rule name never appears in any
-  gate output and the agent would have to go read the config unprompted. Either
-  the fixture has to be materialised into a scratch tree the gate can actually
-  cruise, or the expectation should grade attribution behaviour like its
-  neighbours do. Until then it contributes nothing to the A/B.
+  *(The vitest-timeout question recorded here on 2026-08-25 is closed — see the
+  session-deadline entry under Tool & Library Notes.)*
