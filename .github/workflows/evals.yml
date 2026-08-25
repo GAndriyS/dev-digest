@@ -253,7 +253,7 @@ jobs:
       - name: Run skill evals
         env:
           NAME: ${{ matrix.name }}
-        run: pnpm exec vitest run "skills/$NAME"
+        run: pnpm exec vitest run "skills/$NAME/"
 
       - name: Summary
         if: always()
@@ -321,10 +321,14 @@ jobs:
           pnpm proxy:wait
           echo "OPENROUTER_BASE_URL=http://localhost:4000" >> "$GITHUB_ENV"
 
+      # The trailing slash is load-bearing: a vitest positional filter is a plain path SUBSTRING,
+      # so `agents/architecture-reviewer` also matches `agents/architecture-reviewer-lite/` — the
+      # A/B baseline the detector just spent effort excluding from this matrix. It ran on 2026-08-25
+      # and cost four extra sessions grading a deliberately-degraded artifact.
       - name: Run agent evals
         env:
           NAME: ${{ matrix.name }}
-        run: pnpm exec vitest run "agents/$NAME"
+        run: pnpm exec vitest run "agents/$NAME/"
 
       - name: Proxy logs
         if: ${{ failure() && !startsWith(needs.detect.outputs.tool_model, 'anthropic/') }}

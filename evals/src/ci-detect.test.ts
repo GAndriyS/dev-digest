@@ -12,8 +12,11 @@
  * quietly put a deliberately-degraded artifact back into a blocking matrix.
  */
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, it, expect } from "vitest";
 import { detectSuites, abVariantsOnDisk } from "../scripts/ci-detect.mjs";
+import { REPO_ROOT } from "./artifacts/paths.js";
 
 /** The artifacts that actually have evals today; every other name is a legitimate SKIP. */
 const hasEvals = (tier: string, name: string): boolean =>
@@ -149,6 +152,20 @@ describe("ci-detect", () => {
   // runtime. This is the row that notices when pairs.ts is reshaped and the regex stops matching.
   it("still finds the declared A/B variants in the real pairs.ts", () => {
     expect(abVariantsOnDisk()).toContain("architecture-reviewer-lite");
+  });
+
+  // The detector's exclusions are only worth what the CONSUMER preserves. A vitest positional
+  // filter is a plain path substring, so `vitest run agents/architecture-reviewer` also selects
+  // `agents/architecture-reviewer-lite/` — re-admitting the exact A/B baseline the detector just
+  // routed to skipped_agents, one layer down and for real money (it happened on 2026-08-25: four
+  // extra sessions grading the degraded artifact). The trailing slash is the fix; this is the
+  // cheapest place to notice it being dropped again.
+  it("the workflow's vitest filters are anchored, so a name prefix cannot re-admit a variant", () => {
+    const yml = readFileSync(join(REPO_ROOT, ".github", "workflows", "evals.yml"), "utf8");
+    expect(yml).toContain('vitest run "skills/$NAME/"');
+    expect(yml).toContain('vitest run "agents/$NAME/"');
+    // The property that actually matters, stated as the assertion it is:
+    expect("agents/architecture-reviewer-lite/x.eval.ts".includes("agents/architecture-reviewer/")).toBe(false);
   });
 
   // route-all is what a manual run uses: workflow_dispatch has no diff, so without it the model

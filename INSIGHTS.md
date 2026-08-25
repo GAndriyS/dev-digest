@@ -78,6 +78,29 @@ live in `<package>/INSIGHTS.md`. Maintained by the `engineering-insights` skill.
 
 ## What Doesn't Work
 
+- **2026-08-25** — A weak judge is noise in **both** directions, and one swap
+  proved it in a single run. With `deepseek/deepseek-chat` judging, the
+  `architecture-reviewer` cases failed attribution 3 times (often with an empty
+  evidence string) while `dependency-checker` passed 4 of 5. Swapping only the
+  judge to `claude-sonnet-5` moved the two tiers in OPPOSITE directions: the agent
+  cases went to 3 of 4 — the weak judge had been failing a model that was right —
+  and the skill cases fell to 2 of 5 at 0 / 0.25 / 0.6 — it had been passing a
+  model that was wrong. Nothing about the artifacts or the task models changed.
+  **The judge is the instrument, not the subject: never trade it down for cost**,
+  and re-read any measurement taken with a cheaper one, in both directions.
+
+- **2026-08-25** — An exclusion is only worth what its CONSUMER preserves. A
+  vitest positional filter is a plain path **substring**, so
+  `vitest run agents/architecture-reviewer` also selects
+  `agents/architecture-reviewer-lite/` — re-admitting the A/B baseline that
+  `ci-detect.mjs` had just routed to `skipped_agents` one layer above, and
+  costing four extra model sessions grading a deliberately-degraded artifact
+  (measured in CI, 19 records where 15 were expected). The fix is a trailing
+  slash in the filter; the durable part is the rule: **when a name is a prefix of
+  another name, any substring-matching consumer will silently widen your
+  selection.** Pinned by a test that reads the workflow file, because the leak was
+  in the consumer, not in the thing that computed the exclusion.
+
 - **2026-08-25** — A dispatched subagent does not inherit the eval's model, and
   the failure surfaces as a model-id error from an endpoint you never configured.
   `runClaude()` passes `EVAL_MODEL` to the main `query()` only; a subagent resolves
