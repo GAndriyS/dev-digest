@@ -234,19 +234,21 @@ default and hands them to the other jobs as outputs:
 
 | Tier | Model under test | Judge | Proxy |
 |---|---|---|---|
-| content (`skills`) | `deepseek/deepseek-chat` | `anthropic/claude-sonnet-5` | no — goes direct |
+| content (`skills`) | `anthropic/claude-haiku-4.5` | `anthropic/claude-sonnet-5` | no — goes direct |
 | tool (`agents`, `workflow`) | `anthropic/claude-haiku-4.5` | `anthropic/claude-sonnet-5` | no — the Anthropic Skin |
 
-**Why the tool tiers are not on a cheap model, though the engine supports it.** A threshold is a
-property of the model as much as of the artifact. These cases carry thresholds up to `1.0`,
-calibrated against `claude-haiku-4-5`; run on Gemini 2.5 Flash they scored 0.83 / 0.5 / 0 in CI
-(2026-08-25), mostly on the attribution practice. Red for a model reason is not a harness
-regression, and a check that goes red for reasons nobody can act on stops being read. **Run a gate
-on the model its bar was set against** — or lower the bar deliberately and know that the two
-numbers no longer belong to the same series. The content tier is the exception that proves it:
-DeepSeek passes 4 of 5 `dependency-checker` cases — but a **different** one failed on each of the
-first two CI runs (0.4–0.5 against thresholds of 0.75–0.8), which is `flaky` by this package's own
-20–80% bound rather than a clean pass.
+**Why no tier runs on a cheap model, though the engine fully supports it.** A threshold is a
+property of the model as much as of the artifact. These cases carry thresholds up to `1.0`, set
+against `claude-haiku-4-5`. Measured in CI on 2026-08-25: the agent cases scored 0.83 / 0.5 / 0 on
+`google/gemini-2.5-flash`, and the skill cases 0 / 0.25 / 0.6 on `deepseek/deepseek-chat` against
+thresholds of 0.75–0.8. Red for a model reason is not a harness regression, and a check that goes
+red for reasons nobody can act on stops being read. **Run a gate on the model its bar was set
+against** — or lower the bar deliberately and know that the two numbers no longer belong to the
+same series.
+
+DeepSeek is worth one more sentence, because it is the trap: it *looked* like a 4-of-5 pass on two
+consecutive runs, and only turned into 2 of 5 when the judge was restored to `claude-sonnet-5`.
+The cheap task model and the cheap judge were flattering each other.
 
 **Do not trade the judge down for cost — it is the instrument, not the subject.** The judge was
 briefly set to `deepseek/deepseek-chat`: cheap, and cross-family with the task, which looked like

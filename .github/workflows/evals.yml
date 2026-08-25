@@ -17,23 +17,24 @@
 # have no evals yet; each prints `SKIP <name> (no evals)` in the `detect` job's summary.
 #
 # Models (see "Resolve models" below — the one place they are set):
-#   content tier (skills) → deepseek/deepseek-chat. Goes DIRECT to OpenRouter — no proxy — because
-#                           src/runtime/dispatch.ts routes content-only calls through the
-#                           OpenAI-compatible client. Measured: 4 of 5 dependency-checker cases
-#                           pass, but a DIFFERENT one failed on each of two runs (0.4-0.5 against
-#                           thresholds of 0.75-0.8) — flaky by this package's own 20-80% bound.
-#   tool tiers (agents,   → anthropic/claude-haiku-4.5. Served by OpenRouter's Anthropic Skin, so
-#   workflow)               the SDK talks to it directly and NO proxy is needed on the default path.
+#   ALL THREE tiers       → anthropic/claude-haiku-4.5, the model every threshold in this package
+#                           was set against. The content tier reaches it as a direct
+#                           OpenAI-compatible call (src/runtime/dispatch.ts) and the tool tiers
+#                           through OpenRouter's Anthropic Skin; neither needs a proxy.
+#                           deepseek/deepseek-chat was the content-tier default for three runs and
+#                           is not good enough for these bars: under an honest judge it scored
+#                           0 / 0.25 / 0.6 against thresholds of 0.75-0.8. It had looked like a
+#                           4-of-5 pass only while a cheap judge was grading it.
 #   judge, BOTH tiers     → anthropic/claude-sonnet-5, the package's documented default: a STRONGER
 #                           family than the task, to soften self-preference (evals/README.md, "Two
 #                           scorers"). It was briefly cheaper and cross-family instead, and that
 #                           broke the measurement — see the note below.
 #
-# Why the tool tiers are not on a cheap non-Anthropic model, though the engine supports it: these
-# cases carry thresholds up to 1.0, calibrated against claude-haiku-4-5. Run on Gemini 2.5 Flash
-# they scored 0.83 / 0.5 / 0 (2026-08-25) — chiefly on the attribution practice — so the job went
-# red for a model reason, not a harness regression, which is the fastest way to teach a team to
-# ignore a red check. A gate has to be run on the model its bar was set against.
+# Why nothing here runs on a cheap non-Anthropic model, though the engine fully supports it: every
+# threshold in these cases was calibrated against claude-haiku-4-5. Gemini 2.5 Flash scored
+# 0.83 / 0.5 / 0 on the agent cases and DeepSeek 0 / 0.25 / 0.6 on the skill cases (2026-08-25).
+# Both went red for a model reason rather than a harness regression, which is the fastest way to
+# teach a team to ignore a red check. A gate has to be run on the model its bar was set against.
 #
 # The same lesson applies to the JUDGE, and cost more to learn. Judging with deepseek-chat while
 # the task ran on Haiku kept attribution failing (often with an empty evidence string, and on
@@ -205,7 +206,7 @@ jobs:
           IN_TOOL: ${{ inputs.tool_model }}
           IN_JUDGE: ${{ inputs.judge_model }}
         run: |
-          CONTENT="${IN_CONTENT:-deepseek/deepseek-chat}"
+          CONTENT="${IN_CONTENT:-anthropic/claude-haiku-4.5}"
           TOOL="${IN_TOOL:-anthropic/claude-haiku-4.5}"
           {
             echo "content_model=$CONTENT"
