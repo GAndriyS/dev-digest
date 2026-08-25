@@ -50,6 +50,25 @@ export function hasEvalsOnDisk(tier, name) {
 }
 
 /**
+ * Every artifact directory under evals/<tier>/, for the ROUTE-ALL mode.
+ *
+ * A workflow_dispatch has no diff to route from, so without this a manual run can only reach the
+ * workflow tier — the model switch would have a knob and no target, which is exactly the shape of
+ * experiment it exists for. The repo's own rule (README, "Which change → which run") says a model
+ * or Claude Code version change calls for the whole suite, which is what this produces. The names
+ * still pass through hasEvals and the A/B exclusion, so route-all never widens WHAT is eligible —
+ * only which trigger reaches it.
+ */
+export function listArtifactsOnDisk(tier) {
+  const dir = join(EVALS_DIR, tier);
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir, { withFileTypes: true })
+    .filter((e) => e.isDirectory())
+    .map((e) => e.name)
+    .sort();
+}
+
+/**
  * The frozen variants of the A/B pairs, scraped from `src/artifacts/pairs.ts` as TEXT.
  *
  * Scraped rather than imported because this script is deliberately dependency-free plain `.mjs`
@@ -83,15 +102,25 @@ function touched(changed, reClaude, reEvals) {
  * The whole mapping, as a pure function — injected `hasEvals` / `abVariants` so the test drives it
  * without a filesystem. Returns the five step outputs plus the human-readable skip lines.
  */
-export function detectSuites({ changed, hasEvals = hasEvalsOnDisk, abVariants = abVariantsOnDisk() }) {
+export function detectSuites({
+  changed,
+  all = false,
+  hasEvals = hasEvalsOnDisk,
+  abVariants = abVariantsOnDisk(),
+  listArtifacts = listArtifactsOnDisk,
+}) {
   const isAgentDefinition = (f) => /^\.claude\/agents\/.+\.md$/.test(f) && basename(f) !== "README.md";
 
-  const skillNames = touched(changed, /^\.claude\/skills\/([^/]+)\//, /^evals\/skills\/([^/]+)\//);
-  const agentNames = touched(
-    changed.filter((f) => !f.startsWith(".claude/agents/") || isAgentDefinition(f)),
-    /^\.claude\/agents\/([^/]+)\.md$/,
-    /^evals\/agents\/([^/]+)\//,
-  );
+  const skillNames = all
+    ? listArtifacts("skills")
+    : touched(changed, /^\.claude\/skills\/([^/]+)\//, /^evals\/skills\/([^/]+)\//);
+  const agentNames = all
+    ? listArtifacts("agents")
+    : touched(
+        changed.filter((f) => !f.startsWith(".claude/agents/") || isAgentDefinition(f)),
+        /^\.claude\/agents\/([^/]+)\.md$/,
+        /^evals\/agents\/([^/]+)\//,
+      );
 
   const skills = skillNames.filter((n) => hasEvals("skills", n));
   const skipped = [
@@ -108,13 +137,15 @@ export function detectSuites({ changed, hasEvals = hasEvalsOnDisk, abVariants = 
   // The workflow tier measures the LIVE harness, so anything that changes it re-triggers it: any
   // AGENTS.md or CLAUDE.md at any depth (rule 1 in the header), any agent DEFINITION (rule 2), the
   // workflow cases, or the engine itself.
-  const runWorkflow = changed.some(
+  const runWorkflow =
+    all ||
+    changed.some(
     (f) =>
       /(^|\/)(AGENTS|CLAUDE)\.md$/.test(f) ||
       isAgentDefinition(f) ||
       /^evals\/workflow\//.test(f) ||
       /^evals\/src\//.test(f),
-  );
+    );
 
   return {
     skills,
@@ -132,7 +163,8 @@ function main() {
     .map((s) => s.trim())
     .filter(Boolean);
 
-  const r = detectSuites({ changed });
+  // A manual run has no diff: route every artifact that has evals instead of nothing.
+  const r = detectSuites({ changed, all: Boolean(process.env.EVAL_ROUTE_ALL) });
 
   const out = process.env.GITHUB_OUTPUT;
   const write = (k, v) => (out ? appendFileSync(out, `${k}=${v}\n`) : console.log(`${k}=${v}`));
@@ -147,6 +179,7 @@ function main() {
   // somewhere a human already looks, not only in a collapsed step log.
   const lines = [
     "── eval change detection ──",
+    process.env.EVAL_ROUTE_ALL ? "mode          : route-all (manual run, no diff)" : "mode          : diff",
     `changed files : ${changed.length}`,
     `skills → run  : ${r.skills.join(", ") || "(none)"}`,
     `agents → run  : ${r.agents.join(", ") || "(none)"}`,

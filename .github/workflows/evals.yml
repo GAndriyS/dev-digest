@@ -17,13 +17,17 @@
 # have no evals yet; each prints `SKIP <name> (no evals)` in the `detect` job's summary.
 #
 # Models (see "Resolve models" below — the one place they are set):
-#   content tier (skills) → deepseek/deepseek-chat, judged by google/gemini-2.5-flash. Goes DIRECT
-#                           to OpenRouter — no proxy — because src/runtime/dispatch.ts routes
-#                           content-only calls through the OpenAI-compatible client. Measured
-#                           2026-08-25: 4 of 5 dependency-checker cases pass on DeepSeek.
-#   tool tiers (agents,   → anthropic/claude-haiku-4.5, judged by deepseek/deepseek-chat. Served
-#   workflow)               by OpenRouter's Anthropic Skin, so the SDK talks to it directly and
-#                           NO proxy is needed on the default path.
+#   content tier (skills) → deepseek/deepseek-chat. Goes DIRECT to OpenRouter — no proxy — because
+#                           src/runtime/dispatch.ts routes content-only calls through the
+#                           OpenAI-compatible client. Measured: 4 of 5 dependency-checker cases
+#                           pass, but a DIFFERENT one failed on each of two runs (0.4-0.5 against
+#                           thresholds of 0.75-0.8) — flaky by this package's own 20-80% bound.
+#   tool tiers (agents,   → anthropic/claude-haiku-4.5. Served by OpenRouter's Anthropic Skin, so
+#   workflow)               the SDK talks to it directly and NO proxy is needed on the default path.
+#   judge, BOTH tiers     → anthropic/claude-sonnet-5, the package's documented default: a STRONGER
+#                           family than the task, to soften self-preference (evals/README.md, "Two
+#                           scorers"). It was briefly cheaper and cross-family instead, and that
+#                           broke the measurement — see the note below.
 #
 # Why the tool tiers are not on a cheap non-Anthropic model, though the engine supports it: these
 # cases carry thresholds up to 1.0, calibrated against claude-haiku-4-5. Run on Gemini 2.5 Flash
@@ -31,9 +35,17 @@
 # red for a model reason, not a harness regression, which is the fastest way to teach a team to
 # ignore a red check. A gate has to be run on the model its bar was set against.
 #
-# The cheap path is still one dispatch away: `tool_model: google/gemini-2.5-flash` brings the
-# bundled LiteLLM proxy up automatically (the steps below are conditional on the slug). Read the
-# result as indicative, not as a gate.
+# The same lesson applies to the JUDGE, and cost more to learn. Judging with deepseek-chat while
+# the task ran on Haiku kept attribution failing (often with an empty evidence string, and on
+# absence-shaped practices such as "does not invent a violation" — the shape a weak judge handles
+# worst), against a local baseline of 100% at n=5 with claude-sonnet-5. Two variables had moved at
+# once, backend and judge; the judge is now back to the documented default so the next run has one
+# variable left. Do not trade the judge down for cost: it is the instrument, not the subject.
+#
+# A manual run (workflow_dispatch) routes EVERY artifact that has evals, not just what a diff
+# touched — a model switch needs a target. `tool_model: google/gemini-2.5-flash` additionally
+# brings the bundled LiteLLM proxy up (the steps below are conditional on the slug); read a
+# cheap-model tool-tier result as indicative, not as a gate.
 #
 # Cost, MEASURED on the first full run (2026-08-25, all three tiers, 19 records): 324.5k input +
 # 15.3k output tokens, ~227s of model time — roughly $0.10-0.15 at list prices. A PR touching one
@@ -175,8 +187,13 @@ jobs:
           fi
           echo "changed files: $(wc -l < "$RUNNER_TEMP/changed.txt")"
 
+      # EVAL_ROUTE_ALL covers the case a diff cannot: a manual run has nothing to route from, so
+      # without it the model overrides below would have a knob and no target — which is the whole
+      # point of a manual run. It routes every artifact that HAS evals; the skip rules are unchanged.
       - name: Route to suites
         id: detect
+        env:
+          EVAL_ROUTE_ALL: ${{ github.event_name == 'workflow_dispatch' && '1' || '' }}
         run: CHANGED_FILES="$(cat "$RUNNER_TEMP/changed.txt")" node evals/scripts/ci-detect.mjs
 
       # The single place the model defaults live. Every downstream job reads these outputs, so
@@ -192,9 +209,9 @@ jobs:
           TOOL="${IN_TOOL:-anthropic/claude-haiku-4.5}"
           {
             echo "content_model=$CONTENT"
-            echo "content_judge=${IN_JUDGE:-google/gemini-2.5-flash}"
+            echo "content_judge=${IN_JUDGE:-anthropic/claude-sonnet-5}"
             echo "tool_model=$TOOL"
-            echo "tool_judge=${IN_JUDGE:-deepseek/deepseek-chat}"
+            echo "tool_judge=${IN_JUDGE:-anthropic/claude-sonnet-5}"
           } >> "$GITHUB_OUTPUT"
           echo "models — content: $CONTENT, tool: $TOOL" >> "$GITHUB_STEP_SUMMARY"
 

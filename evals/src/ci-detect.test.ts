@@ -150,4 +150,28 @@ describe("ci-detect", () => {
   it("still finds the declared A/B variants in the real pairs.ts", () => {
     expect(abVariantsOnDisk()).toContain("architecture-reviewer-lite");
   });
+
+  // route-all is what a manual run uses: workflow_dispatch has no diff, so without it the model
+  // override has no target. It must widen the TRIGGER without widening what is eligible.
+  describe("route-all (manual run)", () => {
+    const listArtifacts = (tier: string) =>
+      tier === "skills"
+        ? ["dependency-checker", "half-written-skill"]
+        : ["architecture-reviewer", "architecture-reviewer-lite", "doc-writer"];
+    const all = () => detectSuites({ changed: [], all: true, hasEvals, abVariants, listArtifacts });
+
+    it("routes every artifact that has evals, from an empty change set", () => {
+      expect(all().skills).toEqual(["dependency-checker"]);
+      expect(all().agents).toEqual(["architecture-reviewer"]);
+    });
+
+    it("always runs the workflow tier", () => {
+      expect(all().runWorkflow).toBe(true);
+    });
+
+    it("still excludes what the diff path excludes — no evals, and the A/B baseline", () => {
+      expect(all().skippedSkills).toEqual(["half-written-skill"]);
+      expect(all().skippedAgents).toEqual(["architecture-reviewer-lite", "doc-writer"]);
+    });
+  });
 });

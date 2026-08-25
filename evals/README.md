@@ -234,8 +234,8 @@ default and hands them to the other jobs as outputs:
 
 | Tier | Model under test | Judge | Proxy |
 |---|---|---|---|
-| content (`skills`) | `deepseek/deepseek-chat` | `google/gemini-2.5-flash` | no — goes direct |
-| tool (`agents`, `workflow`) | `anthropic/claude-haiku-4.5` | `deepseek/deepseek-chat` | no — the Anthropic Skin |
+| content (`skills`) | `deepseek/deepseek-chat` | `anthropic/claude-sonnet-5` | no — goes direct |
+| tool (`agents`, `workflow`) | `anthropic/claude-haiku-4.5` | `anthropic/claude-sonnet-5` | no — the Anthropic Skin |
 
 **Why the tool tiers are not on a cheap model, though the engine supports it.** A threshold is a
 property of the model as much as of the artifact. These cases carry thresholds up to `1.0`,
@@ -244,17 +244,28 @@ calibrated against `claude-haiku-4-5`; run on Gemini 2.5 Flash they scored 0.83 
 regression, and a check that goes red for reasons nobody can act on stops being read. **Run a gate
 on the model its bar was set against** — or lower the bar deliberately and know that the two
 numbers no longer belong to the same series. The content tier is the exception that proves it:
-DeepSeek passes 4 of 5 `dependency-checker` cases, whose thresholds sit at 0.75.
+DeepSeek passes 4 of 5 `dependency-checker` cases — but a **different** one failed on each of the
+first two CI runs (0.4–0.5 against thresholds of 0.75–0.8), which is `flaky` by this package's own
+20–80% bound rather than a clean pass.
 
-Task and judge are still different families in both tiers, which is the same self-preference
-argument as [Two scorers](#two-scorers-both-subscription-only); if a judge ever returns
-unparseable JSON, that is the first knob to move.
+**Do not trade the judge down for cost — it is the instrument, not the subject.** The judge was
+briefly set to `deepseek/deepseek-chat`: cheap, and cross-family with the task, which looked like
+the [Two scorers](#two-scorers-both-subscription-only) self-preference argument applied. It was
+not. Against a local baseline of 100% at n=5 with `claude-sonnet-5`, attribution kept failing in
+CI — frequently with an **empty evidence string**, and worst on absence-shaped practices ("does
+not invent a violation"), which are exactly what a weaker judge handles badly. Two variables had
+moved at once (backend and judge), so neither run proved anything on its own. The judge is back to
+the documented default, which leaves one variable for the next run to answer.
 
 **Overriding the model for one run.** `workflow_dispatch` takes `content_model`, `tool_model` and
 `judge_model` (OpenRouter slugs) plus `force_workflow_tier`. Nothing is exposed in a UI beyond that
-dialog. Setting `tool_model` to a non-Anthropic slug **brings the LiteLLM proxy up automatically** —
-the proxy steps are conditional on `startsWith(tool_model, 'anthropic/')`, so the default path
-starts no container at all. Read a cheap-model tool-tier run as indicative, never as a gate.
+dialog. A manual run has **no diff to route from**, so it routes *every* artifact that has evals
+rather than nothing — a model switch needs a target, and the repo's own rule (["Which change →
+which run"](#which-change--which-run)) says a model change calls for the whole suite. The skip
+rules are unchanged: no evals and A/B baselines are still skipped. Setting `tool_model` to a
+non-Anthropic slug additionally **brings the LiteLLM proxy up automatically** — the proxy steps
+are conditional on `startsWith(tool_model, 'anthropic/')`, so the default path starts no container
+at all. Read a cheap-model tool-tier run as indicative, never as a gate.
 
 **Blocking policy.** `gate` is the required check. `skills` and `agents` go red on failure but are
 deliberately *not* required yet — promote them after two consecutive triggered green runs.
