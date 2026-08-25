@@ -41,7 +41,14 @@ a package — read its own `AGENTS.md` (`server/`, `client/`, `reviewer-core/`,
 - The DB schema ships every table for every course lesson — empty tables are
   expected, not a bug.
 - Never `docker compose down -v` — it drops the `devdigest_pgdata` volume along
-  with every imported repo and review.
+  with every imported repo and review. A *deliberate* wipe is not an exception:
+  wanting a clean database is the case this rule exists for. Reset the schemas
+  instead and keep the volume —
+  `docker compose exec postgres psql -U devdigest -d devdigest -c 'DROP SCHEMA
+  public CASCADE; CREATE SCHEMA public; DROP SCHEMA IF EXISTS drizzle CASCADE;'`
+  then `cd server && pnpm db:migrate`. Drop `drizzle` too or the migration
+  ledger survives, `db:migrate` reports nothing to do, and you are left with an
+  empty database that looks migrated.
 - Agent instructions live in `AGENTS.md`; the `CLAUDE.md` next to it is a
   two-line `@AGENTS.md` import and holds no content — Claude Code reads only
   `CLAUDE.md`, so the pointer is what makes `AGENTS.md` reachable. Do not delete
