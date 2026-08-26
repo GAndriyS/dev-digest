@@ -7,9 +7,12 @@ Plan: .claude/plans/l06-evals-eval-dashboard-design-fidelity.md · Spec: specs/S
 | 2 implement | 9/9 | 89k + 79k + 89k + 90k ∥ 103k + 147k + 121k ∥ 164k ∥ 161k | wave 3 died once on a transient API error before any edit landed; resumed in place, no rework |
 | 3 find | arch: PASS 0 findings · code-review: 3 · security: empty report | 117k ∥ — ∥ 75k | `/code-review medium` — this run's code delta is 1553 lines, above the skill's ~1000-line budget threshold |
 | 3b review loop | PASS after 1 loop | 58k + 37k | all 3 findings fixed; none left standing, so no human gate was owed |
-| 4 verify | — | — | |
-| 5 docs | — | — | |
-| 6 pr | — | — | |
+| 4 verify | 27 MET · 0 PARTIAL · 0 NOT MET · Gaps: none | 91k | verdict INCOMPLETE only because step 10 (docs) had not run yet — stage 5 closed it |
+| 5 docs | `client/README.md`, `server/README.md` | 103k | no diagram — the existing route diagram omits every mutation route at the same granularity |
+| 6 pr | PASS · 0 CRITICAL · `pr-gate-ci` clean (337 files) | — | body + report in `.claude/reviews/`; **human opens the PR and flips the spec to `implemented`** |
+| 7 wrap-up | 4 insights + 1 session note | — | root ×3 (2 What Works, 1 Recurring), `client/INSIGHTS.md` ×1 |
+
+Total agent spend: ~1.13M tokens across 15 subagent runs.
 
 ## Findings this run (all fixed in commit `1886ef7`)
 
