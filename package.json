@@ -1,0 +1,7 @@
+{
+  "private": true,
+  "packageManager": "pnpm@10.34.5",
+  "scripts": {
+    "verify:l06": "node scripts/verify.mjs --slice frontend --slice backend --slice integration"
+  }
+}

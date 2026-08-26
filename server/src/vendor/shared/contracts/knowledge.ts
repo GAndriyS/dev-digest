@@ -152,6 +152,15 @@ export const EvalCase = z.object({
   input_meta: z.unknown(),
   expected_output: z.unknown(),
   notes: z.string().nullish(),
+  // Provenance, not a relation: the finding a case was minted from (L06 "Turn
+  // into eval case"). No FK — deleting the finding must not invalidate the
+  // case (onion-architecture Team decision: new FKs are ON DELETE RESTRICT,
+  // which would fight that requirement, so this stays an unenforced pointer).
+  // `.nullish()`, not just `.nullable()`: skill-owned cases (unchanged by this
+  // plan — Non-goals) never set this field, so it must stay optional on the
+  // wire, not force every existing skill eval-case payload to carry it.
+  // `null`/absent = created by hand.
+  source_finding_id: z.string().nullish(),
 });
 export type EvalCase = z.infer<typeof EvalCase>;
 

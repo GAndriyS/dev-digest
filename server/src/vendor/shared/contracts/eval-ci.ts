@@ -26,16 +26,37 @@ export const EvalCaseInput = z.object({
   input_meta: z.unknown().nullish(),
   expected_output: z.unknown(),
   notes: z.string().nullish(),
+  // Provenance pointer, not a relation — see EvalCase in knowledge.ts.
+  // `.nullish()`: skill-owned case payloads (unchanged by this plan) never
+  // set it. `null`/absent = created by hand.
+  source_finding_id: z.string().nullish(),
 });
 export type EvalCaseInput = z.infer<typeof EvalCaseInput>;
+
+/**
+ * Shared shape for a failed run/case: the provider/timeout/validation reason,
+ * never the raw error text a log would carry. Reused by `EvalRunRecord` and
+ * `EvalCaseResult` — one persisted run and one in-batch case result read the
+ * same failure.
+ */
+const EvalRunError = z.object({ code: z.string(), message: z.string() });
 
 /** A persisted eval run row (one execution of a case), returned by the API. */
 export const EvalRunRecord = z.object({
   id: z.string(),
   case_id: z.string(),
   case_name: z.string().nullish(),
+  // Groups every run started by the same `POST /agents/:id/eval-runs` call
+  // (AC-22). `null` on rows written before batches existed.
+  batch_id: z.string().nullable(),
+  // `agents.version` at the moment this run started (AC-22) — reproducibility,
+  // independent of the agent's current config. `null` on pre-batch rows.
+  agent_version: z.number().int().nullable(),
   ran_at: z.string(),
   actual_output: z.unknown(),
+  // Non-null only when this run failed (AC-25); `pass`/the three metrics stay
+  // `null` on the same row, and `actual_output` carries no `findings` then.
+  error: EvalRunError.nullable(),
   pass: z.boolean().nullable(),
   recall: z.number().nullable(),
   precision: z.number().nullable(),
@@ -52,6 +73,72 @@ export const EvalRunResult = z.object({
   result: EvalRun,
 });
 export type EvalRunResult = z.infer<typeof EvalRunResult>;
+
+/**
+ * One case's outcome inside an agent-set batch run (AC-12, AC-25) — the
+ * per-case row of `AgentEvalBatch.cases`. `pass: null` means the case errored
+ * (AC-25): `citation_accuracy`, `grounded_count` and `error` are the fields
+ * that go empty/null together on a clean success, `error` populated only on
+ * failure.
+ */
+export const EvalCaseResult = z.object({
+  case_id: z.string(),
+  case_name: z.string(),
+  run_id: z.string(),
+  pass: z.boolean().nullable(),
+  recall: z.number(),
+  precision: z.number(),
+  citation_accuracy: z.number().nullable(),
+  raw_count: z.number().int(),
+  grounded_count: z.number().int().nullable(),
+  error: EvalRunError.nullable(),
+});
+export type EvalCaseResult = z.infer<typeof EvalCaseResult>;
+
+/**
+ * One agent-set batch run, aggregated across its cases (AC-12, AC-22, AC-27,
+ * AC-30). `cases_errored` rows are excluded from `recall`/`precision`/
+ * `citation_accuracy` and from `traces_passed`/`traces_total` — see the
+ * `pass: null` rule on `EvalRunRecord`/`EvalCaseResult`.
+ */
+export const EvalBatchRecord = z.object({
+  batch_id: z.string(),
+  agent_id: z.string(),
+  agent_name: z.string(),
+  agent_version: z.number().int(),
+  ran_at: z.string(),
+  recall: z.number(),
+  precision: z.number(),
+  citation_accuracy: z.number().nullable(),
+  traces_passed: z.number().int(),
+  traces_total: z.number().int(),
+  cases_errored: z.number().int(),
+  duration_ms: z.number().int(),
+  cost_usd: z.number().nullable(),
+});
+export type EvalBatchRecord = z.infer<typeof EvalBatchRecord>;
+
+/** Response of `POST /agents/:id/eval-runs` — the batch plus every case's result. */
+export const AgentEvalBatch = EvalBatchRecord.extend({
+  cases: z.array(EvalCaseResult),
+});
+export type AgentEvalBatch = z.infer<typeof AgentEvalBatch>;
+
+/**
+ * Regression banner (AC-31) — a structure, not a rendered sentence: the copy
+ * lives in `messages/en/eval.json` (NFR i18n), the server only supplies the
+ * numbers that fill it in.
+ */
+export const EvalAlert = z.object({
+  metric: z.enum(['recall', 'precision']),
+  drop_pp: z.number(),
+  others: z.object({
+    recall: z.number(),
+    precision: z.number(),
+    citation_accuracy: z.number(),
+  }),
+});
+export type EvalAlert = z.infer<typeof EvalAlert>;
 
 /** One point on the dashboard trend (per run, chronological). */
 export const EvalTrendPoint = z.object({
@@ -84,9 +171,29 @@ export const EvalDashboard = z.object({
   }),
   trend: z.array(EvalTrendPoint),
   recent_runs: z.array(EvalRunRecord),
-  alert: z.string().nullable(),
+  // Batch-level rows (one per agent-set run) for the "recent runs" table on the
+  // agent's dashboard page (AC-30); `recent_runs` above stays per-case.
+  recent_batches: z.array(EvalBatchRecord),
+  alert: EvalAlert.nullable(),
 });
 export type EvalDashboard = z.infer<typeof EvalDashboard>;
+
+/** One agent row in the Eval Dashboard overview (AC-26, AC-27). */
+export const EvalAgentSummary = z.object({
+  agent_id: z.string(),
+  name: z.string(),
+  model: z.string(),
+  cases_total: z.number().int(),
+  last_batch: EvalBatchRecord.nullable(),
+});
+export type EvalAgentSummary = z.infer<typeof EvalAgentSummary>;
+
+/** Response of `GET /eval/overview` — every agent with a non-empty set, plus recent batches. */
+export const EvalDashboardOverview = z.object({
+  agents: z.array(EvalAgentSummary),
+  recent_batches: z.array(EvalBatchRecord),
+});
+export type EvalDashboardOverview = z.infer<typeof EvalDashboardOverview>;
 
 // ===========================================================================
 // Compose Review

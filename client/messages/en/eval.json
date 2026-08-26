@@ -9,6 +9,8 @@
     "metricTrend": "Metric trend",
     "recentRuns": "Recent runs",
     "noRuns": "No runs yet. Create an eval case and run it.",
+    "noProviderKey": "No LLM provider key is configured, so eval runs are disabled. Add a key in Settings → API Keys and try again.",
+    "delta": "{value} pt",
     "metrics": {
       "recall": "RECALL",
       "precision": "PRECISION",
@@ -25,10 +27,31 @@
       "precision": "Precision",
       "citation": "Citation",
       "pass": "Pass",
-      "cost": "Cost"
+      "cost": "Cost",
+      "errored": "{count} errored",
+      "erroredNote": "Errored cases are excluded from recall, precision and citation accuracy."
     },
     "pass": "pass",
-    "fail": "fail"
+    "fail": "fail",
+    "alert": {
+      "title": "Regression detected",
+      "body": "{metric} dropped {drop} pt since the previous run",
+      "otherUp": "{metric} rose {value} pt",
+      "otherDown": "{metric} fell {value} pt",
+      "otherFlat": "{metric} unchanged"
+    },
+    "overview": {
+      "title": "Eval Dashboard",
+      "subtitle": "Regression tracking for review agents' eval sets",
+      "agentsHeading": "Agents",
+      "recentBatchesHeading": "Recent runs",
+      "emptyAgents": "No agents have eval cases yet. Add cases from an agent's Evals tab to start tracking regressions.",
+      "columnAgent": "Agent",
+      "columnModel": "Model",
+      "columnLastRun": "Last run",
+      "columnVersion": "Version",
+      "columnPass": "Pass"
+    }
   },
   "caseEditor": {
     "newCase": "New eval case",
@@ -63,15 +86,41 @@
     "casesHeading": "Eval cases",
     "newCase": "New case",
     "loadingCases": "Loading cases…",
+    "loadError": "Could not load eval cases.",
     "emptyCases": "No eval cases yet. Create one to assert this agent's expected findings on a sample diff.",
     "neverRun": "never run",
     "passed": "passed",
     "failed": "failed",
+    "errored": "errored",
+    "erroredReason": "Failed: {reason}",
+    "erroredNote": "Excluded from recall, precision and citation accuracy.",
     "recallSuffix": " · recall {recall}%",
+    "tracesSummary": "{passed} / {total} traces passed",
+    "viewDashboard": "View in Eval Dashboard →",
+    "deleteConfirm": "Delete the eval case \"{name}\"? This cannot be undone.",
+    "noProviderKey": "No LLM provider key is configured, so eval runs are disabled. Add a key in Settings → API Keys and try again.",
     "run": "Run",
     "running": "Running…",
     "edit": "Edit",
     "delete": "Delete"
+  },
+  "findingAction": {
+    "turnIntoEvalCase": "Turn into eval case",
+    "disabledReason": "Accept or dismiss the finding first",
+    "noPatch": "No diff text for this file — can't create an eval case.",
+    "created": "Eval case created",
+    "opened": "Eval case already exists — opening it"
+  },
+  "compare": {
+    "title": "Compare runs",
+    "subtitle": "Metric deltas and prompt diff between two eval runs",
+    "button": "Compare",
+    "selectHint": "Select exactly two runs to compare",
+    "metricsHeading": "Metric deltas",
+    "costLabel": "Cost",
+    "promptDiffHeading": "System prompt diff",
+    "promptDiffUnavailable": "Prompt diff isn't available — the agent configuration snapshot for one of these runs no longer exists.",
+    "close": "Close"
   },
   "page": {
     "crumbSkillsLab": "Skills Lab",

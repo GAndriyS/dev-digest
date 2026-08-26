@@ -41,6 +41,11 @@ export interface NavGroup {
    `activeKeyFor` maps `/repos/:repoId/onboarding` to `onboarding-tour`,
    `shell.json` already carries `nav.onboarding-tour`; the NAV row (WORKSPACE,
    between Pull Requests and Project Context, `g o`) is again the only thing
+   missing. Declared in the PR body as `Vendor-update: client/src/vendor/ui/nav.ts`.
+
+   L06 (SPEC-05, Eval Pipeline) adds Eval Dashboard on the same terms:
+   `activeKeyFor` already maps `/eval` and `shell.json` already carries
+   `nav.eval`; the NAV row (SKILLS LAB, last, no g-chord) is the only thing
    missing. Declared in the PR body as `Vendor-update: client/src/vendor/ui/nav.ts`. */
 export const NAV: NavGroup[] = [
   {
@@ -57,6 +62,7 @@ export const NAV: NavGroup[] = [
       { key: "skills", label: "Skills", icon: "Sparkles", href: "/skills", gKey: "s" },
       { key: "conventions", label: "Conventions", icon: "ListChecks", href: "/repos/:repoId/conventions", gKey: "c" },
       { key: "agents", label: "Agents", icon: "Cpu", href: "/agents", gKey: "a" },
+      { key: "eval", label: "Eval Dashboard", icon: "Gauge", href: "/eval" },
     ],
   },
 ];

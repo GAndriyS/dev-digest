@@ -139,6 +139,12 @@ export const EvalCase = z.object({
   input_meta: z.unknown(),
   expected_output: z.unknown(),
   notes: z.string().nullish(),
+  // Provenance, not a relation: the finding a case was minted from (L06 "Turn
+  // into eval case"). No FK — deleting the finding must not invalidate the
+  // case. `.nullish()`, not just `.nullable()`: skill-owned cases (unchanged
+  // by this plan) never set this field, so it stays optional on the wire.
+  // `null`/absent = created by hand.
+  source_finding_id: z.string().nullish(),
 });
 export type EvalCase = z.infer<typeof EvalCase>;
 
