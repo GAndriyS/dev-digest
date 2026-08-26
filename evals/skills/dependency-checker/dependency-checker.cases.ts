@@ -58,10 +58,16 @@ export const cases: SkillCase[] = [
     // hands them to the artifact-off baseline too and costs the case most of its discriminating
     // power. What the report must contain is the skill's job to know.
     prompt: ask("Do a dependency audit of this repo."),
-    grounding: ["```mermaid", "flowchart"],
+    // MEASURED, 2026-08-26: this gate used to demand the literal `flowchart`, and it failed a
+    // report that had produced a correct, complete Mermaid graph written `graph LR` — `graph` and
+    // `flowchart` are two spellings of the SAME Mermaid diagram type, both current, and the
+    // rendered output is identical. The gate was grading a synonym choice and hard-failing the
+    // case, which skips the judge entirely. `-->` replaces it: an edge arrow proves the block is
+    // a real graph rather than an empty fence, and it is keyword-agnostic.
+    grounding: ["```mermaid", "-->"],
     practices: [
       "the report opens with a Scope section naming which packages were analysed and stating where the numbers came from (supplied in the request rather than measured by running a command)",
-      "the report contains a fenced ```mermaid code block using flowchart that graphs the packages, rather than describing the graph only in prose",
+      "the report contains a fenced ```mermaid code block that graphs the packages as nodes and edges, rather than describing the graph only in prose",
       "the report has a size/weight section built as a TABLE with one row per dependency, not a prose paragraph about sizes",
       "the report keeps a section for the INTERNAL path-alias dependencies that is separate from the tables of installed npm packages",
       "the report has a findings section that groups findings under explicit severity tiers such as P0, P1, P2 and Info, rather than one unranked list",

@@ -31,6 +31,14 @@ const fx = fixtureReader(import.meta.url);
  * match lives in `grounding` (deterministic, judge skipped if it misses), and each practice
  * carries exactly ONE claim. The measured failure mode across this package is the practice that
  * bundles two independent claims — it is as fragile as two and reports as one.
+ *
+ * ONE HONEST CAVEAT, 2026-08-26. Every `grounding` string below was verified to exist in the
+ * FIXTURE, which is necessary but not sufficient: the gate matches the agent's OUTPUT, and this
+ * package's own rule is that a grounding gate must never be a guess, because a miss fails the case
+ * hard and skips the judge. These five are the symbols a review of this diff would have to quote
+ * to say anything true — but that is a prediction until the first run lands. If any of them misses
+ * on a report that is otherwise correct, the string is wrong, not the agent: move it down into a
+ * practice rather than keeping a gate that fails good work.
  */
 
 const EXPORTS_MODULE = `routes.ts
