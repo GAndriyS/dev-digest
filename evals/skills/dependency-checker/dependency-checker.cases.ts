@@ -21,8 +21,15 @@ const fx = fixtureReader(import.meta.url);
  * back for free, flattening the measured lift to zero (README, "Low lift is usually a task-design
  * signal"). So the traps below are *derivable* from the data and stated nowhere in it:
  *
- *   chalk           in server deps · zero imports · absent from scripts and every excerpt
- *                     → the one genuinely dead dependency
+ *   figlet          in server deps · zero imports · absent from scripts and every excerpt
+ *                     → the one genuinely dead dependency.
+ *                     MEASURED, 2026-08-26: this slot used to be `chalk`, and it scored 1/6 in
+ *                     CI because the answer was RIGHT and the fixture was wrong — `chalk` is a
+ *                     transitive dependency of `pino-pretty`, which this same fixture declares,
+ *                     so the model correctly wrote "loaded indirectly by pino-pretty, keep it"
+ *                     and then correctly refused to call anything removable. A dead-dependency
+ *                     slot must name a package that NOTHING else in the fixture can plausibly
+ *                     pull in; otherwise the trap catches the fixture author, not the skill.
  *   pino-pretty     zero imports, but the logger.ts excerpt has it as `transport.target`
  *                     → NOT dead; the import scan structurally cannot see it
  *   vitest/tsc/tsx  zero imports, but each appears in a "scripts" entry     → NOT dead
@@ -72,7 +79,13 @@ export const cases: SkillCase[] = [
         "Map out how everything depends on everything else.",
     ),
     practices: [
-      "the answer explicitly distinguishes the internal cross-package edges (the @devdigest/shared and @devdigest/reviewer-core TypeScript path aliases) from external npm dependencies, and says the internal ones are not installed from a registry",
+      // Split from one two-clause practice into two single-claim ones. As a conjunction it
+      // scored 0/6: the answer reliably DID separate the alias edges from the npm packages and
+      // then did not use the words "not installed from a registry", so the whole practice went
+      // red and the half that held was invisible. A practice that bundles two independent claims
+      // is as fragile as two practices and reports as one.
+      "the answer separates the internal cross-package edges (the @devdigest/shared and @devdigest/reviewer-core TypeScript path aliases) from the external npm dependencies, rather than listing them together",
+      "the answer states that those internal edges resolve through TypeScript path aliases to files in the repo, not through an npm registry install",
       "the answer flags the relative import in mcp/src/tools/review.ts reaching into server/src/modules/reviews/repository.js as a boundary violation that bypasses the package's public entry point, and ranks it at P0",
       "the answer states that these are independent packages with their own lockfiles and does NOT describe them as a pnpm/npm workspace or as being linked by the workspace: protocol",
       "the answer notes that each package installs its own copy of a shared library, for example that typescript is installed six times, and treats that as a fact about the layout rather than a defect to fix",
@@ -87,7 +100,13 @@ export const cases: SkillCase[] = [
     prompt: ask("Check our dependencies and tell me what to fix first."),
     practices: [
       "the two majors of zod (^3.24.1 in server, client and reviewer-core against ^4.1.0 in mcp) are ranked P0, and the reason given is that mcp parses server responses with the shared Zod contracts so the split crosses the wire",
-      "esbuild being declared in server's `dependencies` rather than `devDependencies` is reported as its own finding, ranked P1, on the grounds that build tooling is then installed in every production install",
+      // Split from one three-clause practice (own finding + P1 + the reason). It scored 0/6:
+      // the answer reports esbuild reliably, but folds it into a combined "tooling in the wrong
+      // dependency block" finding, so "its own finding" failed and took the tier and the reason
+      // down with it. The tier is the load-bearing claim — SKILL.md ranks build/test tooling in
+      // `dependencies` as P1 — so it is graded on its own.
+      "esbuild being declared in server's `dependencies` rather than `devDependencies` is ranked P1",
+      "the reason given for the esbuild finding is that build tooling declared in `dependencies` is then installed in every production install",
       "puppeteer is ranked P2 rather than P0 or P1, and the ranking is justified with its measured weight (340.2 MB exclusive) against its single import site",
       "every finding names a specific package and dependency, and where one exists a file or package.json, instead of generic advice such as 'consider reviewing your dependencies'",
       "removals and version bumps are presented as proposals for the user to confirm, and the answer does not claim to have edited a package.json, run an install, or applied any fix",
@@ -103,7 +122,7 @@ export const cases: SkillCase[] = [
       "The import scan says several of our dependencies are never imported. Which of them can I actually delete?",
     ),
     practices: [
-      "chalk is identified as the strongest removal candidate, because it has no import, no config reference and no package script",
+      "figlet is identified as the strongest removal candidate, because it has no import, no config reference and no package script",
       "pino-pretty is NOT called unused: the answer points out it is named as a string in the Pino transport target at server/src/logger.ts:22, which an import scan cannot see",
       "vitest, typescript and tsx are NOT called unused: the answer points out they are invoked from package scripts rather than imported from source",
       "the answer frames the import-scan result as a candidate needing confirmation — wording such as 'no import found, confirm before removing' — rather than declaring a dependency unused outright",

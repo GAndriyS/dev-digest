@@ -113,7 +113,14 @@ list the affected packages in the evidence.
 ## Step 4 — write the report
 
 Use this skeleton verbatim, in this order. Sections with nothing to say are kept
-with one line saying so — a missing section reads as an oversight.
+with one line saying so — a missing section reads as an oversight. This applies
+to a chat answer as much as to the written file: a shorter question does not
+license a different shape, and inventing your own headings ("Critical Issues",
+"Recommendations") in place of these is the most common way this skill goes
+wrong. **The `mermaid` block is the one section prose cannot replace** —
+describing the graph in words is not producing it. Measured: on a short prompt
+the graph is the first thing dropped, and it is the section the report exists
+for.
 
 ````markdown
 # Dependency report — <date>
@@ -148,7 +155,12 @@ for installing the same library N times.
 ## Internal dependencies
 The alias edges, the import counts, any relative import crossing a package
 boundary, and the state of the duplicated `@devdigest/shared` copies. Kept
-separate from the npm tables on purpose: nothing here is installed.
+separate from the npm tables on purpose: nothing here is installed. **Say that
+in the report, not just in your head** — open the section with one sentence
+stating that these edges resolve through TypeScript path aliases to files in
+this repo and are never installed from a registry. A reader who skips the npm
+tables and lands here has to be told which kind of dependency they are looking
+at.
 
 ## Findings & Priorities
 ### P0 — <n>
@@ -181,7 +193,11 @@ nothing else.
    command they would run, and stop.
 5. **No invented data.** If the resolved version, the size or the advisory is
    unknown, write `unknown` and say what would establish it. Never fill a table
-   cell to make it look complete.
+   cell to make it look complete. **Both halves are required** — an `unknown`
+   on its own is a dead end for the reader. Write the recovery step next to it,
+   in the same sentence: `unknown — install its dependencies and re-run
+   \`node scripts/deps-report.mjs\` to measure it`. Measured: the `unknown`
+   lands reliably and the recovery step is the half that gets dropped.
 6. **One report, not a monologue.** Full report to the file, a short summary to
    chat — the top findings and the priority order, nothing more.
 

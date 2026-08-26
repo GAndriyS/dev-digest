@@ -5,7 +5,7 @@ work from it directly — there is no shell access on this machine.
 
 server/package.json
   dependencies:    fastify@5.1.0, drizzle-orm@0.36.0, zod@^3.24.1, postgres@3.4.5,
-                   esbuild@0.24.0, chalk@5.3.0
+                   esbuild@0.24.0, figlet@1.8.0
   devDependencies: vitest@^2.1.8, typescript@^5.7.2, pino-pretty@13.0.0
   scripts:         { "build": "esbuild src/index.ts --bundle --outfile=dist/server.js",
                      "test": "vitest run", "typecheck": "tsc --noEmit" }
@@ -56,7 +56,7 @@ reviewer-core/package-lock.json · e2e/package-lock.json · mcp/package-lock.jso
   server/node_modules/fastify                    6.5
   server/node_modules/postgres                   1.2
   server/node_modules/pino-pretty                0.7
-  server/node_modules/chalk                      0.1
+  server/node_modules/figlet                      0.1
   mcp/node_modules/@modelcontextprotocol/sdk     8.6
   typescript                                    23.6   per package, one copy in each of the six
 
@@ -73,7 +73,7 @@ reviewer-core/package-lock.json · e2e/package-lock.json · mcp/package-lock.jso
   evals/src          openai 1
 
   Declared packages with zero import sites in any src/ tree:
-    esbuild · chalk · pino-pretty · vitest · typescript · tsx · playwright
+    esbuild · figlet · pino-pretty · vitest · typescript · tsx · playwright
 
 ## Cross-package import lines, verbatim
 

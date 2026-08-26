@@ -67,7 +67,7 @@ export const cases: AgentCase[] = [
       // The agent's own scale is PASS | BLOCKED, never FAIL. The earlier "PASS/FAIL" wording scored 0%
       // on every diff that HAD violations (12 BLOCKED vs 4 PASS across the baseline runs) — it was
       // failing the agent for using its documented vocabulary.
-      "ends with an explicit gate verdict on the PASS / BLOCKED scale, derived from whether any critical findings exist",
+      "ends with an explicit gate verdict on the PASS / BLOCKED scale",
     ],
     // 0.83 = five of six, NOT a softened bar: a threshold of 1.0 over six independently judged
     // practices is a conjunction, so a case whose practices each hold at p passes at p^6 — 73% at
@@ -92,45 +92,61 @@ export const cases: AgentCase[] = [
     threshold: 1.0,
     maxTurns: 25,
   },
+  // ONE SESSION, TWO CASES. Split 2026-08-26 after 20 CI runs at 0% pass.
+  //
+  // The single case demanded six things of one report — find violation A, find violation B, cite
+  // A, cite B, quote verbatim, land a verdict — at threshold 0.83, i.e. five of six. Per-practice
+  // rates measured across those runs: 81% / 46% / 15% / 38% / 81% / 42%. No threshold rescues that
+  // shape; the conjunction was the bug, not the bar. Splitting by QUESTION — "did it find them"
+  // vs "did it attribute them" — gives each case a short conjunction, and it separates the two
+  // things the A/B actually wants to tell apart: detection is the dimension both variants keep,
+  // attribution is the dimension only the strict variant holds.
   {
-    name: "cites the DevDigest-specific documented contract for reviewer-core violations",
     kind: "quality",
+    name: "finds both reviewer-core violations in the pasted diff",
     prompt: REVIEWER_CORE_PROMPT,
-    // Deterministic pre-gate, checked before the judge is paid. These are the MECHANICAL half of
-    // the practices below — the identifiers the report must quote and the verdict line it must
-    // end on — so they are graded by substring rather than by a stochastic judge. Every string
-    // here was observed verbatim in real outputs across CI runs; a grounding gate must never be a
-    // guess, because a miss fails the case hard and skips the judge entirely.
+    // The identifiers a report cannot be right without, graded by substring so the judge is never
+    // paid to confirm a string match. `Verdict:` stays here for the same reason — see the note on
+    // the verdict practice below.
     grounding: ["readFileSync", "groundFindings", "Verdict:"],
     practices: [
       "flags the `import { readFileSync } from 'node:fs'` added to reviewer-core/src/pipeline/run.ts as a violation (reviewer-core must do no I/O except the injected LLMProvider)",
       "flags that runPipeline now returns `deduped` directly, skipping the mandatory `groundFindings()` gate before emitting findings",
-      // THE discriminating practice of the A/B — and it grades the citation BEHAVIOUR, not one
-      // literal identifier.
-      //
-      // MEASURED, 2026-08-25: the identifier-only wording (`core-has-no-io`, the real rule at
-      // server/.dependency-cruiser.cjs:123) sat at 25% in BOTH arms and contributed nothing. The
-      // fixture is a PASTED diff that is never applied, and the agent runs depcruise against the
-      // live repo — which is green — so the rule name appears in no gate output anywhere in the
-      // session. To emit it the agent would have to open the config unprompted, which it does
-      // about one run in six. An expectation only measures an artifact if the fixture makes the
-      // evidence reachable; this one made it a memory test with a 75% floor of noise.
-      //
-      // Naming the rule still counts — it is the strongest form of the answer, and the wording
-      // keeps it first — but so does any named contract with a locator, which is precisely the
-      // dimension the lite variant loses. Re-tightening this to a bare string is a regression:
-      // materialise the diff into a tree the gate can actually cruise first.
-      "attributes the fs-import finding to a named documented contract with a locator — the `core-has-no-io` rule in `server/.dependency-cruiser.cjs`, or the no-I/O rule stated in `reviewer-core/AGENTS.md` — rather than describing it only in prose (\"the iron rule\", \"no I/O in the core\")",
-      // No identifier exists for the grounding gate, so this grades the citation behaviour instead.
-      "attributes the skipped-gate finding to a named documented contract with a locator (the mandatory grounding gate in reviewer-core — `reviewer-core/AGENTS.md`, or the `groundFindings()` step of the pipeline) rather than describing it only in prose",
       "quotes the offending line verbatim as evidence for each finding, not a paraphrase",
-      "ends with an explicit gate verdict on the PASS / BLOCKED scale, derived from whether any critical findings exist",
     ],
-    // Same conjunction argument as the checkout case above. Note this case has scored 0 on every
-    // CI run so far, which is NOT what the threshold addresses: that is the open question about a
-    // pasted fixture never reaching a machine gate, recorded in the repo's INSIGHTS. Stabilising
-    // the bar makes that failure reproducible instead of intermittent — it does not hide it.
-    threshold: 0.83,
+    // Three practices, one tolerated miss. The middle one is the real signal: the skipped-gate
+    // violation is the harder of the two to see (46% across the old runs) and it is what this
+    // case exists to track.
+    threshold: 0.67,
+    maxTurns: 25,
+  },
+  {
+    kind: "quality",
+    name: "attributes each reviewer-core finding to a named documented contract",
+    prompt: REVIEWER_CORE_PROMPT,
+    // THE discriminating case of the A/B — the whole case is now the one dimension the lite
+    // variant drops, instead of that dimension being two of six practices whose failure was
+    // indistinguishable from a missed violation.
+    //
+    // MEASURED, 2026-08-25: an identifier-only wording (`core-has-no-io`, the real rule at
+    // server/.dependency-cruiser.cjs:123) sat at 15% in BOTH arms and discriminated nothing. The
+    // fixture is a PASTED diff that is never applied, and the agent runs depcruise against the
+    // live repo — which is green — so the rule name appears in no tool output anywhere in the
+    // session. To emit it the agent would have to open the config unprompted, which it does about
+    // one run in six. An expectation only measures an artifact if the fixture makes the evidence
+    // REACHABLE; that one made it a memory test with an 85% floor of noise.
+    //
+    // Naming the rule still counts — it is the strongest form of the answer and the wording keeps
+    // it first — but so does any named contract with a locator, which is precisely what the lite
+    // variant loses. Re-tightening this to a bare string is a regression unless the diff is first
+    // materialised into a tree the gate can actually cruise.
+    practices: [
+      "attributes the fs-import finding to a named documented contract with a locator — the `core-has-no-io` rule in `server/.dependency-cruiser.cjs`, or the no-I/O rule stated in `reviewer-core/AGENTS.md` — rather than describing it only in prose (\"the iron rule\", \"no I/O in the core\")",
+      "attributes the skipped-gate finding to a named documented contract with a locator (the mandatory grounding gate in reviewer-core — `reviewer-core/AGENTS.md`, or the `groundFindings()` step of the pipeline) rather than describing it only in prose",
+    ],
+    // Both, or the dimension is not held. Two practices is a short enough conjunction to carry
+    // 1.0 without the p^N problem that made the six-practice version unpassable.
+    threshold: 1.0,
     maxTurns: 25,
   },
   {
