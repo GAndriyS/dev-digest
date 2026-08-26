@@ -49,6 +49,16 @@ export interface EvalRecord {
   threshold?: number;
   practices: PracticeVerdict[];
   grounded?: number;
+  /** The session hit its own deadline; the trace is partial. Additive to schema 1. */
+  timed_out?: boolean;
+  /**
+   * `false` marks a run that measured NOTHING — a zero-turn timeout that survived its retry
+   * (see measuredRun in dsl/case.ts). Absent means valid: rows written before this field are
+   * all real measurements. Invalid rows are excluded from every rate aggregate() computes and
+   * surfaced as their own count instead — an infra outage must be visible, not priced into the
+   * artifact's pass rate.
+   */
+  valid?: boolean;
   num_turns: number;
   metrics: { durationMs: number; inputTokens: number; outputTokens: number; toolCallCount: number };
   trace: { tools: string[]; subagents: string[]; skills: string[]; reads: string[] };
@@ -82,7 +92,10 @@ const series = (passed: number, total: number): Series => ({ passed, total, rate
 export interface NodeAggregate {
   nodeid: string;
   label: string;
+  /** Over VALID rows only — see EvalRecord.valid. */
   pass: Series;
+  /** Rows excluded from `pass` and `metrics` because they measured nothing (valid: false). */
+  invalid: number;
   /** Per practice text → pass series across the runs. Empty for workflow (no judge). */
   practices: Record<string, Series>;
   metrics: {
@@ -105,12 +118,17 @@ export function aggregate(records: EvalRecord[]): Record<string, NodeAggregate> 
 
   const out: Record<string, NodeAggregate> = {};
   for (const [nodeid, rows] of byNode) {
-    const passed = rows.filter((r) => r.outcome).length;
+    // Invalid rows (zero-turn timeouts) are counted, never averaged: they carry no transcript,
+    // no verdict and zeroed metrics, so folding them into any rate below prices an infra outage
+    // into the artifact's score. `valid` is additive to schema 1 — absent means valid.
+    const valid = rows.filter((r) => r.valid !== false);
+    const invalid = rows.length - valid.length;
+    const passed = valid.filter((r) => r.outcome).length;
 
     // Per-practice: count only rows where that practice was actually judged.
     const pPassed = new Map<string, number>();
     const pTotal = new Map<string, number>();
-    for (const r of rows) {
+    for (const r of valid) {
       for (const pv of r.practices) {
         pTotal.set(pv.practice, (pTotal.get(pv.practice) ?? 0) + 1);
         if (pv.passed) pPassed.set(pv.practice, (pPassed.get(pv.practice) ?? 0) + 1);
@@ -122,14 +140,15 @@ export function aggregate(records: EvalRecord[]): Record<string, NodeAggregate> 
     out[nodeid] = {
       nodeid,
       label: rows[rows.length - 1].label,
-      pass: series(passed, rows.length),
+      pass: series(passed, valid.length),
+      invalid,
       practices,
       metrics: {
-        durationMs: calcStats(rows.map((r) => r.metrics?.durationMs ?? 0)),
-        inputTokens: calcStats(rows.map((r) => r.metrics?.inputTokens ?? 0)),
-        outputTokens: calcStats(rows.map((r) => r.metrics?.outputTokens ?? 0)),
-        numTurns: calcStats(rows.map((r) => r.num_turns ?? 0)),
-        toolCallCount: calcStats(rows.map((r) => r.metrics?.toolCallCount ?? 0)),
+        durationMs: calcStats(valid.map((r) => r.metrics?.durationMs ?? 0)),
+        inputTokens: calcStats(valid.map((r) => r.metrics?.inputTokens ?? 0)),
+        outputTokens: calcStats(valid.map((r) => r.metrics?.outputTokens ?? 0)),
+        numTurns: calcStats(valid.map((r) => r.num_turns ?? 0)),
+        toolCallCount: calcStats(valid.map((r) => r.metrics?.toolCallCount ?? 0)),
       },
     };
   }

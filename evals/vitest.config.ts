@@ -12,8 +12,12 @@ export default defineConfig({
     // ceilings come from config.ts — see its "Time budget" block.
     testTimeout: TEST_TIMEOUT_MS,
     hookTimeout: TEST_TIMEOUT_MS,
-    // One session per test; a few files can run concurrently. Keep it modest to stay cheap.
-    fileParallelism: true,
+    // One live session at a time. Concurrent files ran strict+lite sessions in parallel on the
+    // same subscription, and the sessions queued behind each other into the 180s deadline: in one
+    // n=5 repeat, 14 of 40 sessions died at zero turns, in whole bands (measured 2026-08-26).
+    // Serial is slower on wall-clock and buys back the sample; the model-free unit tests in src/
+    // pay only milliseconds for it.
+    fileParallelism: false,
     reporters: ["default", new TrendReporter()],
   },
 });

@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, expect } from "vitest";
 import { DEFAULT_THRESHOLD, RETRIES } from "../config.js";
+import type { Workspace } from "../artifacts/worktree.js";
 import { skillTask, agentTask, workflowTask } from "../tasks.js";
 import { runClaude, failedResult, type Result, type RunOptions } from "../runtime/run-claude.js";
 import { patternMatch } from "../scoring/pattern-match.js";
@@ -31,6 +32,12 @@ export interface QualityCase {
   /** Judge score gate (default 0.6). */
   threshold?: number;
   maxTurns?: number;
+  /**
+   * Build a per-run workspace (e.g. a materialized fixture worktree) and run the session with
+   * `cwd` inside it. Called once per test attempt; `cleanup()` runs in a `finally` after the
+   * session, before the judge — the judge grades text and never touches the tree.
+   */
+  setup?: () => Workspace;
 }
 export type SkillCase = QualityCase;
 export type AgentCase = QualityCase;
@@ -124,13 +131,67 @@ async function runOrRecordFailure(label: string, threshold: number | undefined, 
   }
 }
 
+/**
+ * A session that hit its deadline WITHOUT making a single turn measured nothing — it never read
+ * a file, never produced text; it queued behind a busy subscription and was aborted. Counting it
+ * as a failure charges the artifact for the infrastructure: in one n=5 repeat, 14 of 40 sessions
+ * died this way and a case whose live runs went 2/2 printed as 2/5 40% (measured 2026-08-26).
+ *
+ * A session that timed out mid-work (turns > 0) is NOT invalid — it had its chance and its
+ * partial output is graded like any other.
+ */
+const zeroTurnTimeout = (r: Result): boolean => Boolean(r.timedOut) && r.numTurns === 0;
+
+/**
+ * Run a case's session so infra failures don't masquerade as artifact failures: a zero-turn
+ * timeout gets ONE fresh retry; a second zero-turn timeout records a row with `valid: false`
+ * (excluded from every rate the stats layer computes — see aggregate()) and returns null. The
+ * caller then fails the test with an explicit "invalid run" message rather than asserting on an
+ * empty transcript — red, not silently green, because missing is not passing.
+ *
+ * The invalid row is recorded HERE, exactly once; a null return means the caller must not
+ * record again. Thrown runs keep runOrRecordFailure's semantics (recorded as failures) — an SDK
+ * throw carries an error worth seeing, a zero-turn abort carries nothing.
+ */
+async function measuredRun(
+  label: string,
+  threshold: number | undefined,
+  run: () => Promise<Result>,
+): Promise<Result | null> {
+  let result = await runOrRecordFailure(label, threshold, run);
+  let retried = false;
+  if (zeroTurnTimeout(result)) {
+    retried = true;
+    result = await runOrRecordFailure(label, threshold, run);
+  }
+  if (zeroTurnTimeout(result)) {
+    record(label, { result, threshold, outcome: false, extra: { valid: false, retried } });
+    return null;
+  }
+  if (retried) logTrace(`${label} (retry after zero-turn timeout)`, result);
+  return result;
+}
+
+const INVALID_MSG =
+  "invalid run: the session hit its deadline with zero turns, twice — an infra/throttling " +
+  "failure, not a graded one. Recorded with valid:false and excluded from rates.";
+
 function runQualityCases(artifact: string, cases: QualityCase[], task: Task): void {
   for (const c of cases) {
     test(c.name, async () => {
       const threshold = c.threshold ?? DEFAULT_THRESHOLD;
-      const result = await runOrRecordFailure(c.name, threshold, () =>
-        task(c.prompt, artifact, { maxTurns: c.maxTurns }),
-      );
+      // The workspace lives exactly as long as the session: built before it, torn down in the
+      // finally — a leaked worktree stays registered in the main repo's .git until pruned.
+      const ws = c.setup?.();
+      let result: Result | null;
+      try {
+        result = await measuredRun(c.name, threshold, () =>
+          task(c.prompt, artifact, { maxTurns: c.maxTurns, ...(ws ? { cwd: ws.cwd } : {}) }),
+        );
+      } finally {
+        ws?.cleanup();
+      }
+      if (result === null) throw new Error(INVALID_MSG);
       logTrace(c.name, result);
 
       // measure → record → assert. Everything measurable runs in the try; record() fires in the
@@ -168,12 +229,13 @@ export function runWorkflowCases(cases: WorkflowCase[]): void {
       if (c.kind === "dispatch") {
         // Stop the moment the subagent is launched — no need to wait out its nested session.
         const expect1 = c.expectSubagent;
-        const result = await runOrRecordFailure(c.name, undefined, () =>
+        const result = await measuredRun(c.name, undefined, () =>
           workflowTask(c.prompt, {
             maxTurns: c.maxTurns,
             stopWhen: (p) => p.subagents.includes(expect1),
           }),
         );
+        if (result === null) throw new Error(INVALID_MSG);
         logTrace(c.name, result);
         // The recorded outcome is the ASSERTION's verdict, computed here rather than inferred from
         // the run's exit state — see RecordData.outcome for what inferring it cost.
@@ -191,13 +253,14 @@ export function runWorkflowCases(cases: WorkflowCase[]): void {
         // synthetic pgvector finding into the repo's own server/INSIGHTS.md (measured
         // 2026-08-25). The deny-list stops the main session; it does not stop a dispatched
         // subagent, which is why a forbidden dispatch ends the session here too.
-        const result = await runOrRecordFailure(c.name, undefined, () =>
+        const result = await measuredRun(c.name, undefined, () =>
           workflowTask(c.prompt, {
             maxTurns: c.maxTurns,
             stopWhen: (p) =>
               engagedIn(p, c.skill) || (c.forbidSubagents === true && p.subagents.length > 0),
           }),
         );
+        if (result === null) throw new Error(INVALID_MSG);
         logTrace(c.name, result);
         // Deliberately NOT gated on `isError`: an activation case asserts what the session did or
         // did not engage, and a run that exceeded its turn budget can still have answered that
@@ -228,7 +291,7 @@ export function runWorkflowCases(cases: WorkflowCase[]): void {
         // case that asserts on that text must therefore run to completion, or it fails on an
         // answer the session never got to write. Tool-only cases keep the saving.
         const wantsText = (c.expectMentions?.length ?? 0) > 0;
-        const result = await runOrRecordFailure(c.name, undefined, () =>
+        const result = await measuredRun(c.name, undefined, () =>
           workflowTask(c.prompt, {
             maxTurns: c.maxTurns,
             stopWhen: wantsText
@@ -239,6 +302,7 @@ export function runWorkflowCases(cases: WorkflowCase[]): void {
                   files.every((f) => p.filesRead.some((r) => r.includes(f))),
           }),
         );
+        if (result === null) throw new Error(INVALID_MSG);
         logTrace(c.name, result);
         let grounded: number | undefined;
         // Every facet evaluated up front, so the recorded outcome is the same conjunction the
@@ -281,25 +345,35 @@ export function runWorkflowCases(cases: WorkflowCase[]): void {
       } else {
         // contrast: treatment (real harness) vs control (empty tmpdir, no on-disk config).
         const tools = c.tools ?? ["Read", "Grep", "Glob"];
-        const treatment = await runOrRecordFailure(`${c.name} [treatment]`, undefined, () =>
+        const treatment = await measuredRun(`${c.name} [treatment]`, undefined, () =>
           workflowTask(c.prompt, { allowedTools: tools, maxTurns: c.maxTurns }),
         );
+        if (treatment === null) throw new Error(INVALID_MSG);
         const emptyCwd = mkdtempSync(join(tmpdir(), "eval-control-"));
-        let control: Result;
-        try {
-          control = await runClaude(c.prompt, {
+        const runControl = () =>
+          runClaude(c.prompt, {
             allowedTools: tools,
             maxTurns: c.maxTurns,
             cwd: emptyCwd,
             settingSources: [],
           });
+        let control: Result;
+        try {
+          control = await runControl();
+          // Same zero-turn rule as measuredRun, written out because a contrast case is only
+          // readable as a PAIR: an invalid control still records its treatment row next to it.
+          if (zeroTurnTimeout(control)) control = await runControl();
         } catch (err) {
-          // Written out rather than routed through the helper: the treatment half already
-          // succeeded, and a contrast case is only readable as a PAIR. Recording the control
-          // failure alone would leave a treatment row with nothing to contrast against.
+          // The treatment half already succeeded; recording the control failure alone would
+          // leave a treatment row with nothing to contrast against.
           record(`${c.name} [treatment]`, { result: treatment });
           record(`${c.name} [control]`, { result: failedResult(err) });
           throw err;
+        }
+        if (zeroTurnTimeout(control)) {
+          record(`${c.name} [treatment]`, { result: treatment });
+          record(`${c.name} [control]`, { result: control, outcome: false, extra: { valid: false, retried: true } });
+          throw new Error(INVALID_MSG);
         }
         logTrace(`${c.name} [treatment]`, treatment);
         logTrace(`${c.name} [control]`, control);

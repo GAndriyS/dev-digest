@@ -4,9 +4,26 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { calcStats, computeFlags } from "./stats.js";
+import { aggregate, calcStats, computeFlags, type EvalRecord } from "./stats.js";
 
 const series = (passed: number, total: number) => ({ passed, total, rate: total ? passed / total : 0 });
+
+const row = (over: Partial<EvalRecord>): EvalRecord => ({
+  schema: 1,
+  run_id: "t",
+  git_sha: "0000000",
+  dirty: false,
+  config: "candidate",
+  nodeid: "f.eval.ts > agent:x > case",
+  label: "case",
+  outcome: false,
+  practices: [],
+  num_turns: 10,
+  metrics: { durationMs: 1000, inputTokens: 10, outputTokens: 100, toolCallCount: 3 },
+  trace: { tools: [], subagents: [], skills: [], reads: [] },
+  output_file: "outputs/t/case.md",
+  ...over,
+});
 
 describe("calcStats", () => {
   test("mean / min / max / sample stddev of a known array", () => {
@@ -22,6 +39,43 @@ describe("calcStats", () => {
   test("empty → zeros with n=0; singleton → stddev 0", () => {
     expect(calcStats([])).toEqual({ mean: 0, stddev: 0, min: 0, max: 0, n: 0 });
     expect(calcStats([42])).toEqual({ mean: 42, stddev: 0, min: 42, max: 42, n: 1 });
+  });
+});
+
+describe("aggregate: invalid rows", () => {
+  test("valid:false rows are excluded from rates and metrics, counted in `invalid`", () => {
+    const rows = [
+      row({ outcome: true, practices: [{ practice: "p", passed: true, evidence: "e" }] }),
+      row({ outcome: true, practices: [{ practice: "p", passed: true, evidence: "e" }] }),
+      // A zero-turn timeout: zeroed metrics that would drag every mean toward 0 if averaged in.
+      row({
+        outcome: false,
+        valid: false,
+        timed_out: true,
+        num_turns: 0,
+        metrics: { durationMs: 180000, inputTokens: 0, outputTokens: 0, toolCallCount: 0 },
+      }),
+    ];
+    const agg = aggregate(rows)[rows[0].nodeid];
+    expect(agg.pass).toEqual(series(2, 2)); // 2/2, not 2/3
+    expect(agg.invalid).toBe(1);
+    expect(agg.practices["p"]).toEqual(series(2, 2));
+    expect(agg.metrics.outputTokens.mean).toBe(100); // the invalid row's 0 is not averaged in
+    expect(agg.metrics.numTurns.n).toBe(2);
+  });
+
+  test("rows without a `valid` field (pre-field schema) count as valid", () => {
+    const rows = [row({ outcome: true }), row({ outcome: false })];
+    const agg = aggregate(rows)[rows[0].nodeid];
+    expect(agg.pass).toEqual(series(1, 2));
+    expect(agg.invalid).toBe(0);
+  });
+
+  test("all rows invalid → n=0 with the invalid count carrying the story", () => {
+    const rows = [row({ valid: false }), row({ valid: false })];
+    const agg = aggregate(rows)[rows[0].nodeid];
+    expect(agg.pass).toEqual(series(0, 0));
+    expect(agg.invalid).toBe(2);
   });
 });
 

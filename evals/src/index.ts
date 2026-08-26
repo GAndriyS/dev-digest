@@ -25,4 +25,5 @@ export { llmJudge, type Verdict } from "./scoring/llm-judge.js";
 export { logTrace, logVerdict } from "./logging/log.js";
 export { skillContent, agentContent } from "./artifacts/load.js";
 export { fixtureReader } from "./artifacts/fixture.js";
+export { materializedWorktree, type Workspace } from "./artifacts/worktree.js";
 export * from "./artifacts/paths.js";
