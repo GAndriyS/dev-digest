@@ -11,6 +11,17 @@ const fx = fixtureReader(import.meta.url);
  * workaround: the skill defines a **Supplied mode** for exactly this situation, and one of the
  * cases below measures whether the skill honours it instead of stalling for tool access.
  *
+ * THE FIXTURE ALSO STATES THERE IS NOWHERE TO WRITE A FILE, and that line is load-bearing.
+ * MEASURED, 2026-08-26: without it, roughly one run in three answered with the SHORT CHAT
+ * SUMMARY only — "I've completed a full dependency audit", then the top findings — because
+ * SKILL.md's own rule 6 says "full report to the file, a short summary to chat", and `skillTask`
+ * grants no tools, so the file half simply evaporated. Those runs were graded against the full
+ * report's structure and scored 0 on a Mermaid gate while the content itself was right (correct
+ * P0 with the wire-crossing reason, correct P2 with the prod-placement caveat). This is the same
+ * class of bug as the `chalk` fixture and the `node:fs` gate: the eval punished correct work.
+ * It also explains the 17% historical pass rate of the skeleton case better than any theory
+ * about the model refusing to draw diagrams.
+ *
  * The fixture is a synthetic six-package repo, deliberately NOT this one — same layout rules
  * (six manifests, six lockfiles, two package managers, path-alias edges) but different libraries,
  * so a passing score reflects the skill's method rather than a memorised report of DevDigest.

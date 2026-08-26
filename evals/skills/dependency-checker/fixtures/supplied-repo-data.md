@@ -1,6 +1,9 @@
 Here is the dependency data, already collected. Treat it as the complete fact base and
 work from it directly — there is no shell access on this machine.
 
+There is also nowhere to write a file: reply with the report itself. Anything you would
+normally save under docs/ has to come back in your answer, in full.
+
 ## Manifests
 
 server/package.json
