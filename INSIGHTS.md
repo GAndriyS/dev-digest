@@ -146,6 +146,18 @@ live in `<package>/INSIGHTS.md`. Maintained by the `engineering-insights` skill.
   at ≤2/5 as broken, 4–5/5 as healthy. Reserve "zero reds" for the deterministic
   lanes, where it means something.
 
+- **2026-08-26** — **A behaviour requirement that works in an agent does not
+  transplant into a skill by writing the same sentence.** The
+  `architecture-reviewer` A/B measured what "cite the documented rule per
+  finding" is worth: 100% attribution with it, 20% without, violations still
+  found either way. Adding the same requirement to `onion-architecture`'s
+  SKILL.md — an explicit section listing the six rule ids and why naming them
+  matters — moved its attribution practice to **1/7**, and 0/5 at n=5. The
+  difference is structural, not rhetorical: the agent has a mandated report
+  format with a place for the citation, and a skill injected as a system prompt
+  produces free-form prose where a request for citations has nothing to attach
+  to. If a skill needs a field, give it an output shape, not a sentence.
+
 - **2026-08-26** — **Before concluding "the artifact is weak", read the run's
   actual output.** Four consecutive red results on `dependency-checker` were all
   defects in the measurement, and each looked exactly like an artifact failure

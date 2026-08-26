@@ -110,6 +110,17 @@ export const cases: SkillCase[] = [
       "flags that the summarizer reads skill bodies from disk with node:fs inside reviewer-core, when the core's only permitted side effect is the injected LLMProvider",
       "flags the direct fetch() call to the GitHub REST API as a second violation of the same no-I/O rule, not only the filesystem read",
       "flags that the file imports loadConfig from server/src/platform/config.js, which points reviewer-core inward at the server package",
+      // MEASURED 0/5 at n=5, and 1/7 across every run after SKILL.md gained an explicit "name the
+      // rule when you report a violation" section (2026-08-26). That edit was made on the
+      // strength of the sibling architecture-reviewer A/B, where the same requirement holds
+      // attribution at 100% and its removal drops it to 20% — so the transplant failing is the
+      // finding: an AGENT cites because its mandated report format has a place for the citation,
+      // a SKILL injected as a system prompt writes free-form prose and a sentence asking for
+      // citations does not survive into it. Kept as this case's tolerated miss: it is the only
+      // instrument that will notice if a future revision closes the gap, and it costs nothing to
+      // carry. Do NOT "fix" it by re-wording the SKILL.md sentence — that has been tried; the
+      // lead worth following is giving the skill an output shape with a rule field, the way the
+      // agent has one.
       "names `core-has-no-io` or `core-does-not-import-server` — the repo's documented dependency-cruiser rules for these two problems — rather than describing them only as 'the core must stay pure'",
     ],
     // Same shape and the same reasoning as above. Measured expectation going in: the fetch() call
