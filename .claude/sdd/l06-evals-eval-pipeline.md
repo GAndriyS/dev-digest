@@ -11,6 +11,10 @@ Plan: .claude/plans/l06-evals-eval-pipeline.md · Spec: specs/SPEC-05-eval-pipel
 | 2 wave 6 | 1/1 | 232k | eval.it.test.ts 12 tests; DELETE /eval-cases/:id { ok } fix; integration 130/130 |
 | 3 find | arch: PASS 0 CRIT 1 WARN · cr: 8 CONFIRMED · sec: 1 MEDIUM | arch 158k · 8 finders ~797k + 8 verifiers ~474k · sec 181k | cr findings: PUT strips agent expected_output (skills schema), fake alert/delta/trend nulls, top-20 last_batch window, aggregate drift, greedy matching, 23505 race, >= boundary; sec: LiteLLM proxy 0.0.0.0 |
 | 3b review loop | fix pass 10/10 (loop 1) | 332k | commit 076315c; interrupted once by machine sleep, resumed; all lanes green (frontend 491, integration 135, mcp 67); scoped re-review in flight |
+| 3b re-review | PASS · prior WARN cleared · 1 new WARN fixed by main session | 79k | Postgres 23505 introspection moved out of the service into the repository (`DuplicateEvalCaseError`), commit f7e73bf |
+| 4 verify | INCOMPLETE → closed | 230k | 62 MET · 1 PARTIAL (AC-7: `VALID_TABS` never learned "evals" — found by the verifier AND by clicking, fixed in 6c062d5) · 1 NOT MET (step 16 docs, ran after) · 1 UNVERIFIABLE (300ms NFR, structural by plan) |
+| 5 docs | AGENTS.md · server/README.md · client/README.md | 97k | check-specs green; root convention amended so "install at root does nothing" stops contradicting the new scripts-only package.json |
+| — browser pass | manual click-through, 2 defects found and fixed | — | (a) `?tab=evals` fell back to Config (6c062d5); (b) one click stacked two error toasts on the 422 path (a315e78). Verified live: AC-2/5/6/8/10/11/14/17/18/26/27/29/32/33/34 + E8/E11 |
 | 2 wave 2 | 2/2 lanes 1/1 | 118k + 140k | W2-A: EvalRepository, owner_kind filter in repo, batch limit via group-then-fetch (no N+1), aggregation left to dashboard.ts. W2-B deviation (accepted): additive `apiFetchWithStatus` in client/src/lib/api.ts — 201/200 discriminant needs status, fetch-gate forbids bare fetch; apiFetch unchanged, 442/442 green. Hook→route seam table recorded in W2-B report (wave 3/4 delegations carry it) |
 
 ## Execution brief — l06-evals-eval-pipeline
