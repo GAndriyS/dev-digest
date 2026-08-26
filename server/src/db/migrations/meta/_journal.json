@@ -134,6 +134,13 @@
       "when": 1787727678385,
       "tag": "0018_bizarre_mercury",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1787785440654,
+      "tag": "0019_youthful_giant_man",
+      "breakpoints": true
     }
   ]
 }

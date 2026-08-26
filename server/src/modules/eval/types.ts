@@ -31,8 +31,17 @@ export interface InsertEvalCase {
   /** Provenance pointer (no FK — see `db/schema/eval.ts`); `null`/absent for
    *  hand-authored cases. */
   sourceFindingId?: string | null;
+  /** Server-assigned at creation (AC-3/AC-4/AC-54); `null`/absent for
+   *  `owner_kind: 'skill'`. Not settable on update — see `UpdateEvalCase`. */
+  expectationKind?: 'must_find' | 'must_not_flag' | null;
 }
 
+/**
+ * Deliberately has no `expectationKind` — AC-55's immutability is structural,
+ * enforced by this type rather than by a runtime check: nothing that only
+ * has an `UpdateEvalCase` in hand can construct a call that changes the
+ * stored kind.
+ */
 export interface UpdateEvalCase {
   name?: string;
   inputDiff?: string;
@@ -42,10 +51,15 @@ export interface UpdateEvalCase {
   notes?: string | null;
 }
 
-/** One `eval_runs` row to persist, written a batch at a time (AC-22, AC-25). */
+/**
+ * One `eval_runs` row to persist, written a batch at a time (AC-22, AC-25).
+ * `batchId` is `string | null` — widened ahead of the per-case run route
+ * (AC-63/AC-71), which persists a run with `batchId: null` so it never joins
+ * a batch aggregate; that route is a later step in this plan, not this one.
+ */
 export interface InsertEvalRun {
   caseId: string;
-  batchId: string;
+  batchId: string | null;
   agentVersion: number;
   actualOutput: unknown;
   /** `null` = this case's run errored (AC-25) — `recall`/`precision`/

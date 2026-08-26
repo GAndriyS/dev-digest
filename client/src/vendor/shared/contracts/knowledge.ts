@@ -129,6 +129,9 @@ export type EvalRun = z.infer<typeof EvalRun>;
 export const EvalOwnerKind = z.enum(['skill', 'agent']);
 export type EvalOwnerKind = z.infer<typeof EvalOwnerKind>;
 
+export const ExpectationKind = z.enum(['must_find', 'must_not_flag']);
+export type ExpectationKind = z.infer<typeof ExpectationKind>;
+
 export const EvalCase = z.object({
   id: z.string(),
   owner_kind: EvalOwnerKind,
@@ -145,6 +148,12 @@ export const EvalCase = z.object({
   // by this plan) never set this field, so it stays optional on the wire.
   // `null`/absent = created by hand.
   source_finding_id: z.string().nullish(),
+  // Server-assigned once at creation, immutable afterwards (AC-55): accepted
+  // finding -> `must_find`, dismissed finding -> `must_not_flag`, hand-made
+  // case -> derived once from `expected_output` (AC-54). Absent/`null` for
+  // `owner_kind: "skill"`. `.nullish()`, matching `source_finding_id` above —
+  // never client-settable, a sent value is ignored (AC-53).
+  expectation_kind: ExpectationKind.nullish(),
 });
 export type EvalCase = z.infer<typeof EvalCase>;
 

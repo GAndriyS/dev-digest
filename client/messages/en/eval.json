@@ -70,6 +70,9 @@
   },
   "caseEditor": {
     "newCase": "New eval case",
+    "subtitleAccepted": "Seeded from an accepted finding · assert the expected output",
+    "subtitleDismissed": "Seeded from a dismissed finding · assert the expected output",
+    "subtitleManual": "Created by hand · assert the expected output",
     "caseTitle": "Eval case · {name}",
     "runCase": "Run case",
     "running": "Running…",
@@ -93,13 +96,29 @@
     "invalidJson": "invalid JSON",
     "lastRunPassed": "Last run passed",
     "lastRunFailed": "Last run failed",
-    "resultSummary": "recall {recall}% · precision {precision}% · citation {citation}% · {duration}s"
+    "resultSummary": "recall {recall}% · precision {precision}% · citation {citation}% · {duration}s",
+    "banner": {
+      "positiveTitle": "POSITIVE CASE",
+      "negativeTitle": "NEGATIVE CASE",
+      "mustFind": "MUST find \"{title}\" at {file}:{line}",
+      "mustNotFlag": "MUST NOT flag"
+    },
+    "actualOutput": "Actual output",
+    "neverRun": "Never run yet",
+    "runOnSave": "Run on save",
+    "runFailed": "Run failed: {reason}",
+    "runNeedsSave": "Save the case before running it"
   },
   "evalsTab": {
     "metricsTitle": "Eval metrics",
     "metricsSubtitle": "Recall / Precision / Citation for this agent's eval cases",
     "casesHeading": "Eval cases",
     "newCase": "New case",
+    "kind": {
+      "mustFind": "must_find",
+      "mustNotFlag": "must_not_flag"
+    },
+    "kindMismatch": "Stored as {kind}, but expected output has {count, plural, one {# finding} other {# findings}}",
     "loadingCases": "Loading cases…",
     "loadError": "Could not load eval cases.",
     "emptyCases": "No eval cases yet. Create one to assert this agent's expected findings on a sample diff.",

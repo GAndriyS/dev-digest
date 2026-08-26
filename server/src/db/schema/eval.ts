@@ -10,6 +10,7 @@ import {
   doublePrecision,
   index,
   uniqueIndex,
+  check,
 } from 'drizzle-orm/pg-core';
 import { workspaces } from './core';
 import { pullRequests } from './pulls';
@@ -36,6 +37,14 @@ export const evalCases = pgTable(
     // block deleting a finding after its eval case was created; the case must
     // stay valid once the finding it was born from is gone.
     sourceFindingId: uuid('source_finding_id'),
+    // Server-assigned at creation, immutable afterwards (AC-55): set from the
+    // finding's decision for a seeded agent case, derived once from
+    // `expected_output` for a hand-made one (AC-3/AC-4/AC-54). NULL for every
+    // `owner_kind: 'skill'` row — three-valued logic lets the CHECK below pass
+    // a NULL through untouched (postgresql-table-design).
+    expectationKind: text('expectation_kind', {
+      enum: ['must_find', 'must_not_flag'],
+    }),
   },
   (t) => ({
     // Partial: "Turn into eval case" is idempotent per (owner, finding) only
@@ -44,6 +53,10 @@ export const evalCases = pgTable(
     sourceFindingUq: uniqueIndex('eval_cases_owner_source_finding_uq')
       .on(t.ownerId, t.sourceFindingId)
       .where(sql`${t.sourceFindingId} IS NOT NULL`),
+    expectationKindCk: check(
+      'eval_cases_expectation_kind_ck',
+      sql`${t.expectationKind} IS NULL OR ${t.expectationKind} IN ('must_find', 'must_not_flag')`,
+    ),
   }),
 );
 
