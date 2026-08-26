@@ -98,9 +98,14 @@ export const cases: SkillCase[] = [
     name: "core purity: both I/O violations and the inward import are caught",
     kind: "quality",
     prompt: CORE_PROMPT,
-    // `node:fs` and `fetch` are the two side effects; `loadConfig` is the inward import. All three
-    // appear verbatim in the fixture, so a review that engages with it at all quotes them.
-    grounding: ["node:fs", "loadConfig"],
+    // MEASURED, first run 2026-08-26 — and the caveat above called it. `node:fs` was in this gate
+    // and cost a run: the report found the filesystem violation and described it correctly
+    // ("Filesystem", "readFile", "disk") without ever typing the import specifier, so the case
+    // hard-failed at grounded=0.5 and the judge never ran on work that would have passed. Applied
+    // the rule this file states: the string was wrong, not the agent. `loadConfig` stays — it is
+    // an identifier the report has to name to describe the import at all, and it held 2/2. The fs
+    // violation is graded by its practice below, where a paraphrase is allowed to be right.
+    grounding: ["loadConfig"],
     practices: [
       "flags that the summarizer reads skill bodies from disk with node:fs inside reviewer-core, when the core's only permitted side effect is the injected LLMProvider",
       "flags the direct fetch() call to the GitHub REST API as a second violation of the same no-I/O rule, not only the filesystem read",
