@@ -16,6 +16,11 @@
       "precision": "PRECISION",
       "citationAccuracy": "CITATION ACCURACY"
     },
+    "metricsShort": {
+      "recall": "RECALL",
+      "precision": "PREC",
+      "citation": "CITE"
+    },
     "legend": {
       "recall": "Recall",
       "precision": "Precision",
@@ -42,16 +47,26 @@
     },
     "overview": {
       "title": "Eval Dashboard",
-      "subtitle": "Regression tracking for review agents' eval sets",
-      "agentsHeading": "Agents",
-      "recentBatchesHeading": "Recent runs",
+      "subtitle": "Regression harness across all reviewer agents · pick an agent to see its runs",
+      "agentsHeading": "AGENTS",
+      "recentBatchesHeading": "RECENT EVAL RUNS · ALL AGENTS",
       "emptyAgents": "No agents have eval cases yet. Add cases from an agent's Evals tab to start tracking regressions.",
       "columnAgent": "Agent",
       "columnModel": "Model",
       "columnLastRun": "Last run",
       "columnVersion": "Version",
-      "columnPass": "Pass"
+      "columnPass": "Pass",
+      "lastRun": "Last run v{version} · {timestamp} · {passed}/{total} pass"
     }
+  },
+  "runAllAgents": {
+    "button": "Run all agents",
+    "disabledReason": "No agent has eval cases yet",
+    "dialogTitle": "Run all agents?",
+    "dialogBody": "This runs the eval set for {agents, plural, one {# agent} other {# agents}} — {cases, plural, one {# eval case} other {# eval cases}} total.",
+    "confirm": "Confirm",
+    "cancel": "Cancel",
+    "failure": "{name} — {reason}"
   },
   "caseEditor": {
     "newCase": "New eval case",

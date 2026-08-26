@@ -38,6 +38,10 @@ function makeAgent(overrides: Partial<EvalAgentSummary> = {}): EvalAgentSummary 
     model: "gpt-4.1",
     cases_total: 5,
     last_batch: null,
+    // Placeholder — step 5 (W2-A) is the server side that fills this for
+    // real; step 6/8 (W2-B/W3-A) tests override it per-case. See the plan's
+    // Contract & migration impact for what `[]` vs a non-empty series means.
+    trend: [],
     ...overrides,
   };
 }

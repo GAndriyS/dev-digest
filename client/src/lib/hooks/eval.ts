@@ -24,6 +24,7 @@
    from a component-local folder. */
 "use client";
 
+import { useCallback, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, apiFetchWithStatus, ApiError } from "../api";
 import type {
@@ -159,6 +160,129 @@ export function useRunAgentEvalBatch() {
       qc.invalidateQueries({ queryKey: ["eval-overview"] });
     },
   });
+}
+
+// ---- Run all agents' eval sets (client-side fan-out, "Run all agents") ----
+
+/** One agent as the fan-out needs to see it — just enough to attempt a run
+    and to label its outcome; callers pass `EvalAgentSummary` rows straight
+    through (both fields already sit on that shape). */
+export interface RunAllAgentInput {
+  agent_id: string;
+  name: string;
+}
+
+/** Per-agent result of one `run()` call. `status: "ok"` always carries a
+    `batch` and never `code`/`message`; `status: "error"` never carries a
+    `batch`. `code` is the server's own error code —
+    `NO_PROVIDER_KEY_CODE` (AC-52), `empty_eval_set`, or anything else
+    `POST /agents/:id/eval-runs` answers with. Plan: Contract & migration
+    impact, "Lane-internal contract". */
+export type RunAllOutcome =
+  | { agent_id: string; name: string; status: "ok"; batch: AgentEvalBatch }
+  | { agent_id: string; name: string; status: "error"; code: string; message: string };
+
+export interface UseRunAllAgentEvalBatchesResult {
+  /** Runs the given agents' sets **sequentially**, one
+      `POST /agents/:id/eval-runs` each — reusing the same endpoint
+      `useRunAgentEvalBatch` calls above. Never stops early: a 409/422/5xx
+      on one agent is captured as that agent's outcome and the loop moves to
+      the next agent (AC-51), including the case where every agent so far
+      failed with 409 `no_provider_key` (plan Open questions default — the
+      fan-out does not short-circuit on that). Resolves with every outcome;
+      it never rejects, even when every agent failed, so a caller never needs
+      a try/catch around it. */
+  run(agents: ReadonlyArray<RunAllAgentInput>): Promise<RunAllOutcome[]>;
+  /** True for the whole duration of one `run()` call. The re-entry guard
+      below does not depend on a caller reading this — see `run`'s own doc. */
+  isRunning: boolean;
+  /** The last completed run's per-agent results; `[]` before the first run
+      (and also the transient result of a re-entrant `run()` call — see
+      below). */
+  outcomes: RunAllOutcome[];
+  /** AC-52: every agent the last run *attempted* failed with 409
+      `no_provider_key` — false before the first run and false on an empty
+      `outcomes` list, so an unattempted button never reads as "all failed". */
+  allNoProviderKey: boolean;
+}
+
+/** `Run all agents` (AC-46…AC-52): fans a batch run out across every agent
+    the caller hands it, sequentially and over the existing single-agent
+    mutation path (`useRunAgentEvalBatch`'s endpoint) rather than a new
+    server route — see the plan's "Mechanism for `Run all agents`" decision.
+    The page renders every per-agent failure itself (AC-51), so this
+    mutation opts out of the app-wide mutation toast with
+    `meta: { ownErrorToast: true }` (`client/INSIGHTS.md` 2026-08-26) and
+    then owns every error branch below. */
+export function useRunAllAgentEvalBatches(): UseRunAllAgentEvalBatchesResult {
+  const qc = useQueryClient();
+  const [isRunning, setIsRunning] = useState(false);
+  const [outcomes, setOutcomes] = useState<RunAllOutcome[]>([]);
+  // A ref, not just the `isRunning` state, so a second `run()` call in the
+  // same synchronous tick (before React has committed the state update) is
+  // still refused — AC-49 puts the guard in the hook, not only in the
+  // button's `disabled`.
+  const runningRef = useRef(false);
+
+  const mutation = useMutation({
+    mutationFn: (agentId: string) => api.post<AgentEvalBatch>(`/agents/${agentId}/eval-runs`),
+    onSuccess: (_data, agentId) => {
+      qc.invalidateQueries({ queryKey: ["agent-eval-dashboard", agentId] });
+    },
+    meta: { ownErrorToast: true },
+  });
+
+  const run = useCallback(
+    async (agents: ReadonlyArray<RunAllAgentInput>): Promise<RunAllOutcome[]> => {
+      if (runningRef.current) {
+        // Re-entry guard (AC-49): starts nothing, reports nothing new.
+        return [];
+      }
+      runningRef.current = true;
+      setIsRunning(true);
+
+      const results: RunAllOutcome[] = [];
+      try {
+        // Sequential on purpose — one `POST` at a time, in the order given,
+        // so "exactly one batch per agent" (AC-47) holds by construction and
+        // a later agent's attempt never depends on an earlier agent's
+        // outcome (AC-51).
+        for (const agent of agents) {
+          try {
+            const batch = await mutation.mutateAsync(agent.agent_id);
+            results.push({ agent_id: agent.agent_id, name: agent.name, status: "ok", batch });
+          } catch (error) {
+            results.push({
+              agent_id: agent.agent_id,
+              name: agent.name,
+              status: "error",
+              code: isNoProviderKeyError(error)
+                ? NO_PROVIDER_KEY_CODE
+                : error instanceof ApiError
+                  ? (error.code ?? "unknown_error")
+                  : "unknown_error",
+              message: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }
+      } finally {
+        // At least one agent may have produced a new batch — refresh the
+        // overview once for the whole run, not once per agent (AC-47).
+        qc.invalidateQueries({ queryKey: ["eval-overview"] });
+        setOutcomes(results);
+        runningRef.current = false;
+        setIsRunning(false);
+      }
+      return results;
+    },
+    [mutation, qc]
+  );
+
+  const allNoProviderKey =
+    outcomes.length > 0 &&
+    outcomes.every((outcome) => outcome.status === "error" && outcome.code === NO_PROVIDER_KEY_CODE);
+
+  return { run, isRunning, outcomes, allNoProviderKey };
 }
 
 // ---- Agent version snapshot (GET /agents/:id/versions/:version) ----

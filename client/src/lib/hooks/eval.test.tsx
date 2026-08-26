@@ -6,12 +6,14 @@ import type { AgentEvalBatch, EvalCase, EvalDashboard, EvalDashboardOverview } f
 
 import {
   isNoProviderKeyError,
+  NO_PROVIDER_KEY_CODE,
   useAgentEvalCases,
   useAgentEvalDashboard,
   useAgentVersionSnapshot,
   useCreateEvalCaseFromFinding,
   useEvalOverview,
   useRunAgentEvalBatch,
+  useRunAllAgentEvalBatches,
 } from "./eval";
 import { ApiError } from "../api";
 
@@ -52,6 +54,26 @@ function evalCase(over: Partial<EvalCase> = {}): EvalCase {
     expected_output: { findings: [{ file: "x", start_line: 1, end_line: 2 }] },
     notes: null,
     source_finding_id: "finding-1",
+    ...over,
+  };
+}
+
+function makeBatch(agentId: string, over: Partial<AgentEvalBatch> = {}): AgentEvalBatch {
+  return {
+    batch_id: `batch-${agentId}`,
+    agent_id: agentId,
+    agent_name: agentId,
+    agent_version: 1,
+    ran_at: "2026-08-26T00:00:00.000Z",
+    recall: 1,
+    precision: 1,
+    citation_accuracy: 1,
+    traces_passed: 2,
+    traces_total: 2,
+    cases_errored: 0,
+    duration_ms: 1200,
+    cost_usd: 0.01,
+    cases: [],
     ...over,
   };
 }
@@ -177,6 +199,7 @@ describe("useEvalOverview / useAgentEvalDashboard — happy paths", () => {
           model: "gpt-4.1",
           cases_total: 3,
           last_batch: null,
+          trend: [],
         },
       ],
       recent_batches: [],
@@ -333,5 +356,155 @@ describe("useAgentVersionSnapshot — compare modal prompt diff (AC-33, AC-34)",
     renderHook(() => useAgentVersionSnapshot("agent-1", undefined), { wrapper: wrapperFor(client) });
 
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("useRunAllAgentEvalBatches — Run all agents fan-out (AC-47, AC-49, AC-51, AC-52)", () => {
+  const agents = [
+    { agent_id: "agent-1", name: "Security Reviewer" },
+    { agent_id: "agent-2", name: "Style Reviewer" },
+    { agent_id: "agent-3", name: "Perf Reviewer" },
+  ];
+
+  it("runs agents sequentially — never two requests in flight at once — and posts once per agent", async () => {
+    const calls: string[] = [];
+    let concurrent = 0;
+    let maxConcurrent = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        calls.push(url);
+        expect(init?.method).toBe("POST");
+        concurrent++;
+        maxConcurrent = Math.max(maxConcurrent, concurrent);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        concurrent--;
+        const agentId = agents.find((a) => url.includes(`/agents/${a.agent_id}/eval-runs`))!.agent_id;
+        return jsonResponse(200, makeBatch(agentId));
+      })
+    );
+
+    const client = makeClient();
+    const { result } = renderHook(() => useRunAllAgentEvalBatches(), { wrapper: wrapperFor(client) });
+
+    let outcomes: Awaited<ReturnType<typeof result.current.run>> | undefined;
+    await act(async () => {
+      outcomes = await result.current.run(agents);
+    });
+
+    expect(maxConcurrent).toBe(1);
+    expect(calls).toEqual([
+      expect.stringContaining("/agents/agent-1/eval-runs"),
+      expect.stringContaining("/agents/agent-2/eval-runs"),
+      expect.stringContaining("/agents/agent-3/eval-runs"),
+    ]);
+    expect(outcomes).toHaveLength(3);
+    for (const [i, outcome] of outcomes!.entries()) {
+      expect(outcome.status).toBe("ok");
+      expect(outcome.agent_id).toBe(agents[i]!.agent_id);
+      expect(outcome.status === "ok" && outcome.batch.batch_id).toBe(`batch-${agents[i]!.agent_id}`);
+    }
+    expect(result.current.outcomes).toEqual(outcomes);
+    expect(result.current.isRunning).toBe(false);
+  });
+
+  it("keeps running the remaining agents after one fails (AC-51) and reports its reason", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url.includes("/agents/agent-2/eval-runs")) {
+          return jsonResponse(409, {
+            error: { code: "no_provider_key", message: "No API key configured" },
+          });
+        }
+        const agentId = agents.find((a) => url.includes(`/agents/${a.agent_id}/eval-runs`))!.agent_id;
+        return jsonResponse(200, makeBatch(agentId));
+      })
+    );
+
+    const client = makeClient();
+    const { result } = renderHook(() => useRunAllAgentEvalBatches(), { wrapper: wrapperFor(client) });
+
+    let outcomes: Awaited<ReturnType<typeof result.current.run>> | undefined;
+    await act(async () => {
+      outcomes = await result.current.run(agents);
+    });
+
+    expect(outcomes).toHaveLength(3);
+    expect(outcomes![0]).toMatchObject({ agent_id: "agent-1", status: "ok" });
+    expect(outcomes![1]).toMatchObject({
+      agent_id: "agent-2",
+      status: "error",
+      code: "no_provider_key",
+    });
+    expect(outcomes![2]).toMatchObject({ agent_id: "agent-3", status: "ok" });
+    // The surviving agents still complete — not aborted by the middle failure.
+    expect((outcomes![0] as { status: "ok"; batch: AgentEvalBatch }).batch.batch_id).toBe("batch-agent-1");
+    expect((outcomes![2] as { status: "ok"; batch: AgentEvalBatch }).batch.batch_id).toBe("batch-agent-3");
+    expect(result.current.allNoProviderKey).toBe(false);
+  });
+
+  it("attempts every agent even once all so far have 409'd, and reports allNoProviderKey (AC-52)", async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse(409, { error: { code: "no_provider_key", message: "No API key configured" } })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = makeClient();
+    const { result } = renderHook(() => useRunAllAgentEvalBatches(), { wrapper: wrapperFor(client) });
+
+    let outcomes: Awaited<ReturnType<typeof result.current.run>> | undefined;
+    await act(async () => {
+      outcomes = await result.current.run(agents);
+    });
+
+    // No early stop: every agent is attempted even though earlier ones
+    // already 409'd (plan Open questions default).
+    expect(fetchMock).toHaveBeenCalledTimes(agents.length);
+    expect(outcomes).toHaveLength(3);
+    expect(outcomes!.every((o) => o.status === "error" && o.code === NO_PROVIDER_KEY_CODE)).toBe(true);
+    expect(result.current.allNoProviderKey).toBe(true);
+  });
+
+  it("does not report allNoProviderKey before any run has happened", () => {
+    const client = makeClient();
+    const { result } = renderHook(() => useRunAllAgentEvalBatches(), { wrapper: wrapperFor(client) });
+
+    expect(result.current.outcomes).toEqual([]);
+    expect(result.current.allNoProviderKey).toBe(false);
+    expect(result.current.isRunning).toBe(false);
+  });
+
+  it("refuses a second run while one is already in flight (AC-49) — the guard lives in the hook", async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      const agentId = agents.find((a) => url.includes(`/agents/${a.agent_id}/eval-runs`))!.agent_id;
+      return jsonResponse(200, makeBatch(agentId));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = makeClient();
+    const { result } = renderHook(() => useRunAllAgentEvalBatches(), { wrapper: wrapperFor(client) });
+
+    let firstRun: Promise<Awaited<ReturnType<typeof result.current.run>>>;
+    let secondOutcomes: Awaited<ReturnType<typeof result.current.run>> | undefined;
+    await act(async () => {
+      firstRun = result.current.run(agents);
+      // Fired synchronously while the first run is still in flight.
+      secondOutcomes = await result.current.run(agents);
+    });
+
+    expect(secondOutcomes).toEqual([]);
+
+    let firstOutcomes: Awaited<ReturnType<typeof result.current.run>> | undefined;
+    await act(async () => {
+      firstOutcomes = await firstRun;
+    });
+
+    expect(firstOutcomes).toHaveLength(3);
+    // Only the first run's requests went out — the second call started no
+    // second fan-out.
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(result.current.isRunning).toBe(false);
   });
 });

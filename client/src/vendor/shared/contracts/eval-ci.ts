@@ -197,6 +197,17 @@ export const EvalAgentSummary = z.object({
   model: z.string(),
   cases_total: z.number().int(),
   last_batch: EvalBatchRecord.nullable(),
+  // Per-agent trend series for the row's sparkline (AC-40, AC-41). Reuses
+  // `EvalTrendPoint` rather than a narrower shape so this and the agent page
+  // share one exclusion rule: CHRONOLOGICAL, oldest first (the opposite of
+  // every table in this feature), batches with `traces_total = 0` excluded,
+  // capped at `BATCH_TABLE_LIMIT` (20) points — same rule, same constant as
+  // the agent page's own trend. `last_batch === null` is the ONLY "never run"
+  // discriminant; an agent can have a non-null `last_batch` and an EMPTY
+  // `trend` when every batch it ran measured nothing. The sparkline itself
+  // only draws `recall` (AC-40) — the rest of the point's fields ride along
+  // because the shape is shared, not because the row renders them.
+  trend: z.array(EvalTrendPoint),
 });
 export type EvalAgentSummary = z.infer<typeof EvalAgentSummary>;
 

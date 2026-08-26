@@ -9,12 +9,26 @@ export function pct(value: number | null): string {
   return value == null ? NO_VALUE : `${Math.round(value * 100)}%`;
 }
 
-/** Single-locale app (see `src/i18n/request.ts`) — the formatter is a constant. */
-const DATE_FORMAT = new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" });
+function pad2(n: number): string {
+  return n < 10 ? `0${n}` : `${n}`;
+}
 
+/** `YYYY-MM-DD HH:mm`, LOCAL time (AC-27, AC-38) — the spec's format string
+    does not name a zone, the previous `dateStyle: "medium"` formatting was
+    local too, and this is a local-first studio (plan step 3, Decisions
+    taken). CI runs UTC and a developer's machine does not, so a test on this
+    helper must assert the SHAPE (`/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/`) plus a
+    value derived by calling this same helper — never a hardcoded date
+    literal, which is green in one environment and red in the other. */
 export function formatBatchDate(iso: string): string {
   const date = new Date(iso);
-  return Number.isNaN(date.getTime()) ? iso : DATE_FORMAT.format(date);
+  if (Number.isNaN(date.getTime())) return iso;
+  const y = date.getFullYear();
+  const mo = pad2(date.getMonth() + 1);
+  const d = pad2(date.getDate());
+  const h = pad2(date.getHours());
+  const mi = pad2(date.getMinutes());
+  return `${y}-${mo}-${d} ${h}:${mi}`;
 }
 
 /** USD cost, 4 decimals — cheap default models land around $0.001/run, so

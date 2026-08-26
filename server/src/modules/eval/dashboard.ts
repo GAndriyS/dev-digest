@@ -250,6 +250,10 @@ export async function getEvalOverview(
       model: agent.model,
       cases_total: cases.length,
       last_batch: latestBatchByAgent.get(agent.id) ?? null,
+      // Placeholder — step 5 (W2-A) fills this from a per-agent recent-batches
+      // read (chronological, `traces_total > 0` only, capped at
+      // `BATCH_TABLE_LIMIT`). Do not read meaning into `[]` here yet.
+      trend: [],
     }));
 
   return { agents: agentSummaries, recent_batches: recentBatches };
