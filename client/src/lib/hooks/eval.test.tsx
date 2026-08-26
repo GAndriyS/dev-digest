@@ -8,6 +8,7 @@ import {
   isNoProviderKeyError,
   useAgentEvalCases,
   useAgentEvalDashboard,
+  useAgentVersionSnapshot,
   useCreateEvalCaseFromFinding,
   useEvalOverview,
   useRunAgentEvalBatch,
@@ -281,5 +282,56 @@ describe("useRunAgentEvalBatch — happy path", () => {
 
     expect(data?.batch_id).toBe("batch-1");
     expect(data?.traces_passed).toBe(2);
+  });
+});
+
+describe("useAgentVersionSnapshot — compare modal prompt diff (AC-33, AC-34)", () => {
+  it("queries GET /agents/:id/versions/:version and returns the config snapshot", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        expect(url).toContain("/agents/agent-1/versions/3");
+        return jsonResponse(200, {
+          agent_id: "agent-1",
+          version: 3,
+          config: { system_prompt: "You are a careful reviewer." },
+          created_at: "2026-08-20T00:00:00.000Z",
+        });
+      })
+    );
+
+    const client = makeClient();
+    const { result } = renderHook(() => useAgentVersionSnapshot("agent-1", 3), {
+      wrapper: wrapperFor(client),
+    });
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.data?.config.system_prompt).toBe("You are a careful reviewer.");
+  });
+
+  it("surfaces a 404 (deleted snapshot) as an error without retrying (AC-34)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse(404, { error: { code: "not_found", message: "Agent version not found" } }))
+    );
+
+    const client = makeClient();
+    const { result } = renderHook(() => useAgentVersionSnapshot("agent-1", 1), {
+      wrapper: wrapperFor(client),
+    });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(result.current.error).toBeInstanceOf(ApiError);
+    expect((result.current.error as ApiError).status).toBe(404);
+  });
+
+  it("does not fetch when version is not provided", () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = makeClient();
+    renderHook(() => useAgentVersionSnapshot("agent-1", undefined), { wrapper: wrapperFor(client) });
+
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

@@ -156,6 +156,49 @@ export function useRunAgentEvalBatch() {
   });
 }
 
+// ---- Agent version snapshot (GET /agents/:id/versions/:version) ----
+
+/**
+ * The immutable config snapshot captured whenever an agent's config changes
+ * — only the field the Eval Dashboard compare modal needs (AC-33/34). Typed
+ * locally rather than imported from `@devdigest/shared`: the server's
+ * canonical copy has carried `AgentVersion`/`AgentVersionConfig`
+ * (`server/src/vendor/shared/contracts/knowledge.ts`) since before this plan
+ * — the route (`GET /agents/:id/versions/:version`,
+ * `server/src/modules/agents/routes.ts:134-143`) already existed — but the
+ * client's trimmed `src/vendor/shared/contracts/knowledge.ts` was never
+ * mirrored with it (no client feature had read a version snapshot before
+ * step 13). This lane (plan step 13, `client/src/app/eval/**`) does not own
+ * `client/src/vendor/**`, so the type is declared here instead of closing
+ * that gap — flagged as a seam item in the implementation report, not
+ * silently worked around. */
+export interface AgentVersionSnapshot {
+  agent_id: string;
+  version: number;
+  config: { system_prompt: string };
+  created_at: string;
+}
+
+/**
+ * One agent-version snapshot, for the compare modal's system-prompt diff
+ * (AC-33). 404 (the snapshot no longer exists, AC-34) is an expected, not
+ * transient, outcome, so this never retries — a caller branches on
+ * `isError`/`error instanceof ApiError && error.status === 404` to show
+ * `compare.promptDiffUnavailable` instead of an empty block. */
+export function useAgentVersionSnapshot(
+  agentId: string | null | undefined,
+  version: number | null | undefined
+) {
+  return useQuery({
+    queryKey: ["agent-version-snapshot", agentId, version],
+    queryFn: () => api.get<AgentVersionSnapshot>(`/agents/${agentId}/versions/${version}`),
+    enabled: !!agentId && version != null,
+    retry: false,
+    // A version snapshot is immutable once written, so it never goes stale.
+    staleTime: Infinity,
+  });
+}
+
 // ---- Eval Dashboard (GET /eval/overview, GET /eval/dashboard) ----
 
 /** Every agent with a non-empty eval set + the most recent batches across all
