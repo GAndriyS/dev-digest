@@ -4,6 +4,37 @@ Plan: .claude/plans/l06-evals-eval-dashboard-design-fidelity.md · Spec: specs/S
 | Stage | Result | Agent tokens | Note |
 |---|---|---|---|
 | 1 read plan | 4 waves this run · 4 lanes at widest (cap 3 in flight) | — | DAG stated in plan; step 10 → doc-writer (stage 5); manual click-through after wave 3/4 is a human stage |
+| 2 implement | 9/9 | 89k + 79k + 89k + 90k ∥ 103k + 147k + 121k ∥ 164k ∥ 161k | wave 3 died once on a transient API error before any edit landed; resumed in place, no rework |
+| 3 find | arch: PASS 0 findings · code-review: 3 · security: empty report | 117k ∥ — ∥ 75k | `/code-review medium` — this run's code delta is 1553 lines, above the skill's ~1000-line budget threshold |
+| 3b review loop | PASS after 1 loop | 58k + 37k | all 3 findings fixed; none left standing, so no human gate was owed |
+| 4 verify | — | — | |
+| 5 docs | — | — | |
+| 6 pr | — | — | |
+
+## Findings this run (all fixed in commit `1886ef7`)
+
+Two of the three came from clicking the page, not from reading it — `INSIGHTS.md`
+2026-08-26 predicted exactly that.
+
+1. `EvalOverview.tsx:126` — the AC-50 disabled reason rendered during the initial
+   fetch, asserting "No agent has eval cases yet" in a workspace that has them.
+   `agents` is `data?.agents ?? []`, so `noAgents` was true for the whole load.
+2. `AgentRow.tsx:112` — the sparkline rendered to the right of the stat blocks;
+   the design mock puts it to their left. No AC pins the position, so no test
+   would ever have caught it — and design fidelity is this change set's entire
+   purpose.
+3. `AgentRow.tsx:113` — the sparkline SVG was the only graphic in the row not
+   marked `aria-hidden`, so it landed in the accessible name of a row that is one
+   single link.
+
+## Concurrent work by another session on this branch
+
+Commits `5f5ba9e` and `652fd42` landed between this run's wave 2 and wave 3 and
+are **not** this run's work: they relocated the scratch `server/src/modules/checkout/`
+module into `evals/agents/architecture-reviewer/fixtures/tree/` (git reads two of
+the three files as renames) and modified `evals/**`. Every commit in this run was
+made with an explicit pathspec, so none of that work was swept into them —
+verified per commit.
 
 ## Execution brief — l06-evals-eval-dashboard-design-fidelity
 Mode: multi-agent · Spec: specs/SPEC-05-eval-pipeline-26-08-2026.md (approved) · Slices: frontend, backend, contracts, meta · Steps this run: 9 of 10 (row 10: doc-writer)

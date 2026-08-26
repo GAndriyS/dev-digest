@@ -185,6 +185,16 @@ append-only. Entry format and promotion rules → root `INSIGHTS.md`.
   re-diagnose a bug you already fixed. Confirm a fix against `preview_logs`
   (search the dev-server output for the error string) or the served HTML, never
   against the console buffer.
+- **2026-08-26** — `@testing-library/user-event` is **not installed** in
+  `client/` and is not in its lockfile. Every interaction test here drives the
+  DOM with `fireEvent` instead — including keyboard assertions
+  (`CompareModal.test.tsx`, `FindingsPopover.test.tsx`,
+  `RunAllDialog.test.tsx` all do). This matters because the generic
+  `react-testing-library` guidance names `userEvent` as the default, so an
+  agent following it writes `import userEvent from "@testing-library/user-event"`
+  and only finds out mid-suite, at module-resolution time. Three separate lanes
+  of one run each hit this independently. Use `fireEvent`; do not add the
+  dependency to satisfy a skill's default.
 
 ## Recurring Errors & Fixes
 

@@ -28,6 +28,28 @@ live in `<package>/INSIGHTS.md`. Maintained by the `engineering-insights` skill.
 
 ## What Works
 
+- **2026-08-26** — **A wire step that makes a shared field REQUIRED must name
+  every hand-built literal of that type, found by grepping the whole tree —
+  not only the sites the plan's author happened to know.** Adding
+  `EvalAgentSummary.trend` named two touch-up sites; a third literal sat in
+  `client/src/lib/hooks/eval.test.tsx`, committed by an earlier plan. In a
+  parallel wave that unnamed site is not a small miss: it turns `verify.mjs
+  --slice frontend` red for EVERY lane at once, because typecheck is whole-tree,
+  and three sibling lanes each independently re-diagnosed the same error before
+  the owning lane reached it. Two habits fall out — grep for the type's literals
+  while writing the step, and mid-wave verify scoped
+  (`--tests-only --only <scope>`), saving the full lane for the wave boundary
+  where a cross-lane red is meaningful.
+- **2026-08-26** — **When another session may be committing to the same branch,
+  commit with an explicit pathspec** (`git commit -m … -- <paths>`), not
+  `git add <paths> && git commit`. The latter commits the whole index, so
+  anything a concurrent session has staged rides along silently. This happened:
+  mid-run, another session staged the deletion of three tracked files under
+  `server/src/modules/checkout/` (it was relocating them into the evals fixture
+  tree) and landed two commits between waves. Pathspec commits kept all six of
+  this run's commits clean — verified per commit with `git show --stat`. The
+  tell that you are not alone on the branch: `git log` shows commits you did not
+  make, or `git status` shows staged changes you did not stage.
 - **2026-08-26** — **A rule a skill states in its rules list is not followed; the
   same rule stated inside the output section that produces it, is.** Measured
   twice on `dependency-checker` in one session. The internal-edges requirement
@@ -619,9 +641,28 @@ live in `<package>/INSIGHTS.md`. Maintained by the `engineering-insights` skill.
   the symptom→restart loop is confirmed. Reduce the exposure at the source:
   log external-call failures through `errSummary()` from `platform/errors.ts`,
   never the raw error.
+- **2026-08-26** — `ReferenceError: <identifier> is not defined` from a file
+  whose only recent change was a COMMENT means the comment quoted a glob. A
+  block comment containing `**/src/vendor/ui/**` — the exact form this repo's
+  `AGENTS.md` uses for its do-not-touch paths, and which agents copy into file
+  headers to explain themselves — ends at the `**/` inside it, so the rest of
+  the prose parses as code. It surfaces as an undefined identifier, never as a
+  comment-syntax error, which sends you looking at the logic instead. Quote
+  such a path without the closing-comment token (`src/vendor/ui`), or use `//`
+  lines.
 
 ## Session Notes
 
+- **2026-08-26** — SPEC-05 design-fidelity delta: the `/eval` overview was
+  rebuilt to its mock (full-width agent rows with a `recall` sparkline, metric
+  bars in the runs table, version-as-link) and `Run all agents` added behind a
+  confirmation dialog, as a client-side fan-out over the existing
+  `POST /agents/:id/eval-runs` — no new route, no migration, one wire field
+  (`EvalAgentSummary.trend`). Ran through `/implement`: 4 waves, 9 steps, ~950k
+  agent tokens; architecture PASS with zero findings and an empty security
+  report, so the entire fix loop was three `/code-review` findings, two of which
+  came from clicking the page rather than reading it. Another session committed
+  to the branch mid-run; see What Works on pathspec commits.
 - **2026-08-26** — L06 SPEC-05 eval pipeline shipped end to end through
   `/implement`: 7 waves, 16 steps, ~2.6M agent tokens. Eight `/code-review`
   findings (all CONFIRMED, all fixed), one architecture WARNING, one security
