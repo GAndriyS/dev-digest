@@ -28,6 +28,19 @@ live in `<package>/INSIGHTS.md`. Maintained by the `engineering-insights` skill.
 
 ## What Works
 
+- **2026-08-26** — **A rule a skill states in its rules list is not followed; the
+  same rule stated inside the output section that produces it, is.** Measured
+  twice on `dependency-checker` in one session. The internal-edges requirement
+  lived in the prose above the skeleton and scored 0/6; moved into the
+  `## Internal dependencies` section of the skeleton itself ("say that in the
+  report, not just in your head") it went to 2/2. The unknown-size recovery step
+  lived in numbered rule 5 — with an explicit example — and scored 0/2; moved
+  into the `## Size & weight` section next to the table it applies to, it moved
+  off zero. The mechanism is mundane and worth remembering: the rules list is
+  read once at the start, the skeleton is read while writing. When an eval shows
+  a skill skipping its own documented rule, the first fix to try is not stronger
+  wording — it is moving the rule to where the work happens.
+
 - **2026-08-25** — A rule that protects a MEASUREMENT has to fail a lane, not sit
   in prose. Two of this branch's own findings had been written down as warnings —
   "re-sync `architecture-reviewer-lite` before trusting a delta" and "remove the
@@ -77,6 +90,47 @@ live in `<package>/INSIGHTS.md`. Maintained by the `engineering-insights` skill.
   construction.
 
 ## What Doesn't Work
+
+- **2026-08-26** — **A judged practice must grade ONE claim, and that claim must
+  be an outcome, not a wording.** Two failure shapes, both measured on the
+  `dependency-checker` cases across 12 historical runs plus 4 validation runs,
+  both invisible until the per-practice rates were tabulated:
+  (a) a practice worded `"X, and Y"` fails whenever either half misses but
+  reports as one line, so the half that held is invisible — three such
+  practices sat at 0/6 while their first halves passed every time. Splitting
+  them took three cases from 15–42% to 100% with no change to the artifact.
+  (b) a practice that grades the *reason* a finding gives, rather than the
+  finding, lands at ~50% no matter how it is packaged — measured on three
+  independent reason-practices (esbuild, puppeteer, zod-while-bundled). The
+  model reaches the right verdict and justifies it in its own words. Grade the
+  verdict; keep a reason practice only where the reason IS the documented rule
+  (a P0 given for the wrong reason is luck), and word it to accept a paraphrase.
+  Rule of thumb before adding a practice: *if the artifact did this perfectly
+  but phrased it differently, would this still pass?*
+
+- **2026-08-26** — **A `grounding` string is a claim about the agent's OUTPUT,
+  not about the fixture — and getting it wrong is the most expensive mistake in
+  this package**, because a miss hard-fails the case and skips the judge, so
+  correct work scores zero and the log says nothing about why. Three measured
+  instances in one session: `flowchart` failed a correct Mermaid graph written
+  `graph LR` (two current spellings of the same diagram type); `node:fs` failed
+  a report that found the filesystem violation and called it "Filesystem /
+  readFile / disk"; `chalk` — see the fixture entry below. Verify a grounding
+  string against a real passing output before trusting it, prefer
+  syntax-invariant anchors (` ```mermaid ` plus `-->` rather than the keyword),
+  and when a gate fails work the judge would have passed, move the string down
+  into a practice. The gate is for what cannot be said another way.
+
+- **2026-08-26** — **A fixture can defeat its own intended answer with facts the
+  model knows and the fixture author forgot.** The `dependency-checker` fixture
+  planted `chalk` as its one genuinely-dead dependency while also declaring
+  `pino-pretty`, which depends on `chalk` — so the model answered "loaded
+  indirectly by pino-pretty, keep it", which is *correct*, and scored 1/6 for
+  it. A planted trap must name something nothing else in the fixture can
+  plausibly pull in. Related and equally silent: an expectation whose answer
+  contradicts the artifact's own instructions (the same file demanded esbuild be
+  "its own finding" while `SKILL.md` instructs merging findings that share a
+  root cause). Grep the artifact for the behaviour you are about to demand.
 
 - **2026-08-26** — A judge-scored case at `threshold: 1.0` is a CONJUNCTION
   over N stochastic binary judgements, so it passes at roughly p^N: six
