@@ -3,10 +3,19 @@ import { render, screen, cleanup, within, waitFor, fireEvent } from "@testing-li
 import { NextIntlClientProvider } from "next-intl";
 import type { FindingRecord } from "@devdigest/shared";
 import messages from "../../../../../../../../messages/en/prReview.json";
+import evalMessages from "../../../../../../../../messages/en/eval.json";
 
 vi.mock("../../../../../../../lib/hooks/reviews", () => ({
   useFindingAction: () => ({ mutate: vi.fn(), isPending: false }),
 }));
+
+// FindingCard (rendered by FindingsPanel) now owns "Turn into eval case"
+// (L06 step 12) — a real useMutation needs a QueryClientProvider this suite
+// doesn't mount, and next/navigation needs a router this suite doesn't provide.
+vi.mock("@/lib/hooks/eval", () => ({
+  useCreateEvalCaseFromFinding: () => ({ mutateAsync: vi.fn(), isPending: false }),
+}));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 
 import { FindingsPanel } from "./FindingsPanel";
 import { visibleFindings } from "./helpers";
@@ -44,7 +53,7 @@ const FINDINGS: FindingRecord[] = [finding({ id: "f1" })];
 
 function renderWithIntl(ui: React.ReactElement) {
   return render(
-    <NextIntlClientProvider locale="en" messages={{ prReview: messages }}>
+    <NextIntlClientProvider locale="en" messages={{ prReview: messages, eval: evalMessages }}>
       {ui}
     </NextIntlClientProvider>,
   );

@@ -1,0 +1,60 @@
+import type { CSSProperties } from "react";
+
+/** Co-located styles for EvalsTab. */
+export const s = {
+  wrap: { maxWidth: 980 } satisfies CSSProperties,
+  header: { display: "flex", alignItems: "center", gap: 12, marginBottom: 6 } satisfies CSSProperties,
+  h2: { fontSize: 18, fontWeight: 700 } satisfies CSSProperties,
+  h3: { fontSize: 15, fontWeight: 700, marginBottom: 4 } satisfies CSSProperties,
+  actions: { marginLeft: "auto", display: "flex", gap: 10 } satisfies CSSProperties,
+  hint: {
+    fontSize: 13,
+    color: "var(--text-secondary)",
+    lineHeight: 1.5,
+    marginBottom: 14,
+  } satisfies CSSProperties,
+  notice: {
+    marginBottom: 18,
+    padding: "10px 12px",
+    borderRadius: 7,
+    border: "1px solid var(--warn)",
+    background: "var(--warn-bg)",
+    color: "var(--text-primary)",
+    fontSize: 13,
+    lineHeight: 1.5,
+  } satisfies CSSProperties,
+  list: {
+    borderRadius: 9,
+    border: "1px solid var(--border)",
+    background: "var(--bg-elevated)",
+    overflow: "hidden",
+    marginBottom: 24,
+  } satisfies CSSProperties,
+  row: {
+    display: "flex",
+    alignItems: "center",
+    gap: 12,
+    padding: "12px 16px",
+    borderBottom: "1px solid var(--border)",
+    fontSize: 13,
+    flexWrap: "wrap",
+  } satisfies CSSProperties,
+  name: {
+    fontWeight: 600,
+    minWidth: 120,
+    maxWidth: 320,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  } satisfies CSSProperties,
+  meta: { color: "var(--text-muted)", fontSize: 12.5, flex: 1, minWidth: 160 } satisfies CSSProperties,
+  rowActions: { display: "flex", alignItems: "center", gap: 6, marginLeft: "auto" } satisfies CSSProperties,
+  metrics: {
+    borderRadius: 9,
+    border: "1px solid var(--border)",
+    background: "var(--bg-elevated)",
+    padding: 20,
+  } satisfies CSSProperties,
+  metricsRow: { display: "flex", gap: 14, marginTop: 14, marginBottom: 14 } satisfies CSSProperties,
+  link: { fontSize: 13, fontWeight: 600, color: "var(--accent)", textDecoration: "none" } satisfies CSSProperties,
+} as const;

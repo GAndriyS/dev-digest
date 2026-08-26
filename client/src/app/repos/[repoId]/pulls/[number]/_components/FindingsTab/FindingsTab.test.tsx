@@ -4,6 +4,7 @@ import { NextIntlClientProvider } from "next-intl";
 import type { FindingRecord, ReviewRecord } from "@devdigest/shared";
 import prReviewMessages from "../../../../../../../../messages/en/prReview.json";
 import shellMessages from "../../../../../../../../messages/en/shell.json";
+import evalMessages from "../../../../../../../../messages/en/eval.json";
 
 // Mocked because ReviewRunAccordion (rendered inside FindingsTab, one per
 // review) reaches for these directly; aliased path so it matches regardless
@@ -12,6 +13,16 @@ vi.mock("@/lib/hooks/reviews", () => ({
   useDeleteReview: () => ({ mutate: vi.fn(), isPending: false }),
   useFindingAction: () => ({ mutate: vi.fn(), isPending: false }),
 }));
+
+// FindingCard (rendered inside FindingsPanel, rendered inside FindingsTab)
+// now owns the "Turn into eval case" action (L06 step 12) — mocked for the
+// same reason as hooks/reviews above (a real useMutation needs a
+// QueryClientProvider this suite doesn't mount), plus next/navigation for
+// the router it opens the case with.
+vi.mock("@/lib/hooks/eval", () => ({
+  useCreateEvalCaseFromFinding: () => ({ mutateAsync: vi.fn(), isPending: false }),
+}));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 
 import { FindingsTab } from "./FindingsTab";
 
@@ -64,7 +75,7 @@ function renderWithIntl(ui: React.ReactElement) {
   return render(
     <NextIntlClientProvider
       locale="en"
-      messages={{ prReview: prReviewMessages, shell: shellMessages }}
+      messages={{ prReview: prReviewMessages, shell: shellMessages, eval: evalMessages }}
     >
       {ui}
     </NextIntlClientProvider>,
