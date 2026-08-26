@@ -17,12 +17,13 @@
    recent_runs` is the read that knows about every run, not just one just
    triggered here.
 
-   CRITICAL seam (dashboard lane, plan step 9): `EvalDashboard.current`/
-   `.delta` are NON-nullable 0-filled placeholders when no batch has ever
-   run — "no runs yet" is read from `recent_batches.length === 0`, never
-   from `current` (AC-29: no zeros that read as results). This tab never
-   reads `dashboard.current` at all; it reads `recent_batches[0]` directly,
-   which only exists once a batch actually ran. */
+   CRITICAL seam (dashboard lane, plan step 9): `EvalDashboard.current` is a
+   NON-nullable 0-filled placeholder when no batch has ever run (`.delta` is
+   nullable — fix pass, item 5 — but this tab never reads it either) — "no
+   runs yet" is read from `recent_batches.length === 0`, never from `current`
+   (AC-29: no zeros that read as results). This tab never reads
+   `dashboard.current` at all; it reads `recent_batches[0]` directly, which
+   only exists once a batch actually ran. */
 "use client";
 
 import React from "react";

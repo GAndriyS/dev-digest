@@ -10,7 +10,7 @@ import { parseUnifiedDiff } from '../../adapters/git/diff-parser.js';
 // keeps this runner's prompt conditions identical to a real review's.
 import { REVIEW_STRATEGY } from '../reviews/constants.js';
 import { expectedFindings } from './helpers.js';
-import { scoreEvalCase } from './scoring.js';
+import { aggregateEvalBatch, scoreEvalCase, type EvalRunOutcome } from './scoring.js';
 import { EvalRepository, type EvalCaseRow } from './repository.js';
 import type { InsertEvalRun } from './types.js';
 
@@ -259,31 +259,25 @@ export class EvalRunner {
     return { code: 'eval_case_failed', message: `Eval case "${caseName}" failed with an unknown error.` };
   }
 
-  /** Aggregate over NON-ERRORED rows only (AC-25): `cases_errored` counts the
-   *  rest, and they never enter `traces_passed`/`traces_total` or any mean.
-   *  `costUsd` is computed by the caller (it needs the per-case cost, which
-   *  `EvalCaseResult` does not carry on the wire) and passed straight through. */
+  /** Aggregate over NON-ERRORED rows only (AC-25), via the shared aggregator
+   *  (`scoring.ts#aggregateEvalBatch` — fix pass, item 4) so this runner and
+   *  the dashboard's read side can never independently drift on the mean/
+   *  null rules again. `costUsd` is computed by the caller (it needs the
+   *  per-case cost, which `EvalCaseResult` does not carry on the wire) and
+   *  passed straight through. */
   private aggregate(
     results: EvalCaseResult[],
     ids: { batchId: string; agentId: string; agentName: string; agentVersion: number },
     durationMs: number,
     costUsd: number | null,
   ): EvalBatchRecord {
-    const ok = results.filter((r) => r.error === null);
-    const casesErrored = results.length - ok.length;
-
-    const recall = ok.length === 0 ? 0 : ok.reduce((s, r) => s + r.recall, 0) / ok.length;
-    const precision = ok.length === 0 ? 0 : ok.reduce((s, r) => s + r.precision, 0) / ok.length;
-    const citationValues = ok
-      .map((r) => r.citation_accuracy)
-      .filter((v): v is number => v !== null);
-    const citationAccuracy =
-      citationValues.length === 0
-        ? null
-        : citationValues.reduce((s, v) => s + v, 0) / citationValues.length;
-
-    const tracesPassed = ok.filter((r) => r.pass === true).length;
-    const tracesTotal = ok.length;
+    const outcomes: EvalRunOutcome[] = results.map((r) => ({
+      pass: r.pass,
+      recall: r.recall,
+      precision: r.precision,
+      citationAccuracy: r.citation_accuracy,
+    }));
+    const agg = aggregateEvalBatch(outcomes);
 
     return {
       batch_id: ids.batchId,
@@ -291,12 +285,12 @@ export class EvalRunner {
       agent_name: ids.agentName,
       agent_version: ids.agentVersion,
       ran_at: new Date().toISOString(),
-      recall,
-      precision,
-      citation_accuracy: citationAccuracy,
-      traces_passed: tracesPassed,
-      traces_total: tracesTotal,
-      cases_errored: casesErrored,
+      recall: agg.recall,
+      precision: agg.precision,
+      citation_accuracy: agg.citationAccuracy,
+      traces_passed: agg.tracesPassed,
+      traces_total: agg.tracesTotal,
+      cases_errored: agg.casesErrored,
       duration_ms: durationMs,
       cost_usd: costUsd,
     };

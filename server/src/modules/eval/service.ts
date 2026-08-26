@@ -28,8 +28,6 @@ export interface EvalCaseInput {
   notes?: string | null;
 }
 
-export type EvalCasePatch = Partial<Omit<EvalCaseInput, 'owner_kind' | 'owner_id'>>;
-
 /** `POST /findings/:id/eval-case` result — `created` is the 201-vs-200
  *  discriminant the route (step 10) answers with; the body (`case`) is the
  *  same `EvalCase` either way (AC-6). */
@@ -46,6 +44,13 @@ export class EvalService {
   }
 
   // ---- plain CRUD (agent-owned cases only) ---------------------------------
+  //
+  // No `update` here (fix pass, item 1 — was dead code): `PUT /eval-cases/:id`
+  // is registered once, generically, on `skills/routes.ts` and dispatches to
+  // `SkillsService.updateEvalCase` → `SkillsRepository#updateEvalCase`, which
+  // filters by workspace+id only (not `owner_kind`) and already serves both
+  // owners — see the doc comment on `eval/routes.ts` for why there is no
+  // second, agent-scoped `PUT` here.
 
   async list(workspaceId: string, agentId: string): Promise<EvalCase[]> {
     const rows = await this.repo.listAgentCases(workspaceId, agentId);
@@ -75,20 +80,6 @@ export class EvalService {
       expectedOutput: input.expected_output,
       notes: input.notes ?? null,
     });
-    return toEvalCaseDto(row);
-  }
-
-  async update(workspaceId: string, id: string, patch: EvalCasePatch): Promise<EvalCase> {
-    await this.requireAgentCase(workspaceId, id);
-    const row = await this.repo.updateCase(workspaceId, id, {
-      ...(patch.name !== undefined ? { name: patch.name } : {}),
-      ...(patch.input_diff !== undefined ? { inputDiff: patch.input_diff } : {}),
-      ...(patch.input_files !== undefined ? { inputFiles: patch.input_files } : {}),
-      ...(patch.input_meta !== undefined ? { inputMeta: patch.input_meta } : {}),
-      ...(patch.expected_output !== undefined ? { expectedOutput: patch.expected_output } : {}),
-      ...(patch.notes !== undefined ? { notes: patch.notes } : {}),
-    });
-    if (!row) throw new NotFoundError('Eval case not found');
     return toEvalCaseDto(row);
   }
 
@@ -181,18 +172,33 @@ export class EvalService {
       ? null
       : `Dismissed finding — ${finding.file}:${finding.startLine}-${finding.endLine} — ${finding.title}`;
 
-    const row = await this.repo.insertCase({
-      workspaceId,
-      ownerKind: 'agent',
-      ownerId: agentId,
-      name: finding.title,
-      inputDiff: fileRow.patch,
-      expectedOutput,
-      notes,
-      sourceFindingId: findingId,
-    });
-
-    return { case: toEvalCaseDto(row), created: true };
+    try {
+      const row = await this.repo.insertCase({
+        workspaceId,
+        ownerKind: 'agent',
+        ownerId: agentId,
+        name: finding.title,
+        inputDiff: fileRow.patch,
+        expectedOutput,
+        notes,
+        sourceFindingId: findingId,
+      });
+      return { case: toEvalCaseDto(row), created: true };
+    } catch (err) {
+      // AC-6 under a race (fix pass, item 8): two concurrent "Turn into eval
+      // case" clicks for the SAME finding both pass the
+      // `findCaseBySourceFinding` check above (neither sees the other's row
+      // yet — there is no row to see), then one insert wins and the other
+      // hits the partial unique index `eval_cases_owner_source_finding_uq`.
+      // Re-read and answer with the winner's row instead of bubbling a 500 —
+      // the loser still gets the idempotent 200 AC-6 promises. Any OTHER
+      // error (a different constraint, a connection failure, …) rethrows.
+      if (isUniqueConstraintViolation(err, 'eval_cases_owner_source_finding_uq')) {
+        const existing = await this.repo.findCaseBySourceFinding(workspaceId, agentId, findingId);
+        if (existing) return { case: toEvalCaseDto(existing), created: false };
+      }
+      throw err;
+    }
   }
 
   // ---- shared lookups -------------------------------------------------------
@@ -206,6 +212,27 @@ export class EvalService {
     if (!row || row.ownerKind !== 'agent') throw new NotFoundError('Eval case not found');
     return row;
   }
+}
+
+// ---- Postgres error introspection ----------------------------------------
+
+/**
+ * True iff `err` is a Postgres unique-violation (`23505`) on `constraintName`.
+ * The `postgres` driver (this project's, unlike `pg`) attaches `code`/
+ * `constraint_name` directly on the thrown `PostgresError` — but checked
+ * defensively under `.cause` too, in case a future wrapper (a transaction
+ * helper, a retry layer) re-throws with the original attached there instead.
+ */
+function isUniqueConstraintViolation(err: unknown, constraintName: string): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const direct = err as { code?: unknown; constraint_name?: unknown; cause?: unknown };
+  const cause =
+    direct.cause && typeof direct.cause === 'object'
+      ? (direct.cause as { code?: unknown; constraint_name?: unknown })
+      : undefined;
+  const code = direct.code ?? cause?.code;
+  const constraint = direct.constraint_name ?? cause?.constraint_name;
+  return code === '23505' && constraint === constraintName;
 }
 
 // ---- DTO mapping --------------------------------------------------------

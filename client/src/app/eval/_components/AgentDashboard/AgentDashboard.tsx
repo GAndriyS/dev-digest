@@ -30,6 +30,20 @@ import { s } from "./styles";
 
 const OTHER_METRIC_KEYS = ["recall", "precision", "citation_accuracy"] as const;
 
+/**
+ * Recharts (the engine under `LineChart`) treats a `null`/`undefined` data
+ * point as a GAP in the line, never a plotted `0` — passing
+ * `citation_accuracy`'s `null` straight through (rather than coercing it to
+ * `0`) is what keeps an all-errored batch from drawing a cliff to zero (fix
+ * pass, item 2c). `ChartSeries.data` is typed `number[]` in the vendored UI
+ * kit (`src/vendor/ui/charts/LineChart.tsx` — fix upstream, then re-vendor;
+ * not edited here), so this cast documents that the RUNTIME values
+ * legitimately include `null` even though that type doesn't say so.
+ */
+function toChartSeries(values: readonly (number | null)[]): number[] {
+  return values as unknown as number[];
+}
+
 function metricLegendKey(key: (typeof OTHER_METRIC_KEYS)[number]): "recall" | "precision" | "citation" {
   return key === "citation_accuracy" ? "citation" : key;
 }
@@ -42,10 +56,13 @@ function MetricTile({
 }: {
   label: string;
   value: string;
-  delta: number;
+  /** `null` on the very first batch — no previous run to diff against (fix
+      pass, item 5: `EvalDashboard.delta` is nullable now, never a fabricated
+      flat "0.0 pt"). The delta row is omitted entirely, not rendered empty. */
+  delta: number | null;
   t: ReturnType<typeof useTranslations>;
 }) {
-  const direction = deltaDirection(delta);
+  const direction = delta == null ? "flat" : deltaDirection(delta);
   const DeltaIcon = direction === "up" ? Icon.ArrowUp : direction === "down" ? Icon.ArrowDown : Icon.Slash;
   return (
     <div style={s.metricCard}>
@@ -53,10 +70,12 @@ function MetricTile({
       <div className="tnum" style={s.metricValue}>
         {value}
       </div>
-      <div className="tnum" style={s.metricDelta(direction)}>
-        <DeltaIcon size={12} aria-hidden />
-        <span>{t("dashboard.delta", { value: formatDeltaPt(delta) })}</span>
-      </div>
+      {delta != null && (
+        <div className="tnum" style={s.metricDelta(direction)}>
+          <DeltaIcon size={12} aria-hidden />
+          <span>{t("dashboard.delta", { value: formatDeltaPt(delta) })}</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -170,19 +189,19 @@ export function AgentDashboard() {
               <MetricTile
                 label={t("dashboard.metrics.recall")}
                 value={pct(data.current.recall)}
-                delta={data.delta.recall}
+                delta={data.delta?.recall ?? null}
                 t={t}
               />
               <MetricTile
                 label={t("dashboard.metrics.precision")}
                 value={pct(data.current.precision)}
-                delta={data.delta.precision}
+                delta={data.delta?.precision ?? null}
                 t={t}
               />
               <MetricTile
                 label={t("dashboard.metrics.citationAccuracy")}
                 value={pct(data.current.citation_accuracy)}
-                delta={data.delta.citation_accuracy}
+                delta={data.delta?.citation_accuracy ?? null}
                 t={t}
               />
             </div>
@@ -211,7 +230,7 @@ export function AgentDashboard() {
                     {
                       name: "citation",
                       color: "var(--warn)",
-                      data: data.trend.map((p) => p.citation_accuracy),
+                      data: toChartSeries(data.trend.map((p) => p.citation_accuracy)),
                     },
                   ]}
                 />

@@ -55,13 +55,17 @@ export function deltaDirection(fraction: number): DeltaDirection {
  * alert fired on). `null` when there is no previous value to compare
  * against, or either side of a nullable metric (`citation_accuracy`) is
  * null — rendered as "unchanged" rather than a fabricated number.
+ * `latestValue` is itself nullable now (`EvalAlert.others.citation_accuracy`,
+ * fix pass item 2b — the server no longer coerces a missing value to `0`) —
+ * null out here too, on the SAME "no fabricated number" rule, rather than
+ * subtracting from a placeholder.
  */
 export function otherMetricDeltaPp(
-  latestValue: number,
+  latestValue: number | null,
   previous: EvalBatchRecord | undefined,
   key: "recall" | "precision" | "citation_accuracy"
 ): number | null {
-  if (!previous) return null;
+  if (latestValue == null || !previous) return null;
   const previousValue = previous[key];
   if (previousValue == null) return null;
   return Math.round((latestValue - previousValue) * 1000) / 10;

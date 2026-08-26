@@ -33,33 +33,68 @@ export interface MatchResult {
  * AC-15 — credit assignment.
  *
  * A match counts iff an actual finding has the SAME normalized file path as
- * an expected finding AND their line ranges overlap. Each actual finding is
- * credited at most once: once it has been spent matching one expected
- * finding, it is removed from the pool and cannot match a second one. This
- * is a greedy one-pass assignment (first available match, in expected
- * order) rather than a maximum-cardinality matching — the input sizes here
- * (a handful of findings per case) make the two equivalent in practice, and
- * greedy keeps the rule simple enough to state in one sentence.
+ * an expected finding AND their line ranges overlap — that predicate (same
+ * file + overlap) is the ONLY edge in the bipartite graph below; nothing
+ * else (title, severity, category) ever adds or removes an edge. Each
+ * actual finding is credited at most once (AC-15).
+ *
+ * This is MAXIMUM bipartite matching (Kuhn's augmenting-path algorithm), not
+ * a greedy first-match: a greedy one-pass assignment under-counts whenever
+ * an earlier expectation "steals" the only actual finding a LATER
+ * expectation could have matched, while a different assignment would have
+ * covered both. Counter-example (fix pass, item 7): expected `A(1-5)`,
+ * `B(4-8)` in `a.ts`; actual `X(4-5)`, `Y(1-2)` in `a.ts`. Every pair
+ * overlaps except `B`×`Y`. Greedy assigns `A`→`X` first (first match in
+ * order), leaving `B` with no unspent partner — 1/2 credited. The maximum
+ * matching is `A`→`Y`, `B`→`X` — 2/2, recall 1. Input sizes here (a handful
+ * of findings per case) make Kuhn's O(V·E) irrelevant in practice; the
+ * point is correctness, not asymptotics.
  */
 export function matchFindings(
   expected: readonly ExpectedFinding[],
   actual: readonly ActualFinding[],
 ): MatchResult {
-  const spent = new Set<number>();
-  let creditedExpectations = 0;
+  const normalizedActualPaths = actual.map((a) => normalizeFilePath(a.file));
 
-  for (const exp of expected) {
+  // adjacency[e] = indices into `actual` that expected finding `e` could
+  // match (same normalized path + overlapping range — AC-15's only edge).
+  const adjacency: number[][] = expected.map((exp) => {
     const expPath = normalizeFilePath(exp.file);
-    const idx = actual.findIndex(
-      (act, i) => !spent.has(i) && normalizeFilePath(act.file) === expPath && rangesOverlap(exp, act),
-    );
-    if (idx >= 0) {
-      spent.add(idx);
-      creditedExpectations += 1;
+    const edges: number[] = [];
+    for (let i = 0; i < actual.length; i++) {
+      if (normalizedActualPaths[i] === expPath && rangesOverlap(exp, actual[i]!)) edges.push(i);
     }
+    return edges;
+  });
+
+  // matchOfActual[i] = the expected-finding index currently matched to
+  // actual finding i, or -1 when unmatched.
+  const matchOfActual = new Array<number>(actual.length).fill(-1);
+
+  /** One augmenting-path attempt for expected finding `e`: try every actual
+   *  it could match; if that actual is already taken, try to re-home the
+   *  actual's current match elsewhere first (the "augmenting" step). */
+  function tryAugment(e: number, visited: boolean[]): boolean {
+    for (const actIdx of adjacency[e]!) {
+      if (visited[actIdx]) continue;
+      visited[actIdx] = true;
+      const currentOwner = matchOfActual[actIdx]!;
+      if (currentOwner === -1 || tryAugment(currentOwner, visited)) {
+        matchOfActual[actIdx] = e;
+        return true;
+      }
+    }
+    return false;
   }
 
-  return { creditedExpectations, creditedActuals: spent.size };
+  let creditedExpectations = 0;
+  for (let e = 0; e < expected.length; e++) {
+    const visited = new Array<boolean>(actual.length).fill(false);
+    if (tryAugment(e, visited)) creditedExpectations += 1;
+  }
+
+  const creditedActuals = matchOfActual.filter((m) => m !== -1).length;
+  return { creditedExpectations, creditedActuals };
 }
 
 /** AC-16 — recall = credited expectations / all expectations; 1 when none expected. */
@@ -117,5 +152,74 @@ export function scoreEvalCase(
     recall: r,
     precision: p,
     citation_accuracy: citationAccuracy(survived.length, rawCount),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Batch aggregation (fix pass, item 4) — the ONE function both the runner
+// (fresh in-memory results, same call) and the dashboard (persisted rows,
+// read back later) use to roll per-case outcomes into batch-level metrics.
+// Before this fix the two independently re-derived the rule and drifted:
+// the dashboard's `citation_accuracy` coerced a missing per-row value to 0
+// INTO the mean's denominator, which is not what the runner did.
+// ---------------------------------------------------------------------------
+
+export function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+function mean(values: readonly number[]): number {
+  return values.reduce((sum, v) => sum + v, 0) / values.length;
+}
+
+/** The slice of one persisted/in-batch run outcome the aggregator needs —
+ *  `pass: null` is what AC-25 uses to mark "this case errored". */
+export interface EvalRunOutcome {
+  pass: boolean | null;
+  recall: number | null;
+  precision: number | null;
+  citationAccuracy: number | null;
+}
+
+export interface EvalBatchAggregate {
+  recall: number;
+  precision: number;
+  citationAccuracy: number | null;
+  tracesPassed: number;
+  tracesTotal: number;
+  casesErrored: number;
+}
+
+/**
+ * Aggregate one batch's per-case outcomes (AC-16..AC-20, AC-25, AC-31).
+ *
+ * - `recall`/`precision`: round2 MEAN over non-errored (`pass !== null`)
+ *   rows; `0` when every row errored — a schema-legal placeholder
+ *   (`EvalBatchRecord.recall`/`.precision` are non-nullable), never read as
+ *   a real value because a caller that skips the regression alert on
+ *   `traces_total === 0` (fix pass, item 2a) never surfaces it as a drop.
+ * - `citation_accuracy`: round2 MEAN over rows where it is non-null — a
+ *   missing value is EXCLUDED from the denominator, never coerced to 0
+ *   inside it; `null` when no row has one.
+ * - `traces_passed`/`traces_total` exclude errored rows entirely;
+ *   `cases_errored` counts them.
+ */
+export function aggregateEvalBatch(runs: readonly EvalRunOutcome[]): EvalBatchAggregate {
+  const valid = runs.filter((r) => r.pass !== null);
+  const casesErrored = runs.length - valid.length;
+  const tracesTotal = valid.length;
+  const tracesPassed = valid.filter((r) => r.pass === true).length;
+
+  const recallValues = valid.map((r) => r.recall).filter((v): v is number => v !== null);
+  const precisionValues = valid.map((r) => r.precision).filter((v): v is number => v !== null);
+  const citationValues = valid.map((r) => r.citationAccuracy).filter((v): v is number => v !== null);
+
+  return {
+    recall: recallValues.length > 0 ? round2(mean(recallValues)) : 0,
+    precision: precisionValues.length > 0 ? round2(mean(precisionValues)) : 0,
+    citationAccuracy: citationValues.length > 0 ? round2(mean(citationValues)) : null,
+    tracesPassed,
+    tracesTotal,
+    casesErrored,
   };
 }

@@ -12,6 +12,7 @@ import { NotFoundError } from '../../platform/errors.js';
 import { EvalRepository } from './repository.js';
 import type { EvalBatchRunRow, EvalBatchRuns } from './types.js';
 import { BATCH_TABLE_LIMIT, REGRESSION_THRESHOLD_PP } from './constants.js';
+import { aggregateEvalBatch, round2 } from './scoring.js';
 
 /**
  * eval — dashboard read models (SPEC-05, step 9). Two entry points, both take
@@ -46,43 +47,37 @@ interface BatchAggregate {
   costUsd: number | null;
 }
 
-function average(values: number[]): number {
-  return values.reduce((sum, v) => sum + v, 0) / values.length;
-}
-
-function round2(n: number): number {
-  return Math.round(n * 100) / 100;
-}
-
 /**
  * AC-25: a row with `pass = null` means its case errored. Errored rows are
  * excluded from recall/precision/citation_accuracy AND from
  * `traces_passed`/`traces_total` — they only ever show up in `cases_errored`.
  * Otherwise `X/Y pass` would read as "the agent regressed" when the real
  * cause was a dead provider.
+ *
+ * The recall/precision/citation_accuracy/traces/errored rule itself is
+ * `scoring.ts#aggregateEvalBatch` (fix pass, item 4) — the SAME function
+ * `runner.ts#aggregate` uses on fresh results, so this read side and that
+ * write side cannot independently drift on the mean/null rules again (this
+ * file used to coerce a missing per-row `citationAccuracy` to `0` INTO the
+ * mean's denominator; the runner never did). Only duration/cost stay local:
+ * they sum every PERSISTED row here (this file has no batch-start timestamp
+ * to compute a wall-clock duration from, unlike the runner).
  */
 function aggregateBatch(runs: EvalBatchRunRow[]): BatchAggregate {
-  const valid = runs.filter((r) => r.pass !== null);
-  const casesErrored = runs.length - valid.length;
-  const tracesTotal = valid.length;
-  const tracesPassed = valid.filter((r) => r.pass === true).length;
-
-  // `EvalBatchRecord.recall`/`.precision` are non-nullable by contract
-  // (`vendor/shared/contracts/eval-ci.ts`) even though `.citation_accuracy`
-  // is nullable there — 0 is the schema-legal placeholder for "a batch ran
-  // but every case in it errored" (no valid case to average over); it is
-  // never emitted for "no batch has ever run" (that state is signalled by an
-  // empty `recent_batches`/`trend` array instead, see `getEvalDashboard`).
-  const recall = tracesTotal > 0 ? round2(average(valid.map((r) => r.recall ?? 0))) : 0;
-  const precision = tracesTotal > 0 ? round2(average(valid.map((r) => r.precision ?? 0))) : 0;
-  const citationAccuracy =
-    tracesTotal > 0 ? round2(average(valid.map((r) => r.citationAccuracy ?? 0))) : null;
+  const agg = aggregateEvalBatch(
+    runs.map((r) => ({
+      pass: r.pass,
+      recall: r.recall,
+      precision: r.precision,
+      citationAccuracy: r.citationAccuracy,
+    })),
+  );
 
   const durationMs = runs.reduce((sum, r) => sum + (r.durationMs ?? 0), 0);
   const costValues = runs.map((r) => r.costUsd).filter((c): c is number => c !== null);
   const costUsd = costValues.length > 0 ? costValues.reduce((a, b) => a + b, 0) : null;
 
-  return { recall, precision, citationAccuracy, tracesPassed, tracesTotal, casesErrored, durationMs, costUsd };
+  return { ...agg, durationMs, costUsd };
 }
 
 function toBatchRecord(batch: EvalBatchRuns, agentName: string): EvalBatchRecord {
@@ -145,21 +140,31 @@ function toRunRecord(row: EvalBatchRunRow): EvalRunRecord {
 /**
  * AC-31: latest vs previous batch, both already-aggregated `EvalBatchRecord`s
  * (newest-first order is the caller's responsibility). `null` when there is
- * no batch, or only one, to compare — a regression banner needs a baseline.
- * When both `recall` and `precision` cross the threshold, the larger drop
- * wins the `metric` slot; `others` always carries the LATEST batch's three
- * metrics (the "direction of the rest of the metrics" the banner shows
- * alongside the one that regressed).
+ * no batch, or only one, to compare — a regression banner needs a baseline —
+ * OR when the LATEST batch measured nothing (`traces_total === 0`, every case
+ * in it errored — fix pass, item 2a): its `recall`/`precision` are the
+ * schema-legal `0` placeholder, not a real measurement, and comparing that
+ * placeholder against the previous batch would fabricate an 80pp "regression"
+ * out of a dead provider. When both `recall` and `precision` cross the
+ * threshold, the larger drop wins the `metric` slot; `others` always carries
+ * the LATEST batch's three metrics (the "direction of the rest of the
+ * metrics" the banner shows alongside the one that regressed) — including a
+ * `null` `citation_accuracy` when the latest batch has one (fix pass, item
+ * 2b: never coerced to `0`).
  */
 function computeAlert(latest: EvalBatchRecord | null, previous: EvalBatchRecord | null): EvalAlert | null {
   if (!latest || !previous) return null;
+  if (latest.traces_total === 0) return null;
 
   const recallDropPp = round2((previous.recall - latest.recall) * 100);
   const precisionDropPp = round2((previous.precision - latest.precision) * 100);
 
+  // `>=`, not `>` (fix pass, item 6): `REGRESSION_THRESHOLD_PP`'s own doc
+  // comment and the spec default both say "at least"/≥ 2 points, so a drop of
+  // EXACTLY the threshold must alert, not slip through on a strict `>`.
   const candidates: Array<{ metric: EvalAlert['metric']; dropPp: number }> = [];
-  if (recallDropPp > REGRESSION_THRESHOLD_PP) candidates.push({ metric: 'recall', dropPp: recallDropPp });
-  if (precisionDropPp > REGRESSION_THRESHOLD_PP) candidates.push({ metric: 'precision', dropPp: precisionDropPp });
+  if (recallDropPp >= REGRESSION_THRESHOLD_PP) candidates.push({ metric: 'recall', dropPp: recallDropPp });
+  if (precisionDropPp >= REGRESSION_THRESHOLD_PP) candidates.push({ metric: 'precision', dropPp: precisionDropPp });
   if (candidates.length === 0) return null;
 
   const worst = candidates.reduce((a, b) => (b.dropPp > a.dropPp ? b : a));
@@ -169,7 +174,7 @@ function computeAlert(latest: EvalBatchRecord | null, previous: EvalBatchRecord 
     others: {
       recall: latest.recall,
       precision: latest.precision,
-      citation_accuracy: latest.citation_accuracy ?? 0,
+      citation_accuracy: latest.citation_accuracy,
     },
   };
 }
@@ -179,10 +184,11 @@ function toTrendPoint(record: EvalBatchRecord): EvalTrendPoint {
     ran_at: record.ran_at,
     recall: record.recall,
     precision: record.precision,
-    // `EvalTrendPoint.citation_accuracy` is non-nullable by contract, unlike
-    // `EvalBatchRecord.citation_accuracy` — 0 for the "every case in this
-    // batch errored" edge case, same reasoning as `aggregateBatch`.
-    citation_accuracy: record.citation_accuracy ?? 0,
+    // Nullable now, mirroring `EvalBatchRecord.citation_accuracy` — never
+    // coerced to `0` for the "every case in this batch errored" edge case
+    // (fix pass, item 2c); the chart consumer (`AgentDashboard.tsx`) treats a
+    // `null` point as a gap, not a plotted `0`-cliff.
+    citation_accuracy: record.citation_accuracy,
     pass_rate: record.traces_total > 0 ? round2(record.traces_passed / record.traces_total) : 0,
     cost_usd: record.cost_usd,
   };
@@ -204,8 +210,11 @@ function toTrendPoint(record: EvalBatchRecord): EvalTrendPoint {
  * call per agent. That is bounded by the number of agents in the workspace
  * (a handful, local-first scale), never by run/case volume — unlike
  * `EvalRepository#recentBatches`, which stays at two calls total regardless
- * of how many batches exist. `last_batch` per agent is derived from the same
- * `listBatchesForAllAgents` read (not a second per-agent batch query).
+ * of how many batches exist. `last_batch` per agent comes from
+ * `EvalRepository#latestBatchPerAgent` (fix pass, item 3), NOT from the
+ * capped `recent_batches` window below: an agent whose latest run has since
+ * scrolled past `BATCH_TABLE_LIMIT` because enough OTHER agents ran more
+ * recently must still report its own last batch, not `null`.
  */
 export async function getEvalOverview(
   container: Container,
@@ -213,19 +222,19 @@ export async function getEvalOverview(
 ): Promise<EvalDashboardOverview> {
   const repo = new EvalRepository(container.db);
 
-  const [agents, batches] = await Promise.all([
+  const [agents, batches, latestBatches] = await Promise.all([
     container.agentsRepo.list(workspaceId),
     repo.listBatchesForAllAgents(workspaceId, BATCH_TABLE_LIMIT),
+    repo.latestBatchPerAgent(workspaceId),
   ]);
 
   const nameByAgentId = new Map(agents.map((a) => [a.id, a.name]));
   // `batches` is already newest-first (EvalRepository#recentBatches).
   const recentBatches = batches.map((b) => toBatchRecord(b, nameByAgentId.get(b.ownerId) ?? 'unknown'));
 
-  const latestBatchByAgent = new Map<string, EvalBatchRecord>();
-  for (const record of recentBatches) {
-    if (!latestBatchByAgent.has(record.agent_id)) latestBatchByAgent.set(record.agent_id, record);
-  }
+  const latestBatchByAgent = new Map<string, EvalBatchRecord>(
+    latestBatches.map((b) => [b.ownerId, toBatchRecord(b, nameByAgentId.get(b.ownerId) ?? 'unknown')]),
+  );
 
   const withCases = await Promise.all(
     agents.map(async (agent) => ({ agent, cases: await repo.listAgentCases(workspaceId, agent.id) })),
@@ -250,17 +259,19 @@ export async function getEvalOverview(
  * across batches, the recent-batches table and the per-case run history, plus
  * the structural regression alert.
  *
- * No batch ever run: `recent_batches`, `trend` and `recent_runs` are all `[]`
- * and `alert` is `null` — that combination is the "no runs yet" signal a
- * caller (step 11, step 13) must check for. `current`/`delta`'s numeric
+ * No batch ever run: `recent_batches`, `trend` and `recent_runs` are all `[]`,
+ * `delta` and `alert` are `null` — that combination is the "no runs yet"
+ * signal a caller (step 11, step 13) must check for. `current`'s numeric
  * fields (`recall`, `precision`, `citation_accuracy`) cannot themselves carry
- * `null` in that state — `EvalDashboard.current.citation_accuracy` and every
- * `delta` field are non-nullable by contract (`vendor/shared/contracts/
- * eval-ci.ts`, frozen by wave 1 — this lane does not edit it) — so they fall
- * back to `0`/`null cost_usd`. AC-29 ("never zeros that read as results") is
- * satisfied by the empty arrays, not by these placeholder numbers; a renderer
- * that reads `current` without first checking `recent_batches.length` would
- * violate AC-29 even though the wire body is schema-valid.
+ * `null` in that state — `EvalDashboard.current.citation_accuracy` is
+ * non-nullable by contract (`vendor/shared/contracts/eval-ci.ts`) — so they
+ * fall back to `0`/`null cost_usd`. AC-29 ("never zeros that read as
+ * results") is satisfied by the empty arrays, not by these placeholder
+ * numbers; a renderer that reads `current` without first checking
+ * `recent_batches.length` would violate AC-29 even though the wire body is
+ * schema-valid. `delta` is `null` whenever there is no PREVIOUS batch to
+ * diff against (fix pass, item 5) — including the first-ever run, which used
+ * to render a fabricated flat "0.0 pt" delta instead of no delta row at all.
  */
 export async function getEvalDashboard(
   container: Container,
@@ -292,6 +303,8 @@ export async function getEvalDashboard(
       }
     : { recall: 0, precision: 0, citation_accuracy: 0, traces_passed: 0, traces_total: 0, cost_usd: null };
 
+  // `null`, not a fabricated flat `{ recall: 0, precision: 0, ... }`, when
+  // there is no previous batch to diff against (fix pass, item 5).
   const delta =
     latest && previous
       ? {
@@ -299,7 +312,7 @@ export async function getEvalDashboard(
           precision: round2(latest.precision - previous.precision),
           citation_accuracy: round2((latest.citation_accuracy ?? 0) - (previous.citation_accuracy ?? 0)),
         }
-      : { recall: 0, precision: 0, citation_accuracy: 0 };
+      : null;
 
   // Chronological (oldest first) for a trend chart, unlike the newest-first
   // tables — `EvalTrendPoint`'s own doc comment: "per run, chronological".

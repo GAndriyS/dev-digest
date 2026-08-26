@@ -135,7 +135,11 @@ export const EvalAlert = z.object({
   others: z.object({
     recall: z.number(),
     precision: z.number(),
-    citation_accuracy: z.number(),
+    // Nullable, unlike `recall`/`precision` above: `citation_accuracy` is
+    // itself nullable on `EvalBatchRecord` ("every case in the batch
+    // errored" has no citation rate to report) — the server never coerces
+    // that into a fabricated `0` here (fix pass, item 2b).
+    citation_accuracy: z.number().nullable(),
   }),
 });
 export type EvalAlert = z.infer<typeof EvalAlert>;
@@ -145,7 +149,10 @@ export const EvalTrendPoint = z.object({
   ran_at: z.string(),
   recall: z.number(),
   precision: z.number(),
-  citation_accuracy: z.number(),
+  // Nullable — mirrors `EvalBatchRecord.citation_accuracy` (null when every
+  // case in that batch errored); the server no longer coerces null→0 here
+  // (fix pass, item 2c), and the chart consumer treats a null point as a gap.
+  citation_accuracy: z.number().nullable(),
   pass_rate: z.number(),
   cost_usd: z.number().nullable(),
 });
@@ -164,11 +171,16 @@ export const EvalDashboard = z.object({
     traces_total: z.number().int(),
     cost_usd: z.number().nullable(),
   }),
-  delta: z.object({
-    recall: z.number(),
-    precision: z.number(),
-    citation_accuracy: z.number(),
-  }),
+  // Nullable — `null` when there is no previous batch to compare against
+  // (the very first run); the server never fabricates a flat 0.0pt delta for
+  // that case (fix pass, item 5).
+  delta: z
+    .object({
+      recall: z.number(),
+      precision: z.number(),
+      citation_accuracy: z.number(),
+    })
+    .nullable(),
   trend: z.array(EvalTrendPoint),
   recent_runs: z.array(EvalRunRecord),
   // Batch-level rows (one per agent-set run) for the "recent runs" table on the

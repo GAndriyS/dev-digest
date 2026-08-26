@@ -143,6 +143,19 @@ describe("AgentDashboard", () => {
     expect(screen.getByText("0.0 pt")).toBeInTheDocument();
   });
 
+  it("omits the delta row on the first-ever batch (delta: null, fix pass item 5) — metric values still render", () => {
+    state.dashboard = makeDashboard({ delta: null });
+    renderView();
+
+    // The metric VALUES still render off `current`...
+    expect(screen.getAllByText("80%").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("90%").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("85%").length).toBeGreaterThan(0);
+    // ...but no delta pill is rendered for any of the three metrics — never a
+    // fabricated flat "0.0 pt" when there is no previous batch to diff.
+    expect(screen.queryByText(/^[+-]?\d+\.\d pt$/)).not.toBeInTheDocument();
+  });
+
   it("shows an em dash for a null citation_accuracy, never 0% (null-metric rule)", () => {
     state.dashboard = makeDashboard({
       current: { recall: 0.8, precision: 0.9, citation_accuracy: null as unknown as number, traces_passed: 4, traces_total: 5, cost_usd: null },

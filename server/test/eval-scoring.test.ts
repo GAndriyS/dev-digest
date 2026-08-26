@@ -1,12 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import {
+  aggregateEvalBatch,
   citationAccuracy,
   evalPass,
   matchFindings,
   precision,
   recall,
+  round2,
   scoreEvalCase,
   type ActualFinding,
+  type EvalRunOutcome,
 } from '../src/modules/eval/scoring.js';
 import {
   expectedFindings,
@@ -90,6 +93,23 @@ describe('matchFindings — AC-15 credit assignment', () => {
     // no severity/category on ActualFinding at all — matching must not need them
     expect(matchFindings([exp], [act]).creditedExpectations).toBe(1);
   });
+
+  it(
+    'MAXIMUM matching, not greedy first-match (fix pass, item 7): expected A(1-5),B(4-8) in ' +
+      'a.ts; actual X(4-5),Y(1-2) — every pair overlaps except B×Y. A greedy first-match ' +
+      'assigns A→X (processed first) and leaves B unmatched (1/2 credited); the maximum ' +
+      'matching is A→Y, B→X — 2/2 credited, recall 1.',
+    () => {
+      const A = expected({ start_line: 1, end_line: 5 });
+      const B = expected({ start_line: 4, end_line: 8 });
+      const X = actual({ start_line: 4, end_line: 5 });
+      const Y = actual({ start_line: 1, end_line: 2 });
+
+      const r = matchFindings([A, B], [X, Y]);
+      expect(r).toEqual({ creditedExpectations: 2, creditedActuals: 2 });
+      expect(recall(2, r.creditedExpectations)).toBe(1);
+    },
+  );
 });
 
 describe('recall / precision / citationAccuracy / evalPass — zero-denominator rules', () => {
@@ -194,6 +214,76 @@ describe('expectedFindings — safeParse over the untyped jsonb blob', () => {
 
   it('an empty findings array parses as must_not_flag, not as malformed', () => {
     expect(expectedFindings({ findings: [] })).toEqual([]);
+  });
+});
+
+describe('aggregateEvalBatch — the shared runner/dashboard aggregator (fix pass, item 4)', () => {
+  function outcome(over: Partial<EvalRunOutcome> = {}): EvalRunOutcome {
+    return { pass: true, recall: 1, precision: 1, citationAccuracy: 1, ...over };
+  }
+
+  it('recall/precision are the round2 mean over non-errored rows', () => {
+    const agg = aggregateEvalBatch([
+      outcome({ recall: 1, precision: 1 }),
+      outcome({ recall: 0, precision: 1 }),
+      outcome({ recall: 1, precision: 0 }),
+    ]);
+    expect(agg.recall).toBe(round2(2 / 3));
+    expect(agg.precision).toBe(round2(2 / 3));
+  });
+
+  it(
+    'citation_accuracy excludes null values from the denominator (never coerces them to 0) — ' +
+      '1.0, null, 0.5 → mean of (1.0, 0.5) = 0.75, NOT (1.0 + 0 + 0.5) / 3',
+    () => {
+      const agg = aggregateEvalBatch([
+        outcome({ citationAccuracy: 1.0 }),
+        outcome({ citationAccuracy: null }),
+        outcome({ citationAccuracy: 0.5 }),
+      ]);
+      expect(agg.citationAccuracy).toBe(0.75);
+    },
+  );
+
+  it('citation_accuracy is null, not 0, when no row has one', () => {
+    const agg = aggregateEvalBatch([outcome({ citationAccuracy: null }), outcome({ citationAccuracy: null })]);
+    expect(agg.citationAccuracy).toBeNull();
+  });
+
+  it('excludes errored rows (pass = null) from recall/precision/citation_accuracy AND traces_passed/traces_total, counting them only in cases_errored', () => {
+    const agg = aggregateEvalBatch([
+      outcome({ pass: true, recall: 1, precision: 1, citationAccuracy: 1 }),
+      outcome({ pass: null, recall: 0, precision: 0, citationAccuracy: null }),
+      outcome({ pass: false, recall: 0, precision: 1, citationAccuracy: 1 }),
+    ]);
+    expect(agg.tracesTotal).toBe(2);
+    expect(agg.tracesPassed).toBe(1);
+    expect(agg.casesErrored).toBe(1);
+    expect(agg.recall).toBe(round2(0.5));
+    expect(agg.precision).toBe(1);
+    expect(agg.citationAccuracy).toBe(1);
+  });
+
+  it('recall/precision fall back to the schema-legal 0 placeholder when every row errored; citation_accuracy stays null', () => {
+    const agg = aggregateEvalBatch([outcome({ pass: null }), outcome({ pass: null })]);
+    expect(agg.recall).toBe(0);
+    expect(agg.precision).toBe(0);
+    expect(agg.citationAccuracy).toBeNull();
+    expect(agg.tracesTotal).toBe(0);
+    expect(agg.tracesPassed).toBe(0);
+    expect(agg.casesErrored).toBe(2);
+  });
+
+  it('an empty batch aggregates to all-zero/null placeholders without dividing by zero', () => {
+    const agg = aggregateEvalBatch([]);
+    expect(agg).toEqual({
+      recall: 0,
+      precision: 0,
+      citationAccuracy: null,
+      tracesPassed: 0,
+      tracesTotal: 0,
+      casesErrored: 0,
+    });
   });
 });
 

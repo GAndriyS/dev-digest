@@ -213,6 +213,75 @@ export class EvalRepository {
       .limit(limit);
 
     const batchIds = batchIdRows.map((r) => r.batchId).filter((id): id is string => id !== null);
+    // batchIds is already newest-first (from the grouped query above) —
+    // `runRowsGroupedByBatch` preserves this order rather than re-deriving
+    // it from the ungrouped row order.
+    return this.runRowsGroupedByBatch(workspaceId, batchIds);
+  }
+
+  /**
+   * The single LATEST batch per agent (AC-9's `EvalAgentSummary.last_batch`),
+   * NOT derived from the global top-`BATCH_TABLE_LIMIT` window `recentBatches`
+   * reads — an agent whose latest run has since scrolled out of that window
+   * must still report it (fix pass, item 3: `getEvalOverview` used to derive
+   * `last_batch` from the same capped `recentBatches` read `recent_batches`
+   * uses, which silently drops an agent's last run once enough OTHER agents'
+   * batches push it past the cap).
+   *
+   * Two queries, no per-agent loop: first every `(owner_id, batch_id)` pair's
+   * own `max(ran_at)` — bounded by the total number of BATCHES ever run
+   * (never runs/cases, local-first scale), reduced in memory to the one
+   * winning `batch_id` per agent; then the same shared row-fetch-and-group
+   * step `recentBatches` uses, for exactly those winning batches.
+   */
+  async latestBatchPerAgent(workspaceId: string): Promise<EvalBatchRuns[]> {
+    const perBatch = await this.db
+      .select({
+        ownerId: t.evalCases.ownerId,
+        batchId: t.evalRuns.batchId,
+        batchRanAt: sql<Date>`max(${t.evalRuns.ranAt})`,
+      })
+      .from(t.evalRuns)
+      .innerJoin(t.evalCases, eq(t.evalCases.id, t.evalRuns.caseId))
+      .where(
+        and(
+          eq(t.evalCases.workspaceId, workspaceId),
+          eq(t.evalCases.ownerKind, 'agent' as const),
+          isNotNull(t.evalRuns.batchId),
+        ),
+      )
+      .groupBy(t.evalCases.ownerId, t.evalRuns.batchId);
+
+    const latestByAgent = new Map<string, { batchId: string; ranAt: Date }>();
+    for (const row of perBatch) {
+      if (row.batchId === null) continue;
+      // Defensive `new Date(...)`: `sql<Date>` is a type HINT to drizzle, not
+      // a runtime guarantee the driver returns an actual `Date` instance for
+      // an aggregate expression the way it does for a plain column select —
+      // `new Date(aDate)` is a no-op, `new Date(anIsoString)` is not.
+      const ranAt = new Date(row.batchRanAt);
+      const current = latestByAgent.get(row.ownerId);
+      if (!current || ranAt > current.ranAt) {
+        latestByAgent.set(row.ownerId, { batchId: row.batchId, ranAt });
+      }
+    }
+
+    const batchIds = [...latestByAgent.values()].map((v) => v.batchId);
+    return this.runRowsGroupedByBatch(workspaceId, batchIds);
+  }
+
+  /**
+   * Shared second half of both batch reads above: fetch every run row for
+   * exactly the given `batchIds` (one query) and group them into one
+   * `EvalBatchRuns` per batch, in the caller-supplied order. Extracted (fix
+   * pass, item 3) so `recentBatches` (top-N, global) and `latestBatchPerAgent`
+   * (one per agent, unbounded) can never duplicate — and drift on — the
+   * grouping rule.
+   */
+  private async runRowsGroupedByBatch(
+    workspaceId: string,
+    batchIds: readonly string[],
+  ): Promise<EvalBatchRuns[]> {
     if (batchIds.length === 0) return [];
 
     const rows = await this.db
@@ -239,7 +308,7 @@ export class EvalRepository {
         and(
           eq(t.evalCases.workspaceId, workspaceId),
           eq(t.evalCases.ownerKind, 'agent'),
-          inArray(t.evalRuns.batchId, batchIds),
+          inArray(t.evalRuns.batchId, batchIds as string[]),
         ),
       )
       .orderBy(desc(t.evalRuns.ranAt));
@@ -276,8 +345,6 @@ export class EvalRepository {
       group.runs.push(run);
     }
 
-    // batchIds is already newest-first (from the grouped query); preserve
-    // that order rather than re-deriving it from the ungrouped row order.
-    return batchIds.map((id) => groups.get(id)!).filter(Boolean);
+    return batchIds.map((id) => groups.get(id)).filter((g): g is EvalBatchRuns => g !== undefined);
   }
 }

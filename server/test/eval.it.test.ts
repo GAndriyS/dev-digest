@@ -300,6 +300,127 @@ d('eval module (SPEC-05)', () => {
     await app.close();
   });
 
+  // ---- PUT /eval-cases/:id — expected_output union (fix pass, item 1) ----
+  // Regression: the shared `PUT` (registered on `skills/routes.ts`) used to
+  // validate `expected_output` with the SKILL shape only (`severity`
+  // required, non-strict `z.object` — silently STRIPPING `file`/`start_line`/
+  // `end_line`). A round-trip PUT on an agent case minted from a finding
+  // would silently corrupt its scorable expectation.
+
+  it('PUT on a finding-minted agent case round-trips expected_output WITHOUT stripping file/start_line/end_line', async () => {
+    const app = await makeApp();
+    const workspaceId = await defaultWorkspaceId();
+    const prId = await pr482Id();
+    const agent = await createAgent(app, 'Fix1 Owner');
+
+    const path = 'src/eval/fix1-roundtrip.ts';
+    const patch = makeDiffPatch(path);
+    await pg.handle.db.insert(t.prFiles).values({ prId, path, additions: 1, deletions: 0, patch });
+    const findingId = await insertDecidedFinding({
+      prId,
+      workspaceId,
+      agentId: agent.id,
+      file: path,
+      decision: 'accepted',
+    });
+
+    const minted = await app.inject({ method: 'POST', url: `/findings/${findingId}/eval-case` });
+    expect(minted.statusCode).toBe(201);
+    const created = minted.json();
+    expect(created.expected_output.findings[0]).toMatchObject({
+      file: path,
+      start_line: FIXTURE_LINE,
+      end_line: FIXTURE_LINE,
+      severity: 'CRITICAL',
+    });
+
+    // Round-trip the EXACT expected_output the mint step wrote — this is the
+    // regression: the old skill-only schema would 200 with `file`/
+    // `start_line`/`end_line` silently stripped from the stored value.
+    const put = await app.inject({
+      method: 'PUT',
+      url: `/eval-cases/${created.id}`,
+      payload: { expected_output: created.expected_output },
+    });
+    expect(put.statusCode).toBe(200);
+    expect(put.json().expected_output.findings[0]).toMatchObject({
+      file: path,
+      start_line: FIXTURE_LINE,
+      end_line: FIXTURE_LINE,
+      severity: 'CRITICAL',
+      category: 'security',
+      title: 'Hardcoded key',
+    });
+
+    await app.close();
+  });
+
+  it('PUT with a hand-authored agent-shaped expected_output (file/lines, no severity) succeeds, not 422', async () => {
+    const app = await makeApp();
+    const agent = await createAgent(app, 'Fix1 HandAuthored Owner');
+
+    const created = await app.inject({
+      method: 'POST',
+      url: '/eval-cases',
+      payload: {
+        owner_kind: 'agent',
+        owner_id: agent.id,
+        name: 'hand-authored',
+        input_diff: makeDiffPatch('src/eval/fix1-hand-authored.ts'),
+        expected_output: { findings: [] },
+      },
+    });
+    expect(created.statusCode).toBe(201);
+    const caseId = created.json().id as string;
+
+    const put = await app.inject({
+      method: 'PUT',
+      url: `/eval-cases/${caseId}`,
+      payload: {
+        expected_output: {
+          findings: [
+            { file: 'src/eval/fix1-hand-authored.ts', start_line: 1, end_line: 2 },
+          ],
+        },
+      },
+    });
+    expect(put.statusCode).toBe(200);
+    expect(put.json().expected_output.findings).toEqual([
+      { file: 'src/eval/fix1-hand-authored.ts', start_line: 1, end_line: 2 },
+    ]);
+
+    await app.close();
+  });
+
+  it('PUT with an expected_output matching NEITHER shape still 422s', async () => {
+    const app = await makeApp();
+    const agent = await createAgent(app, 'Fix1 Garbage Owner');
+
+    const created = await app.inject({
+      method: 'POST',
+      url: '/eval-cases',
+      payload: {
+        owner_kind: 'agent',
+        owner_id: agent.id,
+        name: 'garbage-patch',
+        input_diff: makeDiffPatch('src/eval/fix1-garbage.ts'),
+        expected_output: { findings: [] },
+      },
+    });
+    expect(created.statusCode).toBe(201);
+    const caseId = created.json().id as string;
+
+    const put = await app.inject({
+      method: 'PUT',
+      url: `/eval-cases/${caseId}`,
+      // Neither shape: no `file` (agent) and no `severity` (skill).
+      payload: { expected_output: { findings: [{ title: 'not scoreable' }] } },
+    });
+    expect(put.statusCode).toBe(422);
+
+    await app.close();
+  });
+
   // ---- AC-11 — delete cascades its run history --------------------------
 
   it('deleting a case answers { ok: true }, removes its eval_runs, and drops it from the set (AC-11)', async () => {
@@ -562,6 +683,142 @@ d('eval module (SPEC-05)', () => {
 
     await app.close();
   });
+
+  // ---- fix pass, item 3 — last_batch is NOT capped by the global window --
+
+  it(
+    "an agent's last_batch survives being pushed out of the global " +
+      'recent_batches window (fix pass, item 3)',
+    async () => {
+      const llm = new MockLLMProvider('openai', {
+        structured: { verdict: 'comment', summary: 'ok', score: 90, findings: [] },
+      });
+      const app = await makeApp(llm);
+
+      const target = await createAgent(app, 'Fix3 Target Owner');
+      const targetCase = await app.inject({
+        method: 'POST',
+        url: '/eval-cases',
+        payload: {
+          owner_kind: 'agent',
+          owner_id: target.id,
+          name: 'target-case',
+          input_diff: makeDiffPatch('src/eval/fix3-target.ts'),
+          expected_output: { findings: [] },
+        },
+      });
+      expect(targetCase.statusCode).toBe(201);
+      const targetRun = await app.inject({ method: 'POST', url: `/agents/${target.id}/eval-runs` });
+      expect(targetRun.statusCode).toBe(200);
+      const targetBatchId = (targetRun.json() as AgentEvalBatch).batch_id;
+
+      // Push the target's batch out of the global top-BATCH_TABLE_LIMIT (20)
+      // window with 20 strictly later batches from a SECOND agent.
+      const other = await createAgent(app, 'Fix3 Other Owner');
+      const otherCase = await app.inject({
+        method: 'POST',
+        url: '/eval-cases',
+        payload: {
+          owner_kind: 'agent',
+          owner_id: other.id,
+          name: 'other-case',
+          input_diff: makeDiffPatch('src/eval/fix3-other.ts'),
+          expected_output: { findings: [] },
+        },
+      });
+      expect(otherCase.statusCode).toBe(201);
+      for (let i = 0; i < 20; i++) {
+        const run = await app.inject({ method: 'POST', url: `/agents/${other.id}/eval-runs` });
+        expect(run.statusCode).toBe(200);
+      }
+
+      const overview = (
+        await app.inject({ method: 'GET', url: '/eval/overview' })
+      ).json() as EvalDashboardOverview;
+
+      // 21 total batches, global table capped at 20 — the target's (oldest)
+      // batch is gone from the shared table…
+      expect(overview.recent_batches.some((b) => b.batch_id === targetBatchId)).toBe(false);
+
+      // …but `last_batch` on the target's own summary must still report it,
+      // not `null` (the bug: it used to be derived from the same capped
+      // `recent_batches` read above).
+      const targetSummary = overview.agents.find((a) => a.agent_id === target.id);
+      expect(targetSummary).toBeDefined();
+      expect(targetSummary!.last_batch).not.toBeNull();
+      expect(targetSummary!.last_batch!.batch_id).toBe(targetBatchId);
+
+      await app.close();
+    },
+    30_000,
+  );
+
+  // ---- fix pass, item 6 — regression alert fires on the EXACT threshold --
+
+  it(
+    'a regression alert fires on the EXACT 2.0pp threshold, not only a drop strictly greater ' +
+      'than it (fix pass, item 6: >= REGRESSION_THRESHOLD_PP, not >)',
+    async () => {
+      const app = await makeApp();
+      const agent = await createAgent(app, 'Fix6 Boundary Owner');
+
+      const created = await app.inject({
+        method: 'POST',
+        url: '/eval-cases',
+        payload: {
+          owner_kind: 'agent',
+          owner_id: agent.id,
+          name: 'boundary-case',
+          input_diff: makeDiffPatch('src/eval/fix6-boundary.ts'),
+          expected_output: { findings: [{ file: 'src/eval/fix6-boundary.ts', start_line: 1, end_line: 1 }] },
+        },
+      });
+      expect(created.statusCode).toBe(201);
+      const caseId = created.json().id as string;
+
+      // Two synthetic, already-scored `eval_runs` rows (bypassing the model,
+      // like the AC-11 test above) — recall drops from 1.0 to 0.98, EXACTLY
+      // REGRESSION_THRESHOLD_PP (2) percentage points.
+      await pg.handle.db.insert(t.evalRuns).values([
+        {
+          caseId,
+          batchId: randomUUID(),
+          agentVersion: agent.version,
+          ranAt: new Date('2026-01-01T00:00:00.000Z'),
+          actualOutput: { findings: [], raw_count: 1, grounded_count: 1 },
+          pass: true,
+          recall: 1,
+          precision: 1,
+          citationAccuracy: 1,
+          durationMs: 10,
+          costUsd: 0.001,
+        },
+        {
+          caseId,
+          batchId: randomUUID(),
+          agentVersion: agent.version,
+          ranAt: new Date('2026-01-02T00:00:00.000Z'),
+          actualOutput: { findings: [], raw_count: 1, grounded_count: 1 },
+          pass: false,
+          recall: 0.98,
+          precision: 1,
+          citationAccuracy: 1,
+          durationMs: 10,
+          costUsd: 0.001,
+        },
+      ]);
+
+      const dashboard = (
+        await app.inject({ method: 'GET', url: `/eval/dashboard?owner_id=${agent.id}` })
+      ).json() as EvalDashboard;
+
+      expect(dashboard.alert).not.toBeNull();
+      expect(dashboard.alert?.metric).toBe('recall');
+      expect(dashboard.alert?.drop_pp).toBe(2);
+
+      await app.close();
+    },
+  );
 
   // ---- AC-28 — skill-owned cases never appear in the Eval Dashboard -----
 

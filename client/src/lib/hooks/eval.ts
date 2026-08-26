@@ -28,6 +28,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, apiFetchWithStatus, ApiError } from "../api";
 import type {
   AgentEvalBatch,
+  AgentVersion,
   EvalCase,
   EvalCaseInput,
   EvalDashboard,
@@ -160,24 +161,13 @@ export function useRunAgentEvalBatch() {
 
 /**
  * The immutable config snapshot captured whenever an agent's config changes
- * — only the field the Eval Dashboard compare modal needs (AC-33/34). Typed
- * locally rather than imported from `@devdigest/shared`: the server's
- * canonical copy has carried `AgentVersion`/`AgentVersionConfig`
- * (`server/src/vendor/shared/contracts/knowledge.ts`) since before this plan
- * — the route (`GET /agents/:id/versions/:version`,
- * `server/src/modules/agents/routes.ts:134-143`) already existed — but the
- * client's trimmed `src/vendor/shared/contracts/knowledge.ts` was never
- * mirrored with it (no client feature had read a version snapshot before
- * step 13). This lane (plan step 13, `client/src/app/eval/**`) does not own
- * `client/src/vendor/**`, so the type is declared here instead of closing
- * that gap — flagged as a seam item in the implementation report, not
- * silently worked around. */
-export interface AgentVersionSnapshot {
-  agent_id: string;
-  version: number;
-  config: { system_prompt: string };
-  created_at: string;
-}
+ * — the compare modal (AC-33/34) only reads `config.system_prompt` off it.
+ * Now the mirrored `@devdigest/shared` type (fix pass, item 9 closed the gap
+ * this comment used to describe: `AgentVersion`/`AgentVersionConfig` existed
+ * in the server's canonical `vendor/shared/contracts/knowledge.ts` but were
+ * never mirrored into the client's trimmed copy). Aliased under its old local
+ * name so every existing call site keeps compiling unchanged. */
+export type AgentVersionSnapshot = AgentVersion;
 
 /**
  * One agent-version snapshot, for the compare modal's system-prompt diff
