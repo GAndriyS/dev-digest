@@ -184,10 +184,12 @@ function toTrendPoint(record: EvalBatchRecord): EvalTrendPoint {
     ran_at: record.ran_at,
     recall: record.recall,
     precision: record.precision,
-    // Nullable now, mirroring `EvalBatchRecord.citation_accuracy` — never
-    // coerced to `0` for the "every case in this batch errored" edge case
-    // (fix pass, item 2c); the chart consumer (`AgentDashboard.tsx`) treats a
-    // `null` point as a gap, not a plotted `0`-cliff.
+    // Nullable, mirroring `EvalBatchRecord.citation_accuracy` — never coerced
+    // to `0` (fix pass, item 2c). Note the vendored `LineChart` DOES flatten
+    // `null` to `0` (`charts/LineChart.tsx:35`, `s.data[i] ?? 0`), so the
+    // honest handling is upstream of it: `getEvalDashboard` keeps unmeasured
+    // batches out of `trend` entirely rather than relying on the chart to draw
+    // a gap it cannot draw (review loop 2).
     citation_accuracy: record.citation_accuracy,
     pass_rate: record.traces_total > 0 ? round2(record.traces_passed / record.traces_total) : 0,
     cost_usd: record.cost_usd,
@@ -304,9 +306,16 @@ export async function getEvalDashboard(
     : { recall: 0, precision: 0, citation_accuracy: 0, traces_passed: 0, traces_total: 0, cost_usd: null };
 
   // `null`, not a fabricated flat `{ recall: 0, precision: 0, ... }`, when
-  // there is no previous batch to diff against (fix pass, item 5).
+  // there is no previous batch to diff against (fix pass, item 5) — and
+  // equally when either side MEASURED NOTHING (`traces_total === 0`, every
+  // case errored). Those batches carry the schema-legal `0` placeholder, so
+  // diffing them manufactures a "+90.0 pt" recovery or a "-90.0 pt" collapse
+  // out of a dead provider key. `computeAlert` already refuses that batch;
+  // the tiles have to refuse it too, or the suppressed banner just leaves the
+  // fabricated number as the only thing on screen (review loop 2).
+  const measured = (b: EvalBatchRecord | null): boolean => !!b && b.traces_total > 0;
   const delta =
-    latest && previous
+    latest && previous && measured(latest) && measured(previous)
       ? {
           recall: round2(latest.recall - previous.recall),
           precision: round2(latest.precision - previous.precision),
@@ -316,7 +325,17 @@ export async function getEvalDashboard(
 
   // Chronological (oldest first) for a trend chart, unlike the newest-first
   // tables — `EvalTrendPoint`'s own doc comment: "per run, chronological".
-  const trend = [...recentBatches].reverse().map(toTrendPoint);
+  //
+  // Batches that measured nothing are EXCLUDED rather than plotted: their
+  // metrics are the `0` placeholder the non-nullable contract forces, and the
+  // chart would draw a dive to the axis floor that never happened. The batch
+  // is still listed in `recent_batches` with its `cases_errored` count — the
+  // table is where "this run failed" belongs; the trend is for measurements
+  // (review loop 2).
+  const trend = [...recentBatches]
+    .reverse()
+    .filter((b) => b.traces_total > 0)
+    .map(toTrendPoint);
 
   const recentRuns = batches
     .flatMap((b) => b.runs)

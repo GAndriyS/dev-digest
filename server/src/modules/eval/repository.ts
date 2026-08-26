@@ -303,7 +303,15 @@ export class EvalRepository {
       // `new Date(aDate)` is a no-op, `new Date(anIsoString)` is not.
       const ranAt = new Date(row.batchRanAt);
       const current = latestByAgent.get(row.ownerId);
-      if (!current || ranAt > current.ranAt) {
+      // Ties break on `batchId` so the winner does not depend on Postgres's
+      // row order (the grouped query has no ORDER BY). `listBatchesForAgent`
+      // resolves the same tie deterministically via its own ORDER BY, and the
+      // overview must agree with it (review loop 2).
+      const wins =
+        !current ||
+        ranAt > current.ranAt ||
+        (ranAt.getTime() === current.ranAt.getTime() && row.batchId > current.batchId);
+      if (wins) {
         latestByAgent.set(row.ownerId, { batchId: row.batchId, ranAt });
       }
     }

@@ -820,6 +820,84 @@ d('eval module (SPEC-05)', () => {
     },
   );
 
+  // ---- review loop 2 — a batch that MEASURED NOTHING is not a data point --
+
+  it(
+    'a batch where every case errored produces no delta and no trend point — its 0-placeholder ' +
+      'metrics never render as a recovery or a collapse (review loop 2)',
+    async () => {
+      const app = await makeApp();
+      const agent = await createAgent(app, 'Errored Batch Owner');
+
+      const created = await app.inject({
+        method: 'POST',
+        url: '/eval-cases',
+        payload: {
+          owner_kind: 'agent',
+          owner_id: agent.id,
+          name: 'errored-batch-case',
+          input_diff: makeDiffPatch('src/eval/loop2-errored.ts'),
+          expected_output: { findings: [{ file: 'src/eval/loop2-errored.ts', start_line: 1, end_line: 1 }] },
+        },
+      });
+      expect(created.statusCode).toBe(201);
+      const caseId = created.json().id as string;
+
+      // Batch 1 measured (recall 0.9). Batch 2 is the dead-provider batch:
+      // `pass = null`, every metric null — so it aggregates to traces_total 0
+      // and the schema-legal `0` placeholder for recall/precision.
+      await pg.handle.db.insert(t.evalRuns).values([
+        {
+          caseId,
+          batchId: randomUUID(),
+          agentVersion: agent.version,
+          ranAt: new Date('2026-02-01T00:00:00.000Z'),
+          actualOutput: { findings: [], raw_count: 1, grounded_count: 1 },
+          pass: true,
+          recall: 0.9,
+          precision: 0.9,
+          citationAccuracy: 0.9,
+          durationMs: 10,
+          costUsd: 0.001,
+        },
+        {
+          caseId,
+          batchId: randomUUID(),
+          agentVersion: agent.version,
+          ranAt: new Date('2026-02-02T00:00:00.000Z'),
+          actualOutput: { error: { code: 'provider_error', message: 'no key' } },
+          errorReason: 'provider_error',
+          pass: null,
+          recall: null,
+          precision: null,
+          citationAccuracy: null,
+          durationMs: 10,
+          costUsd: null,
+        },
+      ]);
+
+      const dashboard = (
+        await app.inject({ method: 'GET', url: `/eval/dashboard?owner_id=${agent.id}` })
+      ).json() as EvalDashboard;
+
+      // Both batches are still LISTED — the table is where "this run failed"
+      // belongs, and `cases_errored` carries the reason.
+      expect(dashboard.recent_batches).toHaveLength(2);
+      expect(dashboard.recent_batches[0]!.traces_total).toBe(0);
+      expect(dashboard.recent_batches[0]!.cases_errored).toBe(1);
+
+      // But it is not diffed against, and it is not plotted.
+      expect(dashboard.delta).toBeNull();
+      expect(dashboard.trend).toHaveLength(1);
+      expect(dashboard.trend[0]!.recall).toBe(0.9);
+
+      // And it cannot fire a regression banner either (fix pass, item 2a).
+      expect(dashboard.alert).toBeNull();
+
+      await app.close();
+    },
+  );
+
   // ---- AC-28 — skill-owned cases never appear in the Eval Dashboard -----
 
   it('a seeded skill-owned eval case never appears in GET /eval/overview (AC-28)', async () => {
