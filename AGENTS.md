@@ -15,9 +15,12 @@ a package — read its own `AGENTS.md` (`server/`, `client/`, `reviewer-core/`,
 
 - This is NOT a monorepo workspace: six independent packages, each with its own
   `package.json` **and lockfile**. `server/`, `client/`, `evals/` → **pnpm**;
-  `reviewer-core/`, `e2e/`, `mcp/` → **npm**. Installing at the repo root does
-  nothing. Cross-package code resolves via tsconfig path aliases, not published
-  modules.
+  `reviewer-core/`, `e2e/`, `mcp/` → **npm**. Cross-package code resolves via
+  tsconfig path aliases, not published modules. The repo root does carry its
+  own `package.json` (private, `packageManager` pinned, zero dependencies) —
+  installing at the root still installs nothing, but `pnpm verify:l06` lives
+  there as the one L06 verification entry point (`node scripts/verify.mjs
+  --slice frontend --slice backend --slice integration`).
 - `evals/` is the harness eval package (skills, subagents, workflow traces). It
   is **not** a `scripts/verify.mjs` slice — that script must never bill tokens —
   but it does run in CI, in its own workflow `.github/workflows/evals.yml`, on

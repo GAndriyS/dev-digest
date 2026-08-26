@@ -80,12 +80,14 @@ export function FindingCard({
       // open the same way — the case lives in its owning agent's editor.
       router.push(`/agents/${evalCase.owner_id}?tab=evals`);
     } catch (err) {
-      // AC-5: the one 422 this button explains itself — everything else
-      // (network failure, `eval_case_no_agent`, …) already gets the app-wide
-      // mutation-error toast from the global QueryClient (providers.tsx), so
-      // there is nothing else to do here.
+      // AC-5: this button explains its one expected 422 itself. The mutation
+      // opts out of the app-wide toast (`meta.ownErrorToast`, providers.tsx)
+      // — otherwise one click stacked the raw server message on top of this
+      // translated one — so every other failure has to be surfaced here too.
       if (err instanceof ApiError && err.code === NO_DIFF_CODE) {
         notify.error(tEval("findingAction.noPatch"));
+      } else {
+        notify.error(err instanceof Error ? err.message : tEval("findingAction.failed"));
       }
     }
   }

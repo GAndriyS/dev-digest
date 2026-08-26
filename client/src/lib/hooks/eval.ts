@@ -137,6 +137,10 @@ export function useCreateEvalCaseFromFinding() {
     },
     onSuccess: ({ case: evalCase }) =>
       qc.invalidateQueries({ queryKey: ["agent-eval-cases", evalCase.owner_id] }),
+    // The only caller (FindingCard) translates `eval_case_no_diff` itself
+    // (AC-5), so the app-wide mutation toast must stand down — otherwise one
+    // click stacks the raw server message on top of the translated one.
+    meta: { ownErrorToast: true },
   });
 }
 

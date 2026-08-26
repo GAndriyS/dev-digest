@@ -109,7 +109,8 @@
     "disabledReason": "Accept or dismiss the finding first",
     "noPatch": "No diff text for this file — can't create an eval case.",
     "created": "Eval case created",
-    "opened": "Eval case already exists — opening it"
+    "opened": "Eval case already exists — opening it",
+    "failed": "Couldn't create an eval case from this finding."
   },
   "compare": {
     "title": "Compare runs",

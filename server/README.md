@@ -87,6 +87,9 @@ flowchart TB
   subgraph Brief["PR Why + Risk Brief (L05)"]
     brief["brief<br/>/pulls/:id/brief"]
   end
+  subgraph Eval["Eval Pipeline (L06)"]
+    eval["eval<br/>/eval-cases · /eval-cases/:id<br/>/findings/:id/eval-case<br/>/agents/:id/eval-runs<br/>/eval/overview · /eval/dashboard"]
+  end
   subgraph Platform["Platform"]
     settings["settings<br/>/settings · /providers"]
     workspace["workspace<br/>/workspace"]
@@ -202,6 +205,17 @@ flowchart LR
   GROUND --> CACHE2[("pr_brief row<br/>head_sha · generated_at · model")]
   CACHE2 --> READ["GET /pulls/:id/brief<br/>(zero model calls; stale = head_sha mismatch)"]
 ```
+
+`eval` (`modules/eval/`, L06/SPEC-05) owns agent-scoped eval cases: `GET`/
+`POST /eval-cases` and `GET /eval-cases/:id`, plus `POST /findings/:id/eval-case`
+to mint (or return) a case from a decided finding (201 created / 200 existing).
+`PUT /eval-cases/:id` and `DELETE /eval-cases/:id` are **not** registered
+here — `skills/routes.ts` already serves both generically over `eval_cases`
+(filtered by workspace + id only, so it already covers agent-owned rows), and
+Fastify's flat route table would throw `FST_ERR_DUPLICATED_ROUTE` on a second
+registration of the same method+path. `POST /agents/:id/eval-runs` runs an
+agent's whole case set as one batch; `GET /eval/overview` and `GET
+/eval/dashboard?owner_id=` back the Eval Dashboard read models.
 
 ## Environment
 

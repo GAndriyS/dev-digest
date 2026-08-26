@@ -27,10 +27,12 @@ flowchart TD
   ONB["/onboarding<br/>add repo"] -->|"POST /repos"| API[("Fastify API")]
   PULLS --> PR["/pulls/:number<br/>review detail<br/>(overview · diff · findings)"]
 
-  AGENTS["/agents"] --> AGENT["/agents/:id<br/>editor (config · Context tab)"]
+  AGENTS["/agents"] --> AGENT["/agents/:id<br/>editor (config · Context · Evals tabs)"]
   SETTINGS["/settings/:section<br/>API keys · models"]
   ROOT -.->|"sidebar nav g x"| CONTEXT["/repos/:repoId/context<br/>Project Context (read-only)"]
   ROOT -.->|"sidebar nav g o"| ONBOARDING["/repos/:repoId/onboarding<br/>Onboarding Tour"]
+  ROOT -.->|"sidebar nav (Skills Lab, no chord)"| EVAL["/eval<br/>Eval Dashboard overview"]
+  EVAL --> AGENT_EVAL["/eval/:agentId<br/>per-agent dashboard"]
 
   PULLS -->|"GET /repos/:id/pulls · /repos/:id/index-state"| API
   PR -->|"GET /pulls/:id · /reviews · /pulls/:id/comments · /pulls/:id/smart-diff · /pulls/:id/brief<br/>POST /pulls/:id/review · /findings/:id/(accept|dismiss) · /pulls/:id/brief"| API
@@ -38,6 +40,8 @@ flowchart TD
   SETTINGS -->|"/settings · /providers"| API
   CONTEXT -->|"GET /repos/:id/context · /repos/:id/context/doc"| API
   ONBOARDING -->|"GET /repos/:id/onboarding<br/>POST /repos/:id/onboarding/generate"| API
+  EVAL -->|"GET /eval/overview"| API
+  AGENT_EVAL -->|"GET /eval/dashboard?owner_id="| API
 ```
 
 Cross-cutting chrome lives in `src/components/app-shell` (nav, breadcrumbs,
@@ -129,6 +133,22 @@ commands instead (`CommandRow`), never as `Open` links. `POST
 UI locale; on response the mutation writes straight into the query cache so a
 skeleton result renders immediately, then invalidates the query so a `ready`
 result refetches what the server actually persisted.
+
+`/eval` (`EvalOverview`, sidebar "Eval Dashboard", SKILLS LAB group, last item,
+no `g`-chord — `src/vendor/ui/nav.ts`) lists every agent with a non-empty
+eval-case set as a card off `GET /eval/overview` (the response is already
+filtered to `owner_kind='agent'` and non-empty sets, so the component never
+re-filters `data.agents`) plus a newest-first table of every batch across
+every agent. A card whose `last_batch` is `null` renders the dedicated "never
+run" badge, never a zero metric. `/eval/:agentId` (`AgentDashboard`) is one
+agent's dashboard off `GET /eval/dashboard?owner_id=<agentId>`: current-value
+metric tiles with a delta against the previous batch (omitted, not zeroed, on
+the very first batch), a regression banner when the response's `alert` is
+non-null, a recall/precision/citation-accuracy trend chart, and a batches
+table where selecting exactly two rows enables `Compare`. Running a batch
+(`POST /agents/:id/eval-runs`) happens from the agent editor's own **Evals**
+tab (`?tab=evals`, `AgentEditor/_components/EvalsTab/`), not from this
+read-only dashboard.
 
 ### Skills Lab (`/skills`, master-detail)
 
