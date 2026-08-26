@@ -1,4 +1,7 @@
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { startPg, dockerAvailable, type PgFixture } from './helpers/pg.js';
@@ -10,6 +13,7 @@ import { MockGitClient, MockGitHubClient, MockLLMProvider } from '../src/adapter
 import { AgentEvalBatch, EvalCase, EvalDashboard, EvalDashboardOverview } from '@devdigest/shared';
 import type { GitClient, GitHubClient, LLMProvider, StructuredRequest, StructuredResult } from '@devdigest/shared';
 import type { FastifyInstance } from 'fastify';
+import { BATCH_TABLE_LIMIT } from '../src/modules/eval/constants.js';
 
 const hasDocker = await dockerAvailable();
 const d = hasDocker ? describe : describe.skip;
@@ -32,6 +36,38 @@ if (!hasDocker) {
  * Every provider slot is mocked (openai/anthropic/openrouter) — INSIGHTS
  * server#2026-08-11: a missed slot silently reaches the real provider.
  */
+
+/**
+ * Design-fidelity plan (l06-evals-eval-dashboard-design-fidelity), step 9 —
+ * cross-lane seam check that needs no database: `EvalAgentSummary.trend`
+ * (AC-41) was added to BOTH `@devdigest/shared` copies in one step
+ * (`AGENTS.md`: "@devdigest/shared exists twice"). This reads both files'
+ * source directly (no module resolution, no alias — mirrors
+ * `contracts.test.ts`'s Onboarding-block check) and pins the two byte-
+ * identical for this field. Runs regardless of Docker availability, unlike
+ * the rest of this file, because it needs no live database.
+ */
+describe('eval/overview contract — EvalAgentSummary mirror (no DB required)', () => {
+  it('the client copy of EvalAgentSummary matches the server copy field-for-field (AC-41)', () => {
+    const extractEvalAgentSummaryBlock = (src: string): string => {
+      const match = src.match(
+        /\/\*\* One agent row in the Eval Dashboard overview[\s\S]*?export type EvalAgentSummary = z\.infer<typeof EvalAgentSummary>;/,
+      );
+      if (!match) throw new Error('EvalAgentSummary block marker not found');
+      return match[0].trim();
+    };
+    const testDir = dirname(fileURLToPath(import.meta.url));
+    const serverSrc = readFileSync(resolve(testDir, '../src/vendor/shared/contracts/eval-ci.ts'), 'utf8');
+    const clientSrc = readFileSync(
+      resolve(testDir, '../../client/src/vendor/shared/contracts/eval-ci.ts'),
+      'utf8',
+    );
+    const serverBlock = extractEvalAgentSummaryBlock(serverSrc);
+    const clientBlock = extractEvalAgentSummaryBlock(clientSrc);
+    expect(clientBlock).toBe(serverBlock);
+  });
+});
+
 d('eval module (SPEC-05)', () => {
   let pg: PgFixture;
 
@@ -922,6 +958,209 @@ d('eval module (SPEC-05)', () => {
     await app.close();
   });
 
+  // ---- Design-fidelity plan, step 9 — GET /eval/overview's per-agent trend
+  // (AC-40, AC-41): the seam nobody on either side of it could test alone
+  // (INSIGHTS root#2026-08-04) — step 5 (repository.ts/dashboard.ts) and
+  // step 8 (the client row/table) each unit-test their own half against a
+  // mock of the other; only the LIVE route proves the real one.
+
+  it(
+    'GET /eval/overview returns a real, chronological (oldest first) per-agent trend — never the ' +
+      'step-1 [] placeholder — capped at BATCH_TABLE_LIMIT even with more batches than that (AC-40, AC-41)',
+    async () => {
+      const app = await makeApp();
+      const agent = await createAgent(app, 'Trend Cap Owner');
+
+      const created = await app.inject({
+        method: 'POST',
+        url: '/eval-cases',
+        payload: {
+          owner_kind: 'agent',
+          owner_id: agent.id,
+          name: 'trend-cap-case',
+          input_diff: makeDiffPatch('src/eval/trend-cap.ts'),
+          expected_output: { findings: [{ file: 'src/eval/trend-cap.ts', start_line: 1, end_line: 1 }] },
+        },
+      });
+      expect(created.statusCode).toBe(201);
+      const caseId = created.json().id as string;
+
+      // BATCH_TABLE_LIMIT (20) + 5 = 25 measured batches, strictly ascending
+      // ran_at, one case-row per batch (a batch is a shared batch_id, not a
+      // row count, so one row is still a valid, distinct batch).
+      const totalBatches = BATCH_TABLE_LIMIT + 5;
+      const rows = Array.from({ length: totalBatches }, (_, i) => ({
+        caseId,
+        batchId: randomUUID(),
+        agentVersion: agent.version,
+        ranAt: new Date(Date.UTC(2026, 0, 1 + i)),
+        actualOutput: { findings: [], raw_count: 1, grounded_count: 1 },
+        pass: true,
+        recall: Math.round((i / (totalBatches - 1)) * 100) / 100,
+        precision: 0.9,
+        citationAccuracy: 0.9,
+        durationMs: 10,
+        costUsd: 0.001,
+      }));
+      await pg.handle.db.insert(t.evalRuns).values(rows);
+
+      const overview = (
+        await app.inject({ method: 'GET', url: '/eval/overview' })
+      ).json() as EvalDashboardOverview;
+      const summary = overview.agents.find((a) => a.agent_id === agent.id);
+      expect(summary).toBeDefined();
+
+      // Never the [] placeholder for an agent with real measured batches.
+      expect(summary!.trend.length).toBeGreaterThan(0);
+      // Capped at BATCH_TABLE_LIMIT even though 25 batches were run.
+      expect(summary!.trend).toHaveLength(BATCH_TABLE_LIMIT);
+
+      // Chronological, oldest first — the opposite of every table in this
+      // feature. Only the newest BATCH_TABLE_LIMIT of the 25 survive the
+      // per-agent cap, so trend[0] is the (totalBatches - BATCH_TABLE_LIMIT)-th
+      // inserted batch, not the very first ever recorded.
+      const ranAts = summary!.trend.map((p) => new Date(p.ran_at).getTime());
+      for (let i = 1; i < ranAts.length; i++) {
+        expect(ranAts[i]).toBeGreaterThan(ranAts[i - 1]!);
+      }
+      expect(summary!.trend[0]!.ran_at).toBe(rows[totalBatches - BATCH_TABLE_LIMIT]!.ranAt.toISOString());
+      expect(summary!.trend[summary!.trend.length - 1]!.ran_at).toBe(
+        rows[totalBatches - 1]!.ranAt.toISOString(),
+      );
+
+      // last_batch equals the newest trend batch — the two can no longer
+      // disagree because both are derived from the same per-agent read (step 5).
+      expect(summary!.last_batch).not.toBeNull();
+      expect(summary!.last_batch!.ran_at).toBe(summary!.trend[summary!.trend.length - 1]!.ran_at);
+
+      await app.close();
+    },
+    30_000,
+  );
+
+  it(
+    'excludes batches with traces_total = 0 from trend, while last_batch stays the newest batch ' +
+      'REGARDLESS of whether it was measured (per-variant rule, Contract & migration impact)',
+    async () => {
+      const app = await makeApp();
+      const agent = await createAgent(app, 'Unmeasured Trend Owner');
+
+      const created = await app.inject({
+        method: 'POST',
+        url: '/eval-cases',
+        payload: {
+          owner_kind: 'agent',
+          owner_id: agent.id,
+          name: 'unmeasured-case',
+          input_diff: makeDiffPatch('src/eval/unmeasured.ts'),
+          expected_output: { findings: [{ file: 'src/eval/unmeasured.ts', start_line: 1, end_line: 1 }] },
+        },
+      });
+      expect(created.statusCode).toBe(201);
+      const caseId = created.json().id as string;
+
+      // The agent's ONLY batch so far measured nothing (every case in it errored).
+      const erroredBatchId = randomUUID();
+      await pg.handle.db.insert(t.evalRuns).values({
+        caseId,
+        batchId: erroredBatchId,
+        agentVersion: agent.version,
+        ranAt: new Date('2026-03-01T00:00:00.000Z'),
+        actualOutput: { error: { code: 'provider_error', message: 'no key' } },
+        errorReason: 'provider_error',
+        pass: null,
+        recall: null,
+        precision: null,
+        citationAccuracy: null,
+        durationMs: 10,
+        costUsd: null,
+      });
+
+      const first = (
+        await app.inject({ method: 'GET', url: '/eval/overview' })
+      ).json() as EvalDashboardOverview;
+      const firstSummary = first.agents.find((a) => a.agent_id === agent.id);
+      expect(firstSummary).toBeDefined();
+
+      // Per-variant rule: a NON-NULL last_batch and an EMPTY trend are BOTH
+      // legal at once. `last_batch === null` is the sole "never run"
+      // discriminant — never `trend.length === 0`.
+      expect(firstSummary!.last_batch).not.toBeNull();
+      expect(firstSummary!.last_batch!.batch_id).toBe(erroredBatchId);
+      expect(firstSummary!.last_batch!.traces_total).toBe(0);
+      expect(firstSummary!.trend).toEqual([]);
+
+      // Now add an OLDER, measured batch.
+      const measuredBatchId = randomUUID();
+      await pg.handle.db.insert(t.evalRuns).values({
+        caseId,
+        batchId: measuredBatchId,
+        agentVersion: agent.version,
+        ranAt: new Date('2026-02-01T00:00:00.000Z'),
+        actualOutput: { findings: [], raw_count: 1, grounded_count: 1 },
+        pass: true,
+        recall: 0.75,
+        precision: 0.8,
+        citationAccuracy: 0.7,
+        durationMs: 10,
+        costUsd: 0.001,
+      });
+
+      const second = (
+        await app.inject({ method: 'GET', url: '/eval/overview' })
+      ).json() as EvalDashboardOverview;
+      const secondSummary = second.agents.find((a) => a.agent_id === agent.id);
+      expect(secondSummary).toBeDefined();
+
+      // The errored batch is still the newest overall and stays last_batch —
+      // it is NOT derived from trend — but it is excluded from trend,
+      // leaving only the older, measured batch as the sole point.
+      expect(secondSummary!.last_batch!.batch_id).toBe(erroredBatchId);
+      expect(secondSummary!.trend).toHaveLength(1);
+      expect(secondSummary!.trend[0]!.recall).toBe(0.75);
+
+      await app.close();
+    },
+  );
+
+  it('yields exactly one trend point for an agent with exactly one (measured) batch', async () => {
+    const llm = new MockLLMProvider('openai', {
+      structured: { verdict: 'comment', summary: 'ok', score: 90, findings: [] },
+    });
+    const app = await makeApp(llm);
+    const agent = await createAgent(app, 'Single Batch Owner');
+
+    const created = await app.inject({
+      method: 'POST',
+      url: '/eval-cases',
+      payload: {
+        owner_kind: 'agent',
+        owner_id: agent.id,
+        name: 'single-batch-case',
+        input_diff: makeDiffPatch('src/eval/single-batch.ts'),
+        expected_output: { findings: [] },
+      },
+    });
+    expect(created.statusCode).toBe(201);
+
+    const run = await app.inject({ method: 'POST', url: `/agents/${agent.id}/eval-runs` });
+    expect(run.statusCode).toBe(200);
+    const batch = run.json() as AgentEvalBatch;
+    expect(batch.traces_total).toBeGreaterThan(0);
+
+    const overview = (
+      await app.inject({ method: 'GET', url: '/eval/overview' })
+    ).json() as EvalDashboardOverview;
+    const summary = overview.agents.find((a) => a.agent_id === agent.id);
+    expect(summary).toBeDefined();
+    expect(summary!.trend).toHaveLength(1);
+    expect(summary!.last_batch).not.toBeNull();
+    expect(summary!.last_batch!.batch_id).toBe(batch.batch_id);
+    expect(summary!.trend[0]!.ran_at).toBe(summary!.last_batch!.ran_at);
+
+    await app.close();
+  });
+
   // ---- AC-34 (backend half) — missing version snapshot -------------------
 
   it('GET /agents/:id/versions/:version 404s for a snapshot that was never recorded (AC-34)', async () => {
@@ -935,6 +1174,21 @@ d('eval module (SPEC-05)', () => {
   });
 
   // ---- Cross-lane seam checks ---------------------------------------------
+
+  it(
+    'the Run all agents fan-out hook (client/src/lib/hooks/eval.ts#useRunAllAgentEvalBatches) posts ' +
+      'to the SAME route routes.ts registers — no undocumented second endpoint (design-fidelity plan, step 9)',
+    async () => {
+      const app = await makeApp();
+      // The fan-out hook reuses `useRunAgentEvalBatch`'s own endpoint
+      // (`api.post(\`/agents/${agentId}/eval-runs\`)`, one call per agent)
+      // rather than a new server route — plan: "Mechanism for `Run all
+      // agents`" decision. This pins that the route it targets is the one
+      // this module actually registers, not a route the plan only intended.
+      expect(app.hasRoute({ method: 'POST', url: '/agents/:id/eval-runs' })).toBe(true);
+      await app.close();
+    },
+  );
 
   it('every route the client hooks call exists with the method+path they use, and bodies parse against the shared contracts', async () => {
     const app = await makeApp();
