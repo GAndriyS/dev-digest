@@ -1,6 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import type { Container } from '../../platform/container.js';
-import type { AgentEvalBatch, EvalBatchRecord, EvalCaseResult, LLMProvider, Provider } from '@devdigest/shared';
+import type {
+  AgentEvalBatch,
+  EvalBatchRecord,
+  EvalCaseResult,
+  EvalRunRecord,
+  LLMProvider,
+  Provider,
+} from '@devdigest/shared';
 import { reviewPullRequest } from '@devdigest/reviewer-core';
 import { AppError, ConfigError, NotFoundError, NoProviderKeyError } from '../../platform/errors.js';
 import { parseUnifiedDiff } from '../../adapters/git/diff-parser.js';
@@ -74,15 +81,10 @@ export class EvalRunner {
 
     // Resolved ONCE for the whole batch — a missing key is a batch-level 409
     // (AC-24), not a per-case failure; per-case failures (AC-25) are caught
-    // inside the loop below and never include this one.
-    const llm = await this.resolveLlm(agent.provider as Provider);
-
-    // Same kill-switch rule the real review path applies (`run-executor.ts`):
-    // a linked skill that has since been disabled does not enter the prompt.
-    const linkedSkills = (await this.container.agentsRepo.linkedSkills(agentId)).filter(
-      (l) => l.skill.enabled,
-    );
-    const skillBodies = linkedSkills.map((l) => l.skill.body);
+    // inside the loop below and never include this one. Shared with
+    // `runSingleCase` via `prepareCaseContext` — see that method's doc
+    // comment for why the two paths must never diverge here.
+    const { llm, skillBodies } = await this.prepareCaseContext(agentId, agent.provider as Provider);
 
     const batchId = randomUUID();
     const agentVersion = agent.version;
@@ -191,6 +193,99 @@ export class EvalRunner {
     return { ...record, cases: results };
   }
 
+  /**
+   * Run exactly ONE case against its owning agent (AC-63, AC-69, AC-71) —
+   * one model call, persisted OUTSIDE any batch (`batchId: null`, so it can
+   * never join a batch aggregate) but through the SAME preamble
+   * (`prepareCaseContext`) and the SAME `runOneCase` the batch loop uses, so
+   * this result is comparable to a batch run of the same case (see
+   * `prepareCaseContext`'s doc comment).
+   *
+   * 404 when the agent or the case doesn't exist, or the case is not
+   * agent-owned or is owned by a DIFFERENT agent — all three read as "not
+   * found" from this route's point of view, the same shape
+   * `EvalService#requireAgentCase` already uses for the shared CRUD routes.
+   * 409 `no_provider_key` is raised (inside `prepareCaseContext`) before any
+   * DB write. A run that fails (provider error, timeout, empty
+   * `input_diff`) is still persisted — `pass: null`, `error` set, exactly
+   * the same failure shape `describeCaseFailure` gives the batch loop, never
+   * the raw diff text (NFR Секрети) — and still returned as a 200
+   * `EvalRunRecord` (NFR Спостережуваність): only "not found" and "no
+   * provider key" are non-2xx here.
+   */
+  async runSingleCase(workspaceId: string, agentId: string, caseId: string): Promise<EvalRunRecord> {
+    const agent = await this.container.agentsRepo.getById(workspaceId, agentId);
+    if (!agent) throw new NotFoundError('Agent not found');
+
+    const row = await this.requireAgentCase(workspaceId, agentId, caseId);
+
+    // 409 before any DB write — same rule as the batch path, just for one case.
+    const { llm, skillBodies } = await this.prepareCaseContext(agentId, agent.provider as Provider);
+
+    const agentVersion = agent.version;
+    const runStart = Date.now();
+
+    let insertRow: InsertEvalRun;
+    let error: { code: string; message: string } | null = null;
+    try {
+      const result = await this.runOneCase(agent, llm, skillBodies, row);
+      insertRow = {
+        caseId: row.id,
+        batchId: null,
+        agentVersion,
+        actualOutput: {
+          findings: result.findings,
+          raw_count: result.rawCount,
+          grounded_count: result.groundedCount,
+        },
+        pass: result.score.pass,
+        recall: result.score.recall,
+        precision: result.score.precision,
+        citationAccuracy: result.score.citation_accuracy,
+        durationMs: Date.now() - runStart,
+        costUsd: result.costUsd,
+      };
+    } catch (err) {
+      // Same mapping the batch loop uses (AC-25/NFR Секрети): built from the
+      // case NAME and/or the underlying error's own message, never from
+      // `row.inputDiff`.
+      const described = this.describeCaseFailure(err, row.name);
+      error = described;
+      insertRow = {
+        caseId: row.id,
+        batchId: null,
+        agentVersion,
+        actualOutput: { error: described },
+        pass: null,
+        recall: null,
+        precision: null,
+        citationAccuracy: null,
+        durationMs: Date.now() - runStart,
+        costUsd: null,
+        errorReason: described.message,
+      };
+    }
+
+    const persisted = await this.repo.insertRun(insertRow);
+
+    return {
+      id: persisted.id,
+      case_id: persisted.caseId,
+      case_name: row.name,
+      batch_id: persisted.batchId,
+      agent_version: persisted.agentVersion,
+      ran_at: persisted.ranAt.toISOString(),
+      actual_output: persisted.actualOutput,
+      error,
+      pass: persisted.pass,
+      recall: persisted.recall,
+      precision: persisted.precision,
+      citation_accuracy: persisted.citationAccuracy,
+      duration_ms: persisted.durationMs,
+      cost_usd: persisted.costUsd,
+    };
+  }
+
   /** One case: parse its stored diff, run it through the shared review
    *  engine, and score the grounded survivors. Throws on any failure — the
    *  caller (the loop above) is the one place that catches per-case. */
@@ -249,6 +344,47 @@ export class EvalRunner {
       if (err instanceof ConfigError) throw new NoProviderKeyError(provider, 'run evals');
       throw err;
     }
+  }
+
+  /**
+   * The per-case preamble BOTH `runAgentBatch` and `runSingleCase` build
+   * before calling `runOneCase`: resolve the LLM (409 `no_provider_key` on a
+   * missing key, via `resolveLlm`) and collect the ENABLED linked-skill
+   * bodies, with the SAME kill-switch rule the real review path applies
+   * (`run-executor.ts`) — a linked skill disabled since it was linked does
+   * not enter the prompt. Extracted into one method so a single-case run and
+   * a batch run of the SAME case assemble an IDENTICAL prompt: a second,
+   * subtly different assembly here would make a single-case result
+   * incomparable with the batch's result for the same case, which would
+   * quietly defeat the reason single-case running exists (AC-63).
+   */
+  private async prepareCaseContext(
+    agentId: string,
+    provider: Provider,
+  ): Promise<{ llm: LLMProvider; skillBodies: string[] }> {
+    const llm = await this.resolveLlm(provider);
+    const linkedSkills = (await this.container.agentsRepo.linkedSkills(agentId)).filter(
+      (l) => l.skill.enabled,
+    );
+    return { llm, skillBodies: linkedSkills.map((l) => l.skill.body) };
+  }
+
+  /** Scoped fetch that also enforces the module boundary — mirrors
+   *  `EvalService#requireAgentCase`'s shape (this runner has its own
+   *  `EvalRepository` instance, so the check is repeated here rather than
+   *  reached across the service/runner boundary): a case that does not
+   *  exist, is not agent-owned, or is owned by a DIFFERENT agent is "not
+   *  found" from this route's point of view — never a 400/403. */
+  private async requireAgentCase(
+    workspaceId: string,
+    agentId: string,
+    caseId: string,
+  ): Promise<EvalCaseRow> {
+    const row = await this.repo.getCase(workspaceId, caseId);
+    if (!row || row.ownerKind !== 'agent' || row.ownerId !== agentId) {
+      throw new NotFoundError('Eval case not found');
+    }
+    return row;
   }
 
   /** Map a per-case failure to a `{ code, message }` pair — never built from

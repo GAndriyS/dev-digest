@@ -1,7 +1,14 @@
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import { AgentEvalBatch, EvalCase, EvalCaseInput, EvalDashboard, EvalDashboardOverview } from '@devdigest/shared';
+import {
+  AgentEvalBatch,
+  EvalCase,
+  EvalCaseInput,
+  EvalDashboard,
+  EvalDashboardOverview,
+  EvalRunRecord,
+} from '@devdigest/shared';
 import { getContext } from '../_shared/context.js';
 import { IdParams } from '../_shared/schemas.js';
 import { EvalService } from './service.js';
@@ -18,6 +25,7 @@ import { getEvalDashboard, getEvalOverview } from './dashboard.js';
  *   GET    /eval-cases/:id            → one case
  *   POST   /findings/:id/eval-case    → mint (or return) a case from a decided finding (201 created / 200 existing)
  *   POST   /agents/:id/eval-runs      → run the agent's whole set as one batch
+ *   POST   /agents/:id/eval-cases/:caseId/run → run exactly ONE case, outside any batch (AC-63)
  *   GET    /eval/overview             → every agent with a non-empty set + recent batches
  *   GET    /eval/dashboard            → one agent's dashboard (?owner_id=<agentId>)
  *
@@ -55,6 +63,15 @@ const EvalCasesQuery = z.object({
 /** `GET /eval/dashboard` addresses one agent by id — same shape, querystring
  *  instead of a path param (mirrors `useAgentEvalDashboard`). */
 const EvalDashboardQuery = z.object({ owner_id: z.string().uuid() });
+
+/** `POST /agents/:id/eval-cases/:caseId/run` — two path params, both uuids.
+ *  The route the client's `useRunAgentEvalCase()` hook posts to (pinned in
+ *  the plan) — kept local to this route rather than widening `IdParams`,
+ *  which only ever names one id. */
+const AgentEvalCaseRunParams = z.object({
+  id: z.string().uuid(),
+  caseId: z.string().uuid(),
+});
 
 export default async function evalRoutes(appBase: FastifyInstance) {
   const app = appBase.withTypeProvider<ZodTypeProvider>();
@@ -124,6 +141,17 @@ export default async function evalRoutes(appBase: FastifyInstance) {
     async (req) => {
       const { workspaceId } = await getContext(app.container, req);
       return runner.runAgentBatch(workspaceId, req.params.id);
+    },
+  );
+
+  // ---- Run exactly one case, outside any batch (AC-63, AC-69, AC-71) -------
+
+  app.post(
+    '/agents/:id/eval-cases/:caseId/run',
+    { schema: { params: AgentEvalCaseRunParams, response: { 200: EvalRunRecord } } },
+    async (req) => {
+      const { workspaceId } = await getContext(app.container, req);
+      return runner.runSingleCase(workspaceId, req.params.id, req.params.caseId);
     },
   );
 

@@ -203,6 +203,31 @@ export class EvalRepository {
       .returning();
   }
 
+  /** Persists exactly one run — the single-case sibling of `insertRunBatch`
+   *  (AC-63/AC-71). The caller (`EvalRunner#runSingleCase`) always passes
+   *  `batchId: null`, which is what keeps this row out of every batch
+   *  aggregate; this method itself does not enforce that — it is a plain
+   *  insert, same as `insertRunBatch` is for many rows. */
+  async insertRun(row: InsertEvalRun): Promise<EvalRunRow> {
+    const [inserted] = await this.db
+      .insert(t.evalRuns)
+      .values({
+        caseId: row.caseId,
+        batchId: row.batchId,
+        agentVersion: row.agentVersion,
+        actualOutput: row.actualOutput,
+        pass: row.pass,
+        recall: row.recall,
+        precision: row.precision,
+        citationAccuracy: row.citationAccuracy,
+        durationMs: row.durationMs,
+        costUsd: row.costUsd,
+        errorReason: row.errorReason ?? null,
+      })
+      .returning();
+    return inserted!;
+  }
+
   /**
    * Batches for one agent, newest first, capped to `limit` DISTINCT batches
    * (not rows) — a batch of 20 cases must still count as one row against
