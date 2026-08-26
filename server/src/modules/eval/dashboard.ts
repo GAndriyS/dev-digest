@@ -212,11 +212,16 @@ function toTrendPoint(record: EvalBatchRecord): EvalTrendPoint {
  * call per agent. That is bounded by the number of agents in the workspace
  * (a handful, local-first scale), never by run/case volume — unlike
  * `EvalRepository#recentBatches`, which stays at two calls total regardless
- * of how many batches exist. `last_batch` per agent comes from
- * `EvalRepository#latestBatchPerAgent` (fix pass, item 3), NOT from the
- * capped `recent_batches` window below: an agent whose latest run has since
- * scrolled past `BATCH_TABLE_LIMIT` because enough OTHER agents ran more
- * recently must still report its own last batch, not `null`.
+ * of how many batches exist. `last_batch` AND `trend` per agent both come
+ * from `EvalRepository#recentBatchesPerAgent` (fix pass, item 3, generalised
+ * design-fidelity step 5) — the SAME per-agent read, so the two can no
+ * longer disagree: `last_batch` is that list's newest element, `trend` is
+ * the same list reversed to chronological order and filtered to
+ * `traces_total > 0` (AC-40's "тим самим правилом" as `getEvalDashboard`'s
+ * own trend). Neither is derived from the capped `recent_batches` window
+ * below: an agent whose latest runs have since scrolled past
+ * `BATCH_TABLE_LIMIT` because enough OTHER agents ran more recently must
+ * still report its own last batch and trend, not `null`/`[]`.
  */
 export async function getEvalOverview(
   container: Container,
@@ -224,19 +229,15 @@ export async function getEvalOverview(
 ): Promise<EvalDashboardOverview> {
   const repo = new EvalRepository(container.db);
 
-  const [agents, batches, latestBatches] = await Promise.all([
+  const [agents, batches, recentByAgent] = await Promise.all([
     container.agentsRepo.list(workspaceId),
     repo.listBatchesForAllAgents(workspaceId, BATCH_TABLE_LIMIT),
-    repo.latestBatchPerAgent(workspaceId),
+    repo.recentBatchesPerAgent(workspaceId, BATCH_TABLE_LIMIT),
   ]);
 
   const nameByAgentId = new Map(agents.map((a) => [a.id, a.name]));
   // `batches` is already newest-first (EvalRepository#recentBatches).
   const recentBatches = batches.map((b) => toBatchRecord(b, nameByAgentId.get(b.ownerId) ?? 'unknown'));
-
-  const latestBatchByAgent = new Map<string, EvalBatchRecord>(
-    latestBatches.map((b) => [b.ownerId, toBatchRecord(b, nameByAgentId.get(b.ownerId) ?? 'unknown')]),
-  );
 
   const withCases = await Promise.all(
     agents.map(async (agent) => ({ agent, cases: await repo.listAgentCases(workspaceId, agent.id) })),
@@ -244,17 +245,33 @@ export async function getEvalOverview(
 
   const agentSummaries: EvalAgentSummary[] = withCases
     .filter(({ cases }) => cases.length > 0)
-    .map(({ agent, cases }) => ({
-      agent_id: agent.id,
-      name: agent.name,
-      model: agent.model,
-      cases_total: cases.length,
-      last_batch: latestBatchByAgent.get(agent.id) ?? null,
-      // Placeholder — step 5 (W2-A) fills this from a per-agent recent-batches
-      // read (chronological, `traces_total > 0` only, capped at
-      // `BATCH_TABLE_LIMIT`). Do not read meaning into `[]` here yet.
-      trend: [],
-    }));
+    .map(({ agent, cases }) => {
+      // Newest-first, per agent, capped at `BATCH_TABLE_LIMIT` — the one read
+      // `last_batch` and `trend` both come from (step 5), so they cannot
+      // disagree the way two separate reads could.
+      const agentBatches: EvalBatchRecord[] = (recentByAgent.get(agent.id) ?? []).map((b) =>
+        toBatchRecord(b, agent.name),
+      );
+      const lastBatch = agentBatches[0] ?? null;
+      // Chronological (oldest first), `traces_total > 0` only — the SAME rule
+      // `getEvalDashboard`'s own `trend` below applies (AC-40). An agent can
+      // legitimately have a non-null `lastBatch` and an empty `trend` here:
+      // every batch it ran measured nothing. `last_batch === null` stays the
+      // sole "never run" discriminant — never `trend.length === 0`.
+      const trend = [...agentBatches]
+        .reverse()
+        .filter((b) => b.traces_total > 0)
+        .map(toTrendPoint);
+
+      return {
+        agent_id: agent.id,
+        name: agent.name,
+        model: agent.model,
+        cases_total: cases.length,
+        last_batch: lastBatch,
+        trend,
+      };
+    });
 
   return { agents: agentSummaries, recent_batches: recentBatches };
 }

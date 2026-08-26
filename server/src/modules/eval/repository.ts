@@ -262,21 +262,34 @@ export class EvalRepository {
   }
 
   /**
-   * The single LATEST batch per agent (AC-9's `EvalAgentSummary.last_batch`),
-   * NOT derived from the global top-`BATCH_TABLE_LIMIT` window `recentBatches`
-   * reads — an agent whose latest run has since scrolled out of that window
-   * must still report it (fix pass, item 3: `getEvalOverview` used to derive
-   * `last_batch` from the same capped `recentBatches` read `recent_batches`
-   * uses, which silently drops an agent's last run once enough OTHER agents'
-   * batches push it past the cap).
+   * The last ≤ `limit` batches PER AGENT, newest-first — generalises the
+   * former `latestBatchPerAgent` (fix pass, item 3) so ONE read can back both
+   * `EvalAgentSummary.last_batch` (AC-9 — index 0 of each agent's list) and
+   * `EvalAgentSummary.trend` (AC-40, AC-41 — the same list, reversed and
+   * `traces_total > 0`-filtered by the caller). Deriving both from one read
+   * is the point: they can no longer disagree the way two separate reads
+   * could. Per-agent, NOT derived from the global top-`BATCH_TABLE_LIMIT`
+   * window `recentBatches` reads — an agent whose latest runs have since
+   * scrolled out of that window must still report its own last `limit`
+   * batches (the bug `latestBatchPerAgent` was written to fix still applies
+   * here, just generalised past N=1).
    *
-   * Two queries, no per-agent loop: first every `(owner_id, batch_id)` pair's
+   * Two queries, no per-agent loop (NFR Продуктивність — bounded by batch
+   * count, never by agent count): first every `(owner_id, batch_id)` pair's
    * own `max(ran_at)` — bounded by the total number of BATCHES ever run
-   * (never runs/cases, local-first scale), reduced in memory to the one
-   * winning `batch_id` per agent; then the same shared row-fetch-and-group
-   * step `recentBatches` uses, for exactly those winning batches.
+   * (never runs/cases, local-first scale) — reduced in memory to each
+   * agent's own newest `limit` batch ids (top-N-per-agent chosen in JS, never
+   * one query per agent); then the same shared row-fetch-and-group step
+   * `recentBatches` uses, for exactly those winning batches across every
+   * agent in one call.
+   *
+   * Returned as a `Map` keyed by `owner_id` (the agent id); each value is
+   * newest-first, capped to `limit`.
    */
-  async latestBatchPerAgent(workspaceId: string): Promise<EvalBatchRuns[]> {
+  async recentBatchesPerAgent(
+    workspaceId: string,
+    limit = BATCH_TABLE_LIMIT,
+  ): Promise<Map<string, EvalBatchRuns[]>> {
     const perBatch = await this.db
       .select({
         ownerId: t.evalCases.ownerId,
@@ -294,7 +307,7 @@ export class EvalRepository {
       )
       .groupBy(t.evalCases.ownerId, t.evalRuns.batchId);
 
-    const latestByAgent = new Map<string, { batchId: string; ranAt: Date }>();
+    const batchesByAgent = new Map<string, Array<{ batchId: string; ranAt: Date }>>();
     for (const row of perBatch) {
       if (row.batchId === null) continue;
       // Defensive `new Date(...)`: `sql<Date>` is a type HINT to drizzle, not
@@ -302,31 +315,49 @@ export class EvalRepository {
       // an aggregate expression the way it does for a plain column select —
       // `new Date(aDate)` is a no-op, `new Date(anIsoString)` is not.
       const ranAt = new Date(row.batchRanAt);
-      const current = latestByAgent.get(row.ownerId);
-      // Ties break on `batchId` so the winner does not depend on Postgres's
-      // row order (the grouped query has no ORDER BY). `listBatchesForAgent`
-      // resolves the same tie deterministically via its own ORDER BY, and the
-      // overview must agree with it (review loop 2).
-      const wins =
-        !current ||
-        ranAt > current.ranAt ||
-        (ranAt.getTime() === current.ranAt.getTime() && row.batchId > current.batchId);
-      if (wins) {
-        latestByAgent.set(row.ownerId, { batchId: row.batchId, ranAt });
-      }
+      const entry = { batchId: row.batchId, ranAt };
+      const list = batchesByAgent.get(row.ownerId);
+      if (list) list.push(entry);
+      else batchesByAgent.set(row.ownerId, [entry]);
     }
 
-    const batchIds = [...latestByAgent.values()].map((v) => v.batchId);
-    return this.runRowsGroupedByBatch(workspaceId, batchIds);
+    // Newest-first per agent, capped to `limit`. Ties break on `batchId` (the
+    // larger id wins, i.e. sorts first) so the order does not depend on
+    // Postgres's row order (the grouped query above has no ORDER BY) — the
+    // same tie rule `latestBatchPerAgent` used for its single winner (review
+    // loop 2).
+    const topIdsByAgent = new Map<string, string[]>();
+    const allBatchIds: string[] = [];
+    for (const [ownerId, entries] of batchesByAgent) {
+      entries.sort((a, b) => {
+        const byTime = b.ranAt.getTime() - a.ranAt.getTime();
+        return byTime !== 0 ? byTime : a.batchId > b.batchId ? -1 : 1;
+      });
+      const ids = entries.slice(0, limit).map((e) => e.batchId);
+      topIdsByAgent.set(ownerId, ids);
+      allBatchIds.push(...ids);
+    }
+
+    const grouped = await this.runRowsGroupedByBatch(workspaceId, allBatchIds);
+    const groupByBatchId = new Map(grouped.map((b) => [b.batchId, b]));
+
+    const result = new Map<string, EvalBatchRuns[]>();
+    for (const [ownerId, ids] of topIdsByAgent) {
+      result.set(
+        ownerId,
+        ids.map((id) => groupByBatchId.get(id)).filter((b): b is EvalBatchRuns => b !== undefined),
+      );
+    }
+    return result;
   }
 
   /**
    * Shared second half of both batch reads above: fetch every run row for
    * exactly the given `batchIds` (one query) and group them into one
    * `EvalBatchRuns` per batch, in the caller-supplied order. Extracted (fix
-   * pass, item 3) so `recentBatches` (top-N, global) and `latestBatchPerAgent`
-   * (one per agent, unbounded) can never duplicate — and drift on — the
-   * grouping rule.
+   * pass, item 3) so `recentBatches` (top-N, global) and
+   * `recentBatchesPerAgent` (top-N, per agent) can never duplicate — and
+   * drift on — the grouping rule.
    */
   private async runRowsGroupedByBatch(
     workspaceId: string,
