@@ -141,6 +141,19 @@ through a tsconfig path alias and has no tooling of its own. This runs in the
 `comment` explaining the intended direction; read it before touching the config.
 `pathNot` entries marked `GRANDFATHERED` are debt: shrink them, never append.
 
+**Name the rule when you report a violation.** Every boundary problem in this
+repo either breaks a rule that has an id — `routes-through-service`,
+`no-direct-adapter-clients`, `service-stays-http-agnostic`, `core-has-no-io`,
+`core-does-not-import-server`, `no-cross-module-internals` — or it is one of
+the Blind spots below, which have no id and are cited by section instead. Say
+which. "This violates layering" sends the reader looking; "this breaks
+`core-has-no-io` (`server/.dependency-cruiser.cjs`)" tells them whether CI will
+catch it and what to grep for. Measured on the sibling `architecture-reviewer`
+agent, 2026-08-25: with the citation requirement stated, attribution holds at
+100%; with the same requirement removed and nothing else changed, it falls to
+20% while the violations themselves are still found. The finding survives the
+loss; the reader's ability to act on it does not.
+
 Known grandfathered debt:
 
 - `modules/{polling,pulls,settings,workspace}` have no service layer — their

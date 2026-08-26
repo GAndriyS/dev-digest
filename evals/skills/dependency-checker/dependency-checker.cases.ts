@@ -116,8 +116,14 @@ export const cases: SkillCase[] = [
       // is not rhetoric — "a wire-crossing contract built by two different majors" IS the P0 row
       // of the skill's own tier table, so a P0 given for any other reason is luck. Its wording
       // accepts any correct articulation of the boundary crossing rather than one phrasing.
-      "the two majors of zod (^3.24.1 in server, client and reviewer-core against ^4.1.0 in mcp) are ranked P0",
-      "the zod finding explains that the split matters because the two majors meet across a package boundary — mcp parses server responses built with the shared Zod contracts — rather than treating it as version untidiness",
+      // MERGED BACK, 2026-08-26 — and the reason refines the split-your-practices rule rather
+      // than contradicting it: SPLIT practices that are INDEPENDENT, MERGE ones that are perfectly
+      // correlated. These two were the same judgement. Measured: when the report sees that the
+      // shared contract is parsed on the far side of a package boundary it ranks P0 and explains
+      // it; when it decides "mcp's version is isolated" it ranks P1 and explains that instead.
+      // Never once did one half hold without the other — so splitting them doubled the penalty
+      // for a single miss and added no information about which half failed.
+      "the two majors of zod (^3.24.1 in server, client and reviewer-core against ^4.1.0 in mcp) are ranked P0, because the two majors meet across a package boundary — mcp parses server responses built with the shared Zod contracts — rather than being treated as version untidiness inside one package",
       "esbuild being declared in server's `dependencies` rather than `devDependencies` is ranked P1",
       "puppeteer is ranked P2 rather than P0 or P1",
       "every finding names a specific package and dependency, and where one exists a file or package.json, instead of generic advice such as 'consider reviewing your dependencies'",

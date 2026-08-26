@@ -110,6 +110,20 @@ Ordering inside a tier: by evidence size — bytes, import sites, number of
 packages affected. When two findings share a root cause, merge them into one and
 list the affected packages in the evidence.
 
+Two checks decide a tier more often than any other, and both are cheap:
+
+- **Does the version split cross a package boundary?** Two majors *inside* one
+  package are untidiness (P1). Two majors where one package `.parse()`s a
+  contract the other one built is P0 — the objects are constructed by one
+  version and validated by another. Follow the shared contract to its call
+  sites before ranking; "their copy is isolated" is a conclusion you have to
+  earn, not the default. Measured, 2026-08-26: this is the single most common
+  wrong tier, and it goes wrong in the safe-looking direction.
+- **Is it actually a production dependency?** Read the block it is declared in
+  before calling anything test-only. A browser driver sitting in
+  `dependencies` with a real import site is a heavy prod dependency (P2), not
+  test tooling, however strongly the package name suggests otherwise.
+
 ## Step 4 — write the report
 
 Use this skeleton verbatim, in this order. Sections with nothing to say are kept
