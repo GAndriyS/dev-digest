@@ -1,0 +1,9 @@
+[mcp_servers.devdigest]
+command = "node"
+args = [
+    "mcp/node_modules/tsx/dist/cli.mjs",
+    "mcp/src/index.ts",
+]
+
+[mcp_servers.devdigest.env]
+DEVDIGEST_API_URL = "http://127.0.0.1:3001"
