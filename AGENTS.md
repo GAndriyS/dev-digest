@@ -17,10 +17,14 @@ a package — read its own `AGENTS.md` (`server/`, `client/`, `reviewer-core/`,
   `package.json` **and lockfile**. `server/`, `client/`, `evals/` → **pnpm**;
   `reviewer-core/`, `e2e/`, `mcp/` → **npm**. Cross-package code resolves via
   tsconfig path aliases, not published modules. The repo root does carry its
-  own `package.json` (private, `packageManager` pinned, zero dependencies) —
-  installing at the root still installs nothing, but `pnpm verify:l06` lives
-  there as the one L06 verification entry point (`node scripts/verify.mjs
-  --slice frontend --slice backend --slice integration`).
+  own `package.json` (private, scripts only, zero dependencies) — installing at
+  the root still installs nothing, but `pnpm verify:l06` lives there as the one
+  L06 verification entry point (`node scripts/verify.mjs --slice frontend
+  --slice backend --slice integration`). It must **not** declare
+  `packageManager`: `pnpm/action-setup@v4` reads the root `package.json` by
+  default and every workflow already passes `version: 10`, so that field aborts
+  every CI job with "Multiple versions of pnpm specified". The pnpm pin belongs
+  in `server/package.json` and `client/package.json`, where corepack looks.
 - `evals/` is the harness eval package (skills, subagents, workflow traces). It
   is **not** a `scripts/verify.mjs` slice — that script must never bill tokens —
   but it does run in CI, in its own workflow `.github/workflows/evals.yml`, on

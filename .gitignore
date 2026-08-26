@@ -32,3 +32,8 @@ test-results/
 # The recorded evidence a CI gate compares against lives in
 # skill-evals/baselines/ and IS committed.
 skill-evals/results/
+
+# The repo root is not a workspace and must install nothing. A lockfile here
+# means someone ran `pnpm install` at the root by accident — never commit it.
+# (Package lockfiles live at server/, client/, evals/, … and ARE tracked.)
+/pnpm-lock.yaml
