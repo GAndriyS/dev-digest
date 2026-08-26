@@ -30,6 +30,41 @@ export type { EvalCaseRow, EvalRunRow } from './types.js';
  * (Blind spots §4).
  */
 
+/**
+ * Thrown by `insertCase` when the partial unique index
+ * `eval_cases_owner_source_finding_uq` rejects a concurrent duplicate
+ * (two "Turn into eval case" clicks racing on the same finding, AC-6).
+ * Translating the Postgres wire error into a domain error HERE keeps the
+ * driver's `code`/`constraint_name` shape out of the service layer —
+ * repositories own SQL, including SQL failure shapes (architecture review,
+ * loop 2).
+ */
+export class DuplicateEvalCaseError extends Error {
+  constructor() {
+    super('eval case already exists for this finding');
+    this.name = 'DuplicateEvalCaseError';
+  }
+}
+
+/**
+ * True iff `err` is a Postgres unique-violation (`23505`) on `constraintName`.
+ * The `postgres` driver (this project's, unlike `pg`) attaches `code`/
+ * `constraint_name` directly on the thrown `PostgresError` — but checked
+ * defensively under `.cause` too, in case a future wrapper (a transaction
+ * helper, a retry layer) re-throws with the original attached there instead.
+ */
+function isUniqueConstraintViolation(err: unknown, constraintName: string): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const direct = err as { code?: unknown; constraint_name?: unknown; cause?: unknown };
+  const cause =
+    direct.cause && typeof direct.cause === 'object'
+      ? (direct.cause as { code?: unknown; constraint_name?: unknown })
+      : undefined;
+  const code = direct.code ?? cause?.code;
+  const constraint = direct.constraint_name ?? cause?.constraint_name;
+  return code === '23505' && constraint === constraintName;
+}
+
 export class EvalRepository {
   constructor(private db: Db) {}
 
@@ -85,22 +120,29 @@ export class EvalRepository {
   }
 
   async insertCase(values: InsertEvalCase): Promise<EvalCaseRow> {
-    const [row] = await this.db
-      .insert(t.evalCases)
-      .values({
-        workspaceId: values.workspaceId,
-        ownerKind: values.ownerKind,
-        ownerId: values.ownerId,
-        name: values.name,
-        inputDiff: values.inputDiff,
-        inputFiles: values.inputFiles ?? null,
-        inputMeta: values.inputMeta ?? null,
-        expectedOutput: values.expectedOutput ?? null,
-        notes: values.notes ?? null,
-        sourceFindingId: values.sourceFindingId ?? null,
-      })
-      .returning();
-    return row!;
+    try {
+      const [row] = await this.db
+        .insert(t.evalCases)
+        .values({
+          workspaceId: values.workspaceId,
+          ownerKind: values.ownerKind,
+          ownerId: values.ownerId,
+          name: values.name,
+          inputDiff: values.inputDiff,
+          inputFiles: values.inputFiles ?? null,
+          inputMeta: values.inputMeta ?? null,
+          expectedOutput: values.expectedOutput ?? null,
+          notes: values.notes ?? null,
+          sourceFindingId: values.sourceFindingId ?? null,
+        })
+        .returning();
+      return row!;
+    } catch (err) {
+      if (isUniqueConstraintViolation(err, 'eval_cases_owner_source_finding_uq')) {
+        throw new DuplicateEvalCaseError();
+      }
+      throw err;
+    }
   }
 
   async updateCase(

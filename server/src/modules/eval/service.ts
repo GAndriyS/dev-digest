@@ -1,7 +1,7 @@
 import type { Container } from '../../platform/container.js';
 import type { EvalCase, EvalOwnerKind } from '@devdigest/shared';
 import { AppError, NotFoundError } from '../../platform/errors.js';
-import { EvalRepository } from './repository.js';
+import { DuplicateEvalCaseError, EvalRepository } from './repository.js';
 import type { EvalCaseRow } from './types.js';
 import { normalizeFilePath } from './helpers.js';
 
@@ -193,7 +193,9 @@ export class EvalService {
       // Re-read and answer with the winner's row instead of bubbling a 500 —
       // the loser still gets the idempotent 200 AC-6 promises. Any OTHER
       // error (a different constraint, a connection failure, …) rethrows.
-      if (isUniqueConstraintViolation(err, 'eval_cases_owner_source_finding_uq')) {
+      // The Postgres wire-error introspection lives in the repository
+      // (`DuplicateEvalCaseError`) — this layer catches by domain type only.
+      if (err instanceof DuplicateEvalCaseError) {
         const existing = await this.repo.findCaseBySourceFinding(workspaceId, agentId, findingId);
         if (existing) return { case: toEvalCaseDto(existing), created: false };
       }
@@ -212,27 +214,6 @@ export class EvalService {
     if (!row || row.ownerKind !== 'agent') throw new NotFoundError('Eval case not found');
     return row;
   }
-}
-
-// ---- Postgres error introspection ----------------------------------------
-
-/**
- * True iff `err` is a Postgres unique-violation (`23505`) on `constraintName`.
- * The `postgres` driver (this project's, unlike `pg`) attaches `code`/
- * `constraint_name` directly on the thrown `PostgresError` — but checked
- * defensively under `.cause` too, in case a future wrapper (a transaction
- * helper, a retry layer) re-throws with the original attached there instead.
- */
-function isUniqueConstraintViolation(err: unknown, constraintName: string): boolean {
-  if (!err || typeof err !== 'object') return false;
-  const direct = err as { code?: unknown; constraint_name?: unknown; cause?: unknown };
-  const cause =
-    direct.cause && typeof direct.cause === 'object'
-      ? (direct.cause as { code?: unknown; constraint_name?: unknown })
-      : undefined;
-  const code = direct.code ?? cause?.code;
-  const constraint = direct.constraint_name ?? cause?.constraint_name;
-  return code === '23505' && constraint === constraintName;
 }
 
 // ---- DTO mapping --------------------------------------------------------
