@@ -326,6 +326,11 @@ promotion rules → root `INSIGHTS.md`.
   branch under review: check whether the failing suite uses `tmpdir()` first.
   This cost an entire SPEC-04 implementation run's worth of agents each
   re-encountering the same five reds and being told to ignore them.
+  **Fixed 2026-08-26 (L06):** both fixture helpers now wrap their `mkdtemp` in
+  `realpath` — `--slice backend` is 562/562 green on macOS. The lesson that
+  outlived the bug: a red that is "known pre-existing" on one platform still
+  costs every later agent a re-investigation, so fix the fixture the first time
+  instead of writing it into the handoff brief.
 
 ## Session Notes
 
