@@ -3,7 +3,27 @@ import { fixtureReader } from "../../src/index.js";
 
 const fx = fixtureReader(import.meta.url);
 
+// MEASURED IN CI AND LOCALLY, 2026-08-26 — the line below is load-bearing, do not trim it.
+//
+// This agent has tools and uses them: handed a pasted diff, it checks whether the file exists in
+// the working tree. Two of the three fixtures target files this repo does not contain
+// (`blast/score.ts`, `reviewer-core/src/pipeline/run.ts`), so it correctly refused to review —
+// "Verdict: UNKNOWN — cannot scope the review ... diff target does not exist in the working tree"
+// — and the benign case went 0/2 on an agent doing exactly the right thing. It had been passing
+// at 88% only because earlier runs took the diff at face value without checking.
+//
+// Worse, the checkout fixture was passing for an ACCIDENTAL reason: `server/src/modules/checkout/`
+// exists in this working tree as untracked scratch that every handoff brief tells agents to leave
+// alone. Delete that directory and two more cases start failing the same way. Saying "not yet
+// applied" once makes all three fixtures self-contained and removes the dependency on whatever
+// happens to be lying around the tree.
+const NOT_APPLIED =
+  "The diff below is a PROPOSED change that has not been applied — the files may not exist in " +
+  "the working tree yet, and the machine gates will not show it. Review the diff as written.";
+
 const REVIEW_PROMPT = `Audit this diff against DevDigest's documented structural contracts.
+
+${NOT_APPLIED}
 
 ${fx("checkout-service.diff")}`;
 
@@ -28,6 +48,8 @@ ${fx("checkout-service.diff")}`;
 // citation BEHAVIOUR (a named contract plus a locator) rather than a literal string.
 const REVIEWER_CORE_PROMPT = `Audit this diff against DevDigest's documented structural contracts.
 
+${NOT_APPLIED}
+
 ${fx("reviewer-core-gate.diff")}`;
 
 // A diff that violates NO documented rule (a pure local-variable rename inside a domain file, no
@@ -36,6 +58,8 @@ ${fx("reviewer-core-gate.diff")}`;
 // documented contract", the lite variant is more prone to fabricating a judgment/best-practice
 // finding where the strict variant stays silent.
 const BENIGN_PROMPT = `Audit this diff against DevDigest's documented structural contracts.
+
+${NOT_APPLIED}
 
 ${fx("benign-refactor.diff")}`;
 
@@ -142,10 +166,26 @@ export const cases: AgentCase[] = [
     // materialised into a tree the gate can actually cruise.
     practices: [
       "attributes the fs-import finding to a named documented contract with a locator — the `core-has-no-io` rule in `server/.dependency-cruiser.cjs`, or the no-I/O rule stated in `reviewer-core/AGENTS.md` — rather than describing it only in prose (\"the iron rule\", \"no I/O in the core\")",
-      "attributes the skipped-gate finding to a named documented contract with a locator (the mandatory grounding gate in reviewer-core — `reviewer-core/AGENTS.md`, or the `groundFindings()` step of the pipeline) rather than describing it only in prose",
     ],
-    // Both, or the dimension is not held. Two practices is a short enough conjunction to carry
-    // 1.0 without the p^N problem that made the six-practice version unpassable.
+    // ONE practice, and the second one was REMOVED rather than tolerated — measured in CI,
+    // 2026-08-26, on the first run of this split.
+    //
+    // The removed practice asked the report to attribute the skipped `groundFindings()` gate to a
+    // named contract. There is no contract to name: unlike the fs import, the grounding gate has
+    // no dependency-cruiser rule id anywhere, and its only statement is prose in
+    // `reviewer-core/AGENTS.md:20` — a file the agent has no reason to open when the diff arrives
+    // pasted into the prompt. So it failed with the agent reasoning correctly in prose ("appears
+    // to be a transformation stage ... removing it breaks consumers expecting grounded data") and
+    // the case, at threshold 1.0 over two practices, went red on work that was right. That is the
+    // same "expectation must be REACHABLE" rule this file already states two comments above, and
+    // I broke it while splitting the case — with the practice's own 38% history visible in the
+    // data I was splitting from.
+    //
+    // What survives is the dimension the A/B actually needs: `core-has-no-io` IS a real id in a
+    // file the agent does open, the strict variant cites it (observed verbatim, with
+    // `server/.dependency-cruiser.cjs:123–135` as the locator), and the lite variant is the one
+    // that stops. To get the gate half back, materialise the diff into a tree depcruise can
+    // actually cruise — do not re-add the practice against a pasted fixture.
     threshold: 1.0,
     maxTurns: 25,
   },
