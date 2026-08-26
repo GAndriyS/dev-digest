@@ -152,6 +152,13 @@ the dependency goes — its subtree minus everything another dependency also pul
 in. Follow with the per-package totals and, when it applies, what the repo pays
 for installing the same library N times.
 
+Any cell you could not measure is `unknown` **followed by the one command that
+would establish it** — `unknown (install its dependencies and re-run
+\`node scripts/deps-report.mjs\`)`. Measured, 2026-08-26: the `unknown` lands
+every time and the recovery step never does, because rule 5 below is read once
+at the start and this table is written at the end. A reader who finds `unknown`
+with no way forward is left exactly where they started.
+
 ## Internal dependencies
 The alias edges, the import counts, any relative import crossing a package
 boundary, and the state of the duplicated `@devdigest/shared` copies. Kept
