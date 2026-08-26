@@ -3,15 +3,23 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { startPg, dockerAvailable, type PgFixture } from './helpers/pg.js';
 import { buildApp } from '../src/app.js';
 import { loadConfig } from '../src/platform/config.js';
 import { seed } from '../src/db/seed.js';
 import * as t from '../src/db/schema.js';
-import { MockGitClient, MockGitHubClient, MockLLMProvider } from '../src/adapters/mocks.js';
+import { MockGitClient, MockGitHubClient, MockLLMProvider, MockSecretsProvider } from '../src/adapters/mocks.js';
 import { AgentEvalBatch, EvalCase, EvalDashboard, EvalDashboardOverview } from '@devdigest/shared';
-import type { GitClient, GitHubClient, LLMProvider, StructuredRequest, StructuredResult } from '@devdigest/shared';
+import type {
+  EvalRunRecord,
+  GitClient,
+  GitHubClient,
+  LLMProvider,
+  SecretsProvider,
+  StructuredRequest,
+  StructuredResult,
+} from '@devdigest/shared';
 import type { FastifyInstance } from 'fastify';
 import { BATCH_TABLE_LIMIT } from '../src/modules/eval/constants.js';
 
@@ -68,6 +76,43 @@ describe('eval/overview contract — EvalAgentSummary mirror (no DB required)', 
   });
 });
 
+/**
+ * expectation-kind plan (l06-evals-expectation-kind), step 11 — the two
+ * `@devdigest/shared` copies of `EvalCase`/`ExpectationKind` moved in ONE step
+ * (step 1), but `AGENTS.md` calls the client copy "trimmed" and "already
+ * drifted" on purpose: its doc comments are shorter than the server's. A
+ * byte-for-byte block comparison (the pattern the EvalAgentSummary check above
+ * uses) would therefore fail on prose that is SUPPOSED to differ. This strips
+ * every full-line `//` comment before comparing, so what is actually pinned is
+ * the zod SHAPE — field names, order and types — never the commentary around
+ * it. Runs regardless of Docker availability; it needs no live database.
+ */
+describe('eval-cases contract — EvalCase/ExpectationKind mirror (no DB required)', () => {
+  it('the client copy of EvalCase (and ExpectationKind) matches the server copy FIELD-FOR-FIELD (AC-53)', () => {
+    const extractBlock = (src: string): string => {
+      const match = src.match(
+        /export const ExpectationKind = z\.enum[\s\S]*?export type EvalCase = z\.infer<typeof EvalCase>;/,
+      );
+      if (!match) throw new Error('EvalCase/ExpectationKind block marker not found');
+      return match[0];
+    };
+    const stripComments = (block: string): string =>
+      block
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0 && !line.startsWith('//'))
+        .join('\n');
+
+    const testDir = dirname(fileURLToPath(import.meta.url));
+    const serverSrc = readFileSync(resolve(testDir, '../src/vendor/shared/contracts/knowledge.ts'), 'utf8');
+    const clientSrc = readFileSync(
+      resolve(testDir, '../../client/src/vendor/shared/contracts/knowledge.ts'),
+      'utf8',
+    );
+    expect(stripComments(extractBlock(clientSrc))).toBe(stripComments(extractBlock(serverSrc)));
+  });
+});
+
 d('eval module (SPEC-05)', () => {
   let pg: PgFixture;
 
@@ -79,7 +124,10 @@ d('eval module (SPEC-05)', () => {
     await pg?.stop();
   });
 
-  function makeApp(llmOverride?: LLMProvider, extra?: { git?: GitClient; github?: GitHubClient }) {
+  function makeApp(
+    llmOverride?: LLMProvider,
+    extra?: { git?: GitClient; github?: GitHubClient; secrets?: SecretsProvider },
+  ) {
     const config = loadConfig({ ...process.env, NODE_ENV: 'test' } as NodeJS.ProcessEnv);
     return buildApp({
       config,
@@ -87,6 +135,11 @@ d('eval module (SPEC-05)', () => {
       overrides: {
         git: extra?.git ?? new MockGitClient(),
         github: extra?.github ?? new MockGitHubClient(),
+        // Step 11's 409-before-any-DB-write test needs a secrets provider that
+        // answers every key with `undefined` — an empty `MockSecretsProvider`
+        // — rather than falling through to whatever real key this machine's
+        // `~/.devdigest/secrets.json` happens to have.
+        ...(extra?.secrets ? { secrets: extra.secrets } : {}),
         // Mock EVERY provider slot the runner could resolve, not just the one
         // the test's agent happens to use.
         ...(llmOverride
@@ -221,6 +274,12 @@ d('eval module (SPEC-05)', () => {
     });
     expect(created.source_finding_id).toBe(findingId);
 
+    // expectation-kind plan, step 11 — the kind comes from the DECISION
+    // (accepted), on the wire (AC-3) AND on the stored row (AC-53).
+    expect(created.expectation_kind).toBe('must_find');
+    const [row] = await pg.handle.db.select().from(t.evalCases).where(eq(t.evalCases.id, created.id));
+    expect(row!.expectationKind).toBe('must_find');
+
     await app.close();
   });
 
@@ -251,6 +310,13 @@ d('eval module (SPEC-05)', () => {
     // The scorer never reads notes — that rule lives in helpers.ts, not tested
     // here, but the human-reference text living somewhere other than
     // `expected_output` is what this assertion pins.
+
+    // expectation-kind plan, step 11 — the kind comes from the DECISION
+    // (dismissed), on the wire (AC-4) AND on the stored row (AC-53).
+    expect(created.expectation_kind).toBe('must_not_flag');
+    const [row] = await pg.handle.db.select().from(t.evalCases).where(eq(t.evalCases.id, created.id));
+    expect(row!.expectationKind).toBe('must_not_flag');
+
     await app.close();
   });
 
@@ -456,6 +522,209 @@ d('eval module (SPEC-05)', () => {
 
     await app.close();
   });
+
+  // ---- expectation-kind plan, step 11 — AC-54: derived ONCE at creation ---
+
+  it(
+    'POST /eval-cases derives expectation_kind ONCE from expected_output: non-empty findings -> must_find, ' +
+      'empty findings -> must_not_flag, and a MALFORMED findings entry (missing file/start_line/end_line, ' +
+      'unscoreable by the same expectedFindings() the scorer reads) also -> must_not_flag (AC-54)',
+    async () => {
+      const app = await makeApp();
+      const agent = await createAgent(app, 'AC54 Owner');
+
+      const withFindings = await app.inject({
+        method: 'POST',
+        url: '/eval-cases',
+        payload: {
+          owner_kind: 'agent',
+          owner_id: agent.id,
+          name: 'ac54-with-findings',
+          input_diff: makeDiffPatch('src/eval/ac54-a.ts'),
+          expected_output: { findings: [{ file: 'src/eval/ac54-a.ts', start_line: 1, end_line: 1 }] },
+        },
+      });
+      expect(withFindings.statusCode).toBe(201);
+      expect(withFindings.json().expectation_kind).toBe('must_find');
+
+      const withoutFindings = await app.inject({
+        method: 'POST',
+        url: '/eval-cases',
+        payload: {
+          owner_kind: 'agent',
+          owner_id: agent.id,
+          name: 'ac54-without-findings',
+          input_diff: makeDiffPatch('src/eval/ac54-b.ts'),
+          expected_output: { findings: [] },
+        },
+      });
+      expect(withoutFindings.statusCode).toBe(201);
+      expect(withoutFindings.json().expectation_kind).toBe('must_not_flag');
+
+      // Malformed: an entry with neither `file` nor `start_line`/`end_line` —
+      // `expectedFindings()` (`eval/helpers.ts`) safeParse-fails the whole
+      // array and returns `[]`, so this counts as "expected nothing" the same
+      // way an explicitly empty array does.
+      const malformed = await app.inject({
+        method: 'POST',
+        url: '/eval-cases',
+        payload: {
+          owner_kind: 'agent',
+          owner_id: agent.id,
+          name: 'ac54-malformed',
+          input_diff: makeDiffPatch('src/eval/ac54-c.ts'),
+          expected_output: { findings: [{ title: 'not scoreable' }] },
+        },
+      });
+      expect(malformed.statusCode).toBe(201);
+      expect(malformed.json().expectation_kind).toBe('must_not_flag');
+
+      await app.close();
+    },
+  );
+
+  // ---- expectation-kind plan, step 11 — AC-55: immutable on update --------
+
+  it(
+    'PUT /eval-cases/:id that rewrites expected_output to [] leaves expectation_kind UNCHANGED in the PUT ' +
+      'response AND on a subsequent GET, and a PUT carrying expectation_kind is REJECTED (422), never silently ' +
+      'applied (AC-55)',
+    async () => {
+      const app = await makeApp();
+      const agent = await createAgent(app, 'AC55 Owner');
+      const path = 'src/eval/ac55.ts';
+
+      const created = await app.inject({
+        method: 'POST',
+        url: '/eval-cases',
+        payload: {
+          owner_kind: 'agent',
+          owner_id: agent.id,
+          name: 'ac55-case',
+          input_diff: makeDiffPatch(path),
+          expected_output: { findings: [{ file: path, start_line: 1, end_line: 1 }] },
+        },
+      });
+      expect(created.statusCode).toBe(201);
+      const caseId = created.json().id as string;
+      expect(created.json().expectation_kind).toBe('must_find');
+
+      // Rewrite expected_output to `[]` — the case now has ZERO expectations,
+      // which is the exact mismatch edge case (AC-58), but the stored kind
+      // must survive the edit untouched (AC-55).
+      const put = await app.inject({
+        method: 'PUT',
+        url: `/eval-cases/${caseId}`,
+        payload: { expected_output: { findings: [] } },
+      });
+      expect(put.statusCode).toBe(200);
+      expect(put.json().expected_output.findings).toEqual([]);
+      expect(put.json().expectation_kind).toBe('must_find');
+
+      const get = await app.inject({ method: 'GET', url: `/eval-cases/${caseId}` });
+      expect(get.statusCode).toBe(200);
+      expect(get.json().expectation_kind).toBe('must_find');
+
+      // A PUT body carrying expectation_kind is rejected outright — the
+      // shared route's `.strict()` body has no such key, so an unrecognised
+      // key 422s rather than being stripped-and-ignored (Open questions:
+      // "a PUT body carrying expectation_kind 422s rather than being
+      // silently ignored").
+      const putWithKind = await app.inject({
+        method: 'PUT',
+        url: `/eval-cases/${caseId}`,
+        payload: { expectation_kind: 'must_not_flag' },
+      });
+      expect(putWithKind.statusCode).toBe(422);
+
+      // And the row is untouched by the rejected attempt.
+      const getAfterRejected = await app.inject({ method: 'GET', url: `/eval-cases/${caseId}` });
+      expect(getAfterRejected.json().expectation_kind).toBe('must_find');
+
+      await app.close();
+    },
+  );
+
+  // ---- expectation-kind plan, step 11 — AC-56: backfill for legacy rows ---
+
+  it(
+    'a row inserted with NO stored kind (the shape a case created before migration 0019 added the column ' +
+      'would have) is typed correctly by re-running that SAME migration\'s backfill rule, while a skill-owned ' +
+      'row (the seeded stripe-key-leak case) stays NULL — the backfill only ever touches owner_kind = \'agent\' ' +
+      '(AC-56)',
+    async () => {
+      const app = await makeApp();
+      const { db, sql } = pg.handle;
+      const workspaceId = await defaultWorkspaceId();
+      const agent = await createAgent(app, 'AC56 Owner');
+
+      // Insert directly (bypassing the service, which always sets a kind at
+      // creation) — this is the pre-migration-0019 shape: the column exists
+      // (it must, in this fixture) but nothing has EVER written to it.
+      const [withFindings] = await db
+        .insert(t.evalCases)
+        .values({
+          workspaceId,
+          ownerKind: 'agent',
+          ownerId: agent.id,
+          name: 'ac56-legacy-with-findings',
+          inputDiff: makeDiffPatch('src/eval/ac56-a.ts'),
+          expectedOutput: { findings: [{ file: 'src/eval/ac56-a.ts', start_line: 1, end_line: 1 }] },
+        })
+        .returning();
+      const [withoutFindings] = await db
+        .insert(t.evalCases)
+        .values({
+          workspaceId,
+          ownerKind: 'agent',
+          ownerId: agent.id,
+          name: 'ac56-legacy-without-findings',
+          inputDiff: makeDiffPatch('src/eval/ac56-b.ts'),
+          expectedOutput: { findings: [] },
+        })
+        .returning();
+      expect(withFindings!.expectationKind).toBeNull();
+      expect(withoutFindings!.expectationKind).toBeNull();
+
+      // Re-run EXACTLY the backfill statement migration 0019 ships
+      // (`server/src/db/migrations/0019_youthful_giant_man.sql`) — this
+      // fixture's Postgres container already ran every migration, including
+      // 0019, before any row existed (`test/helpers/pg.ts`), so the only way
+      // to exercise "a row that predates the column" is to simulate one and
+      // apply the SAME rule `pnpm db:migrate` would have applied to it.
+      await sql`
+        UPDATE "eval_cases" SET "expectation_kind" = CASE
+          WHEN jsonb_typeof("expected_output"->'findings') = 'array'
+           AND jsonb_array_length("expected_output"->'findings') > 0
+          THEN 'must_find' ELSE 'must_not_flag'
+        END WHERE "owner_kind" = 'agent' AND "expectation_kind" IS NULL;
+      `;
+
+      const [refetchedWith] = await db.select().from(t.evalCases).where(eq(t.evalCases.id, withFindings!.id));
+      const [refetchedWithout] = await db
+        .select()
+        .from(t.evalCases)
+        .where(eq(t.evalCases.id, withoutFindings!.id));
+      expect(refetchedWith!.expectationKind).toBe('must_find');
+      expect(refetchedWithout!.expectationKind).toBe('must_not_flag');
+
+      // And typed on the wire, too.
+      const get = await app.inject({ method: 'GET', url: `/eval-cases/${withFindings!.id}` });
+      expect(get.json().expectation_kind).toBe('must_find');
+
+      // The seeded SKILL-owned case (`stripe-key-leak`, `src/db/seed.ts`) was
+      // inserted the exact same way — no kind ever written — and the
+      // backfill's `WHERE owner_kind = 'agent'` clause must never touch it.
+      const [rubric] = await db.select().from(t.skills).where(eq(t.skills.name, 'pr-quality-rubric'));
+      const [skillCase] = await db
+        .select()
+        .from(t.evalCases)
+        .where(and(eq(t.evalCases.ownerId, rubric!.id), eq(t.evalCases.name, 'stripe-key-leak')));
+      expect(skillCase!.expectationKind).toBeNull();
+
+      await app.close();
+    },
+  );
 
   // ---- AC-11 — delete cascades its run history --------------------------
 
@@ -1161,6 +1430,311 @@ d('eval module (SPEC-05)', () => {
     await app.close();
   });
 
+  // ---- expectation-kind plan, step 11 — AC-57: scoring reads ONLY the -----
+  // ---- expected_output, never the stored kind, even when they contradict --
+
+  it(
+    'scoring reads ONLY expected_output, never the stored expectation_kind — a case whose stored kind ' +
+      'CONTRADICTS its expectations still scores by the expectations (AC-57)',
+    async () => {
+      const llm = new MockLLMProvider('openai', {
+        structured: { verdict: 'comment', summary: 'ok', score: 90, findings: [] },
+      });
+      const app = await makeApp(llm);
+      const agent = await createAgent(app, 'AC57 Owner');
+      const path = 'src/eval/ac57.ts';
+
+      const created = await app.inject({
+        method: 'POST',
+        url: '/eval-cases',
+        payload: {
+          owner_kind: 'agent',
+          owner_id: agent.id,
+          name: 'ac57-case',
+          input_diff: makeDiffPatch(path),
+          expected_output: { findings: [] }, // -> derived must_not_flag (AC-54)
+        },
+      });
+      expect(created.statusCode).toBe(201);
+      const caseId = created.json().id as string;
+      expect(created.json().expectation_kind).toBe('must_not_flag');
+
+      // Contradict it directly on the row — the ONLY way this can happen: no
+      // route can set expectation_kind after creation (AC-55).
+      await pg.handle.db
+        .update(t.evalCases)
+        .set({ expectationKind: 'must_find' })
+        .where(eq(t.evalCases.id, caseId));
+      const [contradicted] = await pg.handle.db.select().from(t.evalCases).where(eq(t.evalCases.id, caseId));
+      expect(contradicted!.expectationKind).toBe('must_find');
+
+      const run = await app.inject({
+        method: 'POST',
+        url: `/agents/${agent.id}/eval-cases/${caseId}/run`,
+      });
+      expect(run.statusCode).toBe(200);
+      const record = run.json() as EvalRunRecord;
+      // The model produced nothing, expected_output expects nothing — the
+      // scorer (`eval/helpers.ts#expectedFindings` + `scoring.ts`) computes
+      // pass/recall/precision from the EXPECTATIONS, ignoring the
+      // contradicting stored `must_find` kind entirely.
+      expect(record.pass).toBe(true);
+      expect(record.recall).toBe(1);
+      expect(record.precision).toBe(1);
+
+      await app.close();
+    },
+  );
+
+  // ---- expectation-kind plan, step 11 — the per-case run route -------------
+  // ---- (AC-63, AC-69, AC-70, AC-71) -----------------------------------------
+
+  it(
+    'a single-case run (success AND failure) leaves the agent\'s current/recent_batches/trend/alert ' +
+      'BYTE-IDENTICAL before and after, while the run itself shows up in recent_runs for its own case and in ' +
+      'NO batch, trend point, or GET /eval/overview row (AC-63, AC-69, AC-70, AC-71)',
+    async () => {
+      const path = 'src/eval/ac71-batch-target.ts';
+      const llm = new MockLLMProvider('openai', {
+        structured: {
+          verdict: 'comment',
+          summary: 'ok',
+          score: 80,
+          findings: [
+            {
+              id: 'f1',
+              severity: 'WARNING',
+              category: 'style',
+              title: 'flag',
+              file: path,
+              start_line: FIXTURE_LINE,
+              end_line: FIXTURE_LINE,
+              rationale: 'r',
+              confidence: 0.9,
+            },
+          ],
+        },
+      });
+      const app = await makeApp(llm);
+      const agent = await createAgent(app, 'AC71 Owner');
+
+      // Give the agent a REAL, measured batch FIRST — current/trend/alert
+      // then carry non-placeholder numbers, so a single-case run silently
+      // moving them would be an observable change, not a "0 == 0" false
+      // negative.
+      const batchCase = await app.inject({
+        method: 'POST',
+        url: '/eval-cases',
+        payload: {
+          owner_kind: 'agent',
+          owner_id: agent.id,
+          name: 'ac71-batch-case',
+          input_diff: makeDiffPatch(path),
+          expected_output: { findings: [{ file: path, start_line: FIXTURE_LINE, end_line: FIXTURE_LINE }] },
+        },
+      });
+      expect(batchCase.statusCode).toBe(201);
+      const batchRun = await app.inject({ method: 'POST', url: `/agents/${agent.id}/eval-runs` });
+      expect(batchRun.statusCode).toBe(200);
+      const originalBatchId = (batchRun.json() as AgentEvalBatch).batch_id;
+
+      const before = (
+        await app.inject({ method: 'GET', url: `/eval/dashboard?owner_id=${agent.id}` })
+      ).json() as EvalDashboard;
+      expect(before.recent_batches).toHaveLength(1);
+      expect(before.current.traces_total).toBeGreaterThan(0);
+
+      // ---- success: a second case, run singly, outside the batch ----
+      const successCase = await app.inject({
+        method: 'POST',
+        url: '/eval-cases',
+        payload: {
+          owner_kind: 'agent',
+          owner_id: agent.id,
+          name: 'ac71-single-success',
+          input_diff: makeDiffPatch(path),
+          expected_output: { findings: [{ file: path, start_line: FIXTURE_LINE, end_line: FIXTURE_LINE }] },
+        },
+      });
+      expect(successCase.statusCode).toBe(201);
+      const successCaseId = successCase.json().id as string;
+
+      const successRun = await app.inject({
+        method: 'POST',
+        url: `/agents/${agent.id}/eval-cases/${successCaseId}/run`,
+      });
+      expect(successRun.statusCode).toBe(200);
+      const successRecord = successRun.json() as EvalRunRecord;
+      expect(successRecord.case_id).toBe(successCaseId);
+      expect(successRecord.batch_id).toBeNull();
+      expect(successRecord.agent_version).toBe(agent.version);
+      expect(successRecord.pass).toBe(true);
+      expect(successRecord.error).toBeNull();
+
+      // AC-63: exactly one model call for this one case (three so far: one
+      // for the batch case above, one for this one — never two for one run).
+      const structuredCalls = llm.calls.filter((c) => c.method === 'completeStructured');
+      expect(structuredCalls).toHaveLength(2);
+
+      const successRows = await pg.handle.db
+        .select()
+        .from(t.evalRuns)
+        .where(eq(t.evalRuns.caseId, successCaseId));
+      expect(successRows).toHaveLength(1);
+      expect(successRows[0]!.batchId).toBeNull();
+      expect(successRows[0]!.agentVersion).toBe(agent.version);
+
+      const afterSuccess = (
+        await app.inject({ method: 'GET', url: `/eval/dashboard?owner_id=${agent.id}` })
+      ).json() as EvalDashboard;
+      expect(afterSuccess.current).toEqual(before.current);
+      expect(afterSuccess.recent_batches).toEqual(before.recent_batches);
+      expect(afterSuccess.trend).toEqual(before.trend);
+      expect(afterSuccess.alert).toEqual(before.alert);
+
+      // AC-70: it DOES show up in recent_runs for its own case…
+      const successRunsInDashboard = afterSuccess.recent_runs.filter((r) => r.case_id === successCaseId);
+      expect(successRunsInDashboard).toHaveLength(1);
+      expect(successRunsInDashboard[0]!.id).toBe(successRecord.id);
+
+      // ---- failure: a third case with an EMPTY input_diff — runOneCase
+      // throws BEFORE any model call (the "empty input_diff" branch AC-69
+      // names explicitly), the run still 200s with pass:null + a reason, and
+      // the row is still persisted (NFR Спостережуваність).
+      const failCase = await app.inject({
+        method: 'POST',
+        url: '/eval-cases',
+        payload: {
+          owner_kind: 'agent',
+          owner_id: agent.id,
+          name: 'ac71-single-failure',
+          input_diff: '',
+          expected_output: { findings: [] },
+        },
+      });
+      expect(failCase.statusCode).toBe(201);
+      const failCaseId = failCase.json().id as string;
+
+      const failRun = await app.inject({
+        method: 'POST',
+        url: `/agents/${agent.id}/eval-cases/${failCaseId}/run`,
+      });
+      expect(failRun.statusCode).toBe(200);
+      const failRecord = failRun.json() as EvalRunRecord;
+      expect(failRecord.pass).toBeNull();
+      expect(failRecord.error).not.toBeNull();
+      expect(failRecord.error!.code).toBe('eval_case_empty');
+      expect(failRecord.batch_id).toBeNull();
+
+      // The empty-diff branch never calls the model — still exactly the same
+      // two structured calls as after the success run above.
+      expect(llm.calls.filter((c) => c.method === 'completeStructured')).toHaveLength(2);
+
+      const failRows = await pg.handle.db.select().from(t.evalRuns).where(eq(t.evalRuns.caseId, failCaseId));
+      expect(failRows).toHaveLength(1);
+      expect(failRows[0]!.pass).toBeNull();
+      expect(failRows[0]!.batchId).toBeNull();
+      expect(failRows[0]!.errorReason).toBeTruthy();
+
+      const afterFailure = (
+        await app.inject({ method: 'GET', url: `/eval/dashboard?owner_id=${agent.id}` })
+      ).json() as EvalDashboard;
+      // The core assertion: a FAILED single-case run moves the aggregates
+      // exactly as little as a successful one did — still byte-identical to
+      // the pre-single-run snapshot.
+      expect(afterFailure.current).toEqual(before.current);
+      expect(afterFailure.recent_batches).toEqual(before.recent_batches);
+      expect(afterFailure.trend).toEqual(before.trend);
+      expect(afterFailure.alert).toEqual(before.alert);
+
+      const failRunsInDashboard = afterFailure.recent_runs.filter((r) => r.case_id === failCaseId);
+      expect(failRunsInDashboard).toHaveLength(1);
+      expect(failRunsInDashboard[0]!.error).toEqual(failRecord.error);
+
+      // AC-71: neither single-case run minted a new batch, a new trend point,
+      // or a new GET /eval/overview row for THIS agent — filtered by
+      // `agent_id` because `recent_batches` here is the GLOBAL top-N window
+      // shared with every other agent this whole suite has created, not a
+      // fixture scoped to this one test.
+      const overview = (
+        await app.inject({ method: 'GET', url: '/eval/overview' })
+      ).json() as EvalDashboardOverview;
+      const thisAgentsGlobalBatches = overview.recent_batches.filter((b) => b.agent_id === agent.id);
+      expect(thisAgentsGlobalBatches).toHaveLength(1);
+      expect(thisAgentsGlobalBatches[0]!.batch_id).toBe(originalBatchId);
+      const overviewSummary = overview.agents.find((a) => a.agent_id === agent.id);
+      expect(overviewSummary).toBeDefined();
+      expect(overviewSummary!.last_batch!.batch_id).toBe(originalBatchId);
+      expect(overviewSummary!.trend).toHaveLength(1);
+
+      await app.close();
+    },
+    30_000,
+  );
+
+  it('POST /agents/:id/eval-cases/:caseId/run 404s when the case belongs to a DIFFERENT agent', async () => {
+    const app = await makeApp();
+    const owner = await createAgent(app, 'Run404 Owner');
+    const other = await createAgent(app, 'Run404 Other');
+
+    const created = await app.inject({
+      method: 'POST',
+      url: '/eval-cases',
+      payload: {
+        owner_kind: 'agent',
+        owner_id: owner.id,
+        name: 'run404-case',
+        input_diff: makeDiffPatch('src/eval/run404.ts'),
+        expected_output: { findings: [] },
+      },
+    });
+    expect(created.statusCode).toBe(201);
+    const caseId = created.json().id as string;
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/agents/${other.id}/eval-cases/${caseId}/run`,
+    });
+    expect(res.statusCode).toBe(404);
+
+    await app.close();
+  });
+
+  it(
+    'POST /agents/:id/eval-cases/:caseId/run answers 409 no_provider_key BEFORE any DB write, when no ' +
+      'provider key is configured (no llm override, an EMPTY secrets provider)',
+    async () => {
+      const app = await makeApp(undefined, { secrets: new MockSecretsProvider({}) });
+      const agent = await createAgent(app, 'Run409 Owner');
+
+      const created = await app.inject({
+        method: 'POST',
+        url: '/eval-cases',
+        payload: {
+          owner_kind: 'agent',
+          owner_id: agent.id,
+          name: 'run409-case',
+          input_diff: makeDiffPatch('src/eval/run409.ts'),
+          expected_output: { findings: [] },
+        },
+      });
+      expect(created.statusCode).toBe(201);
+      const caseId = created.json().id as string;
+
+      const res = await app.inject({
+        method: 'POST',
+        url: `/agents/${agent.id}/eval-cases/${caseId}/run`,
+      });
+      expect(res.statusCode).toBe(409);
+      expect(res.json().error.code).toBe('no_provider_key');
+
+      const rows = await pg.handle.db.select().from(t.evalRuns).where(eq(t.evalRuns.caseId, caseId));
+      expect(rows).toHaveLength(0);
+
+      await app.close();
+    },
+  );
+
   // ---- AC-34 (backend half) — missing version snapshot -------------------
 
   it('GET /agents/:id/versions/:version 404s for a snapshot that was never recorded (AC-34)', async () => {
@@ -1195,6 +1769,8 @@ d('eval module (SPEC-05)', () => {
 
     // hooks/eval.ts — GET/POST /eval-cases, GET/PUT/DELETE /eval-cases/:id,
     // POST /findings/:id/eval-case, POST /agents/:id/eval-runs,
+    // POST /agents/:id/eval-cases/:caseId/run (expectation-kind plan, step
+    // 11: the exact method+path `useRunAgentEvalCase()` posts to),
     // GET /eval/overview, GET /eval/dashboard.
     expect(app.hasRoute({ method: 'GET', url: '/eval-cases' })).toBe(true);
     expect(app.hasRoute({ method: 'POST', url: '/eval-cases' })).toBe(true);
@@ -1203,6 +1779,7 @@ d('eval module (SPEC-05)', () => {
     expect(app.hasRoute({ method: 'DELETE', url: '/eval-cases/:id' })).toBe(true);
     expect(app.hasRoute({ method: 'POST', url: '/findings/:id/eval-case' })).toBe(true);
     expect(app.hasRoute({ method: 'POST', url: '/agents/:id/eval-runs' })).toBe(true);
+    expect(app.hasRoute({ method: 'POST', url: '/agents/:id/eval-cases/:caseId/run' })).toBe(true);
     expect(app.hasRoute({ method: 'GET', url: '/eval/overview' })).toBe(true);
     expect(app.hasRoute({ method: 'GET', url: '/eval/dashboard' })).toBe(true);
     // hooks/eval.ts's compare-modal read (existing agents route, not new).
