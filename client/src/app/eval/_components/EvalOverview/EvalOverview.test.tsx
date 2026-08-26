@@ -219,6 +219,17 @@ describe("EvalOverview", () => {
     expect(screen.getByText(evalMessages.runAllAgents.disabledReason)).toBeInTheDocument();
   });
 
+  it("does not assert the AC-50 disabled reason while the query is still loading, even with a cold-cache workspace that does have agents", () => {
+    state.data = undefined;
+    state.isLoading = true;
+    renderView();
+
+    expect(screen.getByRole("button", { name: evalMessages.runAllAgents.button })).toBeDisabled();
+    // AC-50's condition — "no agent has a non-empty case set" — is not yet
+    // established during loading; asserting it now would be a false claim.
+    expect(screen.queryByText(evalMessages.runAllAgents.disabledReason)).not.toBeInTheDocument();
+  });
+
   it("sticky-disables Run all agents with dashboard.noProviderKey once every attempted agent failed 409 (AC-52)", () => {
     state.data = { agents: [makeAgent()], recent_batches: [] };
     runAllState.allNoProviderKey = true;

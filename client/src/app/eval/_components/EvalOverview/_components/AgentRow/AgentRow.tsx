@@ -1,8 +1,11 @@
 /* AgentRow — one full-width row per agent on the `/eval` overview (AC-26,
    AC-37…AC-42). Replaces the previous card-grid tile: a square icon tile, the
    agent's bold name + mono model badge, a `Last run v<N> · <ts> · X/Y pass`
-   meta line, three always-numeric RECALL/PREC/CITE stat blocks and a `recall`
-   sparkline.
+   meta line, a `recall` sparkline and three always-numeric RECALL/PREC/CITE
+   stat blocks, in that order (mock layout). The sparkline is decorative
+   (`aria-hidden`) — the stat blocks already print the numbers (AC-39), so it
+   never carries meaning the row's single accessible name would otherwise
+   lose.
 
    Two CRITICAL seams, both asserted in AgentRow.test.tsx, not just inspected:
 
@@ -98,6 +101,12 @@ export function AgentRow({ agent }: { agent: EvalAgentSummary }) {
         )}
       </div>
 
+      {showSparkline && (
+        <div style={s.sparkline} data-testid="agent-row-sparkline" aria-hidden>
+          <Sparkline data={sparklineData} color={METRIC_COLOR.recall} />
+        </div>
+      )}
+
       <div style={s.stats}>
         {stats.map((stat) => (
           <div key={stat.key} style={s.statBlock}>
@@ -108,12 +117,6 @@ export function AgentRow({ agent }: { agent: EvalAgentSummary }) {
           </div>
         ))}
       </div>
-
-      {showSparkline && (
-        <div style={s.sparkline} data-testid="agent-row-sparkline">
-          <Sparkline data={sparklineData} color={METRIC_COLOR.recall} />
-        </div>
-      )}
 
       {/* Decorative affordance only (AC-37) — NOT a second navigation target. */}
       <Icon.ChevronRight size={16} aria-hidden style={s.chevron} />

@@ -129,6 +129,32 @@ describe("AgentRow — never-run vs empty-trend (Contract & migration impact, AC
 
     expect(screen.getByTestId("agent-row-sparkline")).toBeInTheDocument();
   });
+
+  it("places the sparkline before the stat blocks and marks it decorative, matching the mock layout", () => {
+    const batch = makeBatch();
+    renderRow(
+      makeAgent({
+        last_batch: batch,
+        trend: [makeTrendPoint({ recall: 0.6 }), makeTrendPoint({ recall: 0.8 })],
+      }),
+    );
+
+    const link = screen.getAllByRole("link")[0]!;
+    const sparkline = screen.getByTestId("agent-row-sparkline");
+    const firstStatLabel = screen.getByText(evalMessages.dashboard.metricsShort.recall);
+
+    // DOM order, not visual order: the sparkline node comes before the stats
+    // block that holds the first stat label (mock reads identity, trend,
+    // then stats).
+    const position = sparkline.compareDocumentPosition(firstStatLabel);
+    expect(position & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    // The row is a single link (AC-37); every graphic inside it that is not
+    // named feeds the link's accessible name. The stats already print the
+    // numbers (AC-39), so the sparkline is decorative — same treatment as
+    // the icon tile and chevron, which are already aria-hidden.
+    expect(sparkline).toHaveAttribute("aria-hidden", "true");
+  });
 });
 
 describe("AgentRow — meta line and stats (AC-38, AC-39)", () => {

@@ -92,8 +92,11 @@ export function EvalOverview() {
   const agents = data?.agents ?? [];
   const batches = data?.recent_batches ?? [];
   const casesTotal = agents.reduce((total, agent) => total + agent.cases_total, 0);
-  const noAgents = agents.length === 0;
-  const runDisabled = isRunning || noAgents || allNoProviderKey;
+  // AC-50's condition — "no agent has a non-empty case set" — is only
+  // established once the query has settled; `agents` defaults to `[]` while
+  // loading, which would otherwise assert the reason during every cold fetch.
+  const noAgents = !isLoading && agents.length === 0;
+  const runDisabled = isRunning || isLoading || noAgents || allNoProviderKey;
   // Visually "cleared when the next run starts" (plan Open questions
   // default) — the hook only overwrites `outcomes` once the whole run
   // settles, so this component hides the previous run's failures itself the
