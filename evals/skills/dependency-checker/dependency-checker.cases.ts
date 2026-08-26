@@ -169,6 +169,15 @@ export const cases: SkillCase[] = [
     practices: [
       "the answer produces the full report from the supplied data instead of refusing, stalling, or asking for tool access or for permission to run a command",
       "the install size of reviewer-core is reported as unknown (or an equivalent explicit 'could not be measured'), and no number is invented for it",
+      // KNOWN-OPEN ARTIFACT GAP, not a measurement bug — 0/2 in every round of 2026-08-26, and
+      // the two obvious fixes are already spent: the rule was strengthened in SKILL.md's numbered
+      // rules (rule 5, with a worked example) and then MOVED into the `## Size & weight` skeleton
+      // section next to the table it governs — the relocation that took the internal-edges
+      // practice from 0/6 to 2/2. Neither moved this one. The report marks `unknown` faithfully
+      // every time and states the recovery step never. Kept deliberately: it is the case's
+      // tolerated miss, it costs nothing to carry, and it is the only thing that will notice if a
+      // future model or SKILL.md revision closes the gap. Do not re-attempt the two fixes above
+      // without a new idea; do not delete it and call the dimension covered.
       "the answer says what would establish the missing reviewer-core size, for example installing its dependencies and re-running the measurement",
       // Worded around the CLAIM, not the vocabulary. The first version ("supplied in the request
       // rather than measured by the collector script") produced a false FAIL: the model wrote

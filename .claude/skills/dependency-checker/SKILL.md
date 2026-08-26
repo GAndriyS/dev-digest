@@ -103,8 +103,15 @@ not by how interesting the finding is.
 |---|---|---|
 | **P0** | The graph contradicts itself or ships a known vulnerability. Something is already wrong at runtime or one update away from breaking | high/critical advisory · two **majors** of a library we declare ourselves · a package imported at runtime but declared in no `package.json` (phantom) · a relative import reaching into another package's internals · a wire-crossing contract built by two different majors |
 | **P1** | Wrong but working. Costs money, trust or a future afternoon | build/test tooling in `dependencies` · a declared dependency nothing imports · minor version drift of one library across packages · a deprecated package · vendor copies of a shared contract that have diverged |
-| **P2** | Weight and drift. A conscious trade-off, not a defect | a heavy prod dependency with few call sites · duplicate versions deep in someone else's subtree · a major release we are behind on |
-| **Info** | Context. No action implied | the same library installed by several packages (a fact about the repo layout) · packages running install scripts · patch-level resolution differences between lockfiles |
+| **P2** | Weight and drift. A conscious trade-off, not a defect — but one with a number on it and an action available | a heavy prod dependency with few call sites · duplicate versions deep in someone else's subtree · a major release we are behind on |
+| **Info** | Context. **Nothing to decide** — there is no action the reader could take even if they wanted to | the same library installed by several packages (a fact about the repo layout) · packages running install scripts · patch-level resolution differences between lockfiles |
+
+P2 and Info are the pair most often confused, and the confusion runs one way:
+a heavy dependency gets called "a deliberate choice" and filed as Info. But
+"deliberate" is the P2 *definition*, not a reason to demote it — the question
+is whether an action exists (drop it, lazy-load it, swap it, accept it on the
+record). If yes, it is P2 however deliberate it was. Info is for facts with no
+available move.
 
 Ordering inside a tier: by evidence size — bytes, import sites, number of
 packages affected. When two findings share a root cause, merge them into one and

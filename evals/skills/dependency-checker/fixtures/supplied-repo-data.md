@@ -7,15 +7,13 @@ normally save under docs/ has to come back in your answer, in full.
 ## Manifests
 
 server/package.json
-  dependencies:    fastify@5.1.0, drizzle-orm@0.36.0, zod@^3.24.1, postgres@3.4.5,
-                   esbuild@0.24.0, figlet@1.8.0
+  dependencies:    fastify@5.1.0, drizzle-orm@0.36.0, zod@^3.24.1, postgres@3.4.5, esbuild@0.24.0, figlet@1.8.0
   devDependencies: vitest@^2.1.8, typescript@^5.7.2, pino-pretty@13.0.0
   scripts:         { "build": "esbuild src/index.ts --bundle --outfile=dist/server.js",
                      "test": "vitest run", "typecheck": "tsc --noEmit" }
 
 client/package.json
-  dependencies:    next@15.0.3, react@19.0.0, react-dom@19.0.0, zod@^3.24.1,
-                   puppeteer@23.9.0
+  dependencies:    next@15.0.3, react@19.0.0, react-dom@19.0.0, zod@^3.24.1, puppeteer@23.9.0
   devDependencies: vitest@^2.1.8, typescript@^5.7.2
   scripts:         { "test": "vitest run", "typecheck": "tsc --noEmit" }
 
