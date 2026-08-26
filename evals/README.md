@@ -317,6 +317,7 @@ src/
     paths.ts            # REPO_ROOT / SKILLS_DIR / AGENTS_DIR / RESULTS_DIR anchors
     load.ts             # skillContent() (SKILL.md + references/*.md), agentContent()
     fixture.ts          # fixtureReader(import.meta.url) — inline a case's fixtures into a prompt
+    worktree.ts         # materializedWorktree() — fixtures/tree/ + diff applied in a real git worktree
     pairs.ts            # A/B pairs (source ↔ frozen variant): hashes + "the dimension is gone"
     pairs.test.ts       # the pair guard, as a test (no model)
   tasks.ts              # skillTask / agentTask / workflowTask — compose runtime + artifacts;
@@ -370,6 +371,7 @@ The folders mirror the artifacts one-to-one, and each case folder holds three ki
 | `*.eval.ts` | thin: `describe* + run*Cases` — *what* runs, nothing else | `onion-architecture.eval.ts` |
 | `*.cases.ts` | the data: prompt, practices, grounding, threshold, maxTurns, kind | `onion-architecture.cases.ts` |
 | `fixtures/` | raw inputs inlined into prompts (diffs, code, session traces) | `fixtures/widgets-service.ts` |
+| `fixtures/tree/` | pre-image files for a **materialized** fixture — a case with `setup: () => materializedWorktree(import.meta.url, "x.diff")` runs its session inside a real git worktree with `tree/` committed and the diff applied, so `git diff` shows the fixture verbatim and the machine gates (tsc, depcruise) actually fire. Use for any tool-using agent that will (correctly) check the working tree before reviewing a diff. | `fixtures/tree/server/src/...` |
 
 ```
 evals/
@@ -512,6 +514,15 @@ Runs the pattern N times, then prints per-test pass rate, a per-**practice** tab
 (`passed/total (pct)`), and metric stats (`turns`, `duration_ms`, `tokens_out` as mean ± stddev;
 n<5 prints an "indicative only" caveat). `--label` saves the aggregate to
 `results/repeat-<label>.json` for delta.
+
+Rates are over **valid** rows only — zero-turn-timeout runs print as their own
+`N invalid run(s) … excluded` line, never averaged in (see
+[Zero-turn timeouts](#zero-turn-timeouts-are-invalid-not-failed)). A pass rate strictly inside
+20–80% is tagged `FLAKY` — a distinct verdict from red: a 40% case needs more n or a case fix,
+a 0% case needs the artifact fixed. When flaky cases exist, the summary ends with a ready-made
+`-t "case1|case2"` command that raises n for JUST those cases instead of multiplying the whole
+suite's cost — printed as a suggestion, never executed, since model-backed lanes are spent by a
+human decision (root `AGENTS.md`).
 
 **`-n` defaults to 2 and is capped at 2** (`MAX_REPEATS` in `config.ts`) — anything higher is
 clamped with a notice. Two runs catch a blatantly flaky case cheaply, and a session is the
@@ -735,6 +746,23 @@ as the failure it was.
 Keep the gap wide enough for everything that happens after the session inside the same test: the
 judge is another model round-trip, and `record()` then writes the row. Both knobs live in
 `src/config.ts`; `vitest.config.ts` imports the outer one rather than repeating the number.
+
+### Zero-turn timeouts are invalid, not failed
+
+A session that dies on its deadline having made **zero turns** measured nothing — it queued
+behind a busy subscription and was aborted before reading a byte. Counting that as a failure
+charges the artifact for the infrastructure: in one n=5 repeat, 14 of 40 sessions died this way
+and a case whose live runs went 2/2 printed as 2/5 40% (measured 2026-08-26). So `measuredRun`
+(dsl/case.ts) gives a zero-turn timeout ONE fresh retry; a second one records a row with
+`valid: false`, skips the judge (nothing to judge — and that pointless round-trip after a dead
+180s session is what used to push tests over vitest's ceiling and lose the row entirely), and
+fails the test with an explicit "invalid run" message — red, because missing is not passing.
+The stats layer excludes `valid: false` rows from every rate and surfaces them as their own
+count. A timeout **mid-work** (turns > 0) stays a normal graded failure — it had its chance.
+
+Two things keep zero-turn timeouts rare in the first place: `vitest.config.ts` runs eval files
+serially (`fileParallelism: false` — concurrent strict+lite sessions queued each other into the
+deadline in whole bands), and the sessions are the only concurrent model work a repeat run does.
 
 ## A/B pairs — the manipulation is equipment too
 

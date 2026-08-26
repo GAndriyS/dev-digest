@@ -1,31 +1,35 @@
 import type { AgentCase } from "../../src/index.js";
-import { fixtureReader } from "../../src/index.js";
+import { fixtureReader, materializedWorktree } from "../../src/index.js";
 
 const fx = fixtureReader(import.meta.url);
 
-// MEASURED IN CI AND LOCALLY, 2026-08-26 — the line below is load-bearing, do not trim it.
+// MATERIALIZED FIXTURES — the history that led here, so nobody walks it backwards:
 //
-// This agent has tools and uses them: handed a pasted diff, it checks whether the file exists in
-// the working tree. Two of the three fixtures target files this repo does not contain
-// (`blast/score.ts`, `reviewer-core/src/pipeline/run.ts`), so it correctly refused to review —
-// "Verdict: UNKNOWN — cannot scope the review ... diff target does not exist in the working tree"
-// — and the benign case went 0/2 on an agent doing exactly the right thing. It had been passing
-// at 88% only because earlier runs took the diff at face value without checking.
+// v1 (through 2026-08-25): diffs PASTED into the prompt, never applied. Two failure modes,
+// both measured. (1) The agent has tools and uses them: handed a diff whose target files the
+// repo does not contain, it checked the working tree and correctly refused to review — the
+// benign case went 0/2 on an agent doing exactly the right thing, and the checkout case passed
+// only because its files happened to be lying around as untracked scratch. (2) Every rule-id
+// practice was unreachable: depcruise runs against the live repo, which is green, so
+// `core-has-no-io` appeared in no tool output and citing it was a memory test — 15% in BOTH
+// arms of the A/B, discriminating nothing.
 //
-// Worse, the checkout fixture was passing for an ACCIDENTAL reason: `server/src/modules/checkout/`
-// exists in this working tree as untracked scratch that every handoff brief tells agents to leave
-// alone. Delete that directory and two more cases start failing the same way. Saying "not yet
-// applied" once makes all three fixtures self-contained and removes the dependency on whatever
-// happens to be lying around the tree.
-const NOT_APPLIED =
-  "The diff below is a PROPOSED change that has not been applied — the files may not exist in " +
-  "the working tree yet, and the machine gates will not show it. Review the diff as written.";
+// v2 (2026-08-26, one day): a NOT_APPLIED preamble telling the agent the diff was proposed.
+// That fixed refusals but conceded the gates: the reachability comment below had to say "do not
+// re-add the gate practice against a pasted fixture".
+//
+// v3 (now): each case materializes into a REAL worktree — `fixtures/tree/` holds the pre-image,
+// the diff is applied on top, and the session runs with cwd inside that tree
+// (src/artifacts/worktree.ts). `git diff` shows exactly the fixture diff, tsc and depcruise can
+// actually fire, and the rule id is IN the gate output when the agent runs it. The pasted diff
+// stays in the prompt (production hands the reviewer a diff too); what changed is that the tree
+// now agrees with it.
+const preamble = (diff: string): string =>
+  `Audit the uncommitted diff in this working tree against DevDigest's documented structural ` +
+  `contracts. The change is already APPLIED to the tree — \`git diff\` shows it, and the ` +
+  `machine gates can run against it.\n\n${diff}`;
 
-const REVIEW_PROMPT = `Audit this diff against DevDigest's documented structural contracts.
-
-${NOT_APPLIED}
-
-${fx("checkout-service.diff")}`;
+const REVIEW_PROMPT = preamble(fx("checkout-service.diff"));
 
 // A second real diff whose fs-import violation maps onto a DevDigest-SPECIFIC documented contract
 // (`core-has-no-io`, server/.dependency-cruiser.cjs:123, and the same rule in prose at
@@ -42,35 +46,25 @@ ${fx("checkout-service.diff")}`;
 // (9×) and `core-has-no-io` (1×), so both practices scored 0% in BOTH arms of the A/B and the
 // designated discriminator had zero headroom to fall. An expectation that names an identifier the
 // repo does not document measures the fixture author's memory, not the agent.
-//
-// The skipped-`groundFindings()` gate has NO rule identifier at all — the contract is prose in
-// reviewer-core/AGENTS.md:20 ("Grounding is mandatory"). Its practice therefore grades the
-// citation BEHAVIOUR (a named contract plus a locator) rather than a literal string.
-const REVIEWER_CORE_PROMPT = `Audit this diff against DevDigest's documented structural contracts.
-
-${NOT_APPLIED}
-
-${fx("reviewer-core-gate.diff")}`;
+const REVIEWER_CORE_PROMPT = preamble(fx("reviewer-core-gate.diff"));
 
 // A diff that violates NO documented rule (a pure local-variable rename inside a domain file, no
 // new imports, no cross-layer edges). A grounded reviewer should report zero violations. This
 // surfaces the COST of relaxing the citation rule: freed from "every finding must name a
 // documented contract", the lite variant is more prone to fabricating a judgment/best-practice
 // finding where the strict variant stays silent.
-const BENIGN_PROMPT = `Audit this diff against DevDigest's documented structural contracts.
-
-${NOT_APPLIED}
-
-${fx("benign-refactor.diff")}`;
+const BENIGN_PROMPT = preamble(fx("benign-refactor.diff"));
 
 // Shared across the strict (architecture-reviewer) and relaxed (architecture-reviewer-lite)
 // variants so the two agents are graded on the exact same task — the only thing that should
 // move between the two runs is whether "cites the specific documented rule" keeps passing.
+// (The lite eval runs only the A/B-relevant subset — see architecture-reviewer-lite.eval.ts.)
 export const cases: AgentCase[] = [
   {
     name: "flags both violations in the checkout diff with severity and a citable rule",
     kind: "quality",
     prompt: REVIEW_PROMPT,
+    setup: () => materializedWorktree(import.meta.url, "checkout-service.diff"),
     // Deterministic pre-gate, checked before the judge is paid. These are the MECHANICAL half of
     // the practices below — the identifiers the report must quote and the verdict line it must
     // end on — so they are graded by substring rather than by a stochastic judge. Every string
@@ -106,6 +100,7 @@ export const cases: AgentCase[] = [
     name: "does not fabricate an architecture finding for the out-of-scope security-shaped change",
     kind: "quality",
     prompt: REVIEW_PROMPT,
+    setup: () => materializedWorktree(import.meta.url, "checkout-service.diff"),
     practices: [
       "does not invent an architecture-contract violation for the optional `reply?: FastifyReply` parameter beyond the layering violation of the fastify import itself (no runtime bug/security finding fabricated as an architecture rule)",
       // Scoped to what lands in FINDINGS. The agent's return format makes an `### Out of scope` section
@@ -127,15 +122,16 @@ export const cases: AgentCase[] = [
   // attribution is the dimension only the strict variant holds.
   {
     kind: "quality",
-    name: "finds both reviewer-core violations in the pasted diff",
+    name: "finds both reviewer-core violations in the diff",
     prompt: REVIEWER_CORE_PROMPT,
+    setup: () => materializedWorktree(import.meta.url, "reviewer-core-gate.diff"),
     // The identifiers a report cannot be right without, graded by substring so the judge is never
     // paid to confirm a string match. `Verdict:` stays here for the same reason — see the note on
-    // the verdict practice below.
+    // the verdict practice in the checkout case.
     grounding: ["readFileSync", "groundFindings", "Verdict:"],
     practices: [
       "flags the `import { readFileSync } from 'node:fs'` added to reviewer-core/src/pipeline/run.ts as a violation (reviewer-core must do no I/O except the injected LLMProvider)",
-      "flags that runPipeline now returns `deduped` directly, skipping the mandatory `groundFindings()` gate before emitting findings",
+      "flags that runPipeline now returns `deduped` directly, dropping the mandatory `groundFindings()` gate before emitting findings",
       "quotes the offending line verbatim as evidence for each finding, not a paraphrase",
     ],
     // Three practices, one tolerated miss. The middle one is the real signal: the skipped-gate
@@ -148,51 +144,35 @@ export const cases: AgentCase[] = [
     kind: "quality",
     name: "attributes each reviewer-core finding to a named documented contract",
     prompt: REVIEWER_CORE_PROMPT,
-    // THE discriminating case of the A/B — the whole case is now the one dimension the lite
-    // variant drops, instead of that dimension being two of six practices whose failure was
+    setup: () => materializedWorktree(import.meta.url, "reviewer-core-gate.diff"),
+    // THE discriminating case of the A/B — the whole case is the one dimension the lite variant
+    // drops, instead of that dimension being two of six practices whose failure was
     // indistinguishable from a missed violation.
     //
-    // MEASURED, 2026-08-25: an identifier-only wording (`core-has-no-io`, the real rule at
-    // server/.dependency-cruiser.cjs:123) sat at 15% in BOTH arms and discriminated nothing. The
-    // fixture is a PASTED diff that is never applied, and the agent runs depcruise against the
-    // live repo — which is green — so the rule name appears in no tool output anywhere in the
-    // session. To emit it the agent would have to open the config unprompted, which it does about
-    // one run in six. An expectation only measures an artifact if the fixture makes the evidence
-    // REACHABLE; that one made it a memory test with an 85% floor of noise.
-    //
-    // Naming the rule still counts — it is the strongest form of the answer and the wording keeps
-    // it first — but so does any named contract with a locator, which is precisely what the lite
-    // variant loses. Re-tightening this to a bare string is a regression unless the diff is first
-    // materialised into a tree the gate can actually cruise.
+    // Both practices are REACHABLE now, each by a different road the materialized tree opens:
+    // the fs-import id is in the depcruise output the agent can produce (`core-has-no-io` fires
+    // in the worktree), and the grounding-gate contract is prose the agent's own instructions
+    // send it to read (reviewer-core/AGENTS.md:20, the touched module's docs). The gate practice
+    // was REMOVED on 2026-08-26 while the fixture was still a pasted diff — the tree was green,
+    // the file was unopened, and the case went red on correct prose reasoning. Materialization
+    // is the precondition the removal comment named for putting it back; here it is, back.
     practices: [
       "attributes the fs-import finding to a named documented contract with a locator — the `core-has-no-io` rule in `server/.dependency-cruiser.cjs`, or the no-I/O rule stated in `reviewer-core/AGENTS.md` — rather than describing it only in prose (\"the iron rule\", \"no I/O in the core\")",
+      "attributes the dropped-`groundFindings()` finding to a named documented contract with a locator (the mandatory grounding rule in `reviewer-core/AGENTS.md`) rather than describing it only in prose",
     ],
-    // ONE practice, and the second one was REMOVED rather than tolerated — measured in CI,
-    // 2026-08-26, on the first run of this split.
-    //
-    // The removed practice asked the report to attribute the skipped `groundFindings()` gate to a
-    // named contract. There is no contract to name: unlike the fs import, the grounding gate has
-    // no dependency-cruiser rule id anywhere, and its only statement is prose in
-    // `reviewer-core/AGENTS.md:20` — a file the agent has no reason to open when the diff arrives
-    // pasted into the prompt. So it failed with the agent reasoning correctly in prose ("appears
-    // to be a transformation stage ... removing it breaks consumers expecting grounded data") and
-    // the case, at threshold 1.0 over two practices, went red on work that was right. That is the
-    // same "expectation must be REACHABLE" rule this file already states two comments above, and
-    // I broke it while splitting the case — with the practice's own 38% history visible in the
-    // data I was splitting from.
-    //
-    // What survives is the dimension the A/B actually needs: `core-has-no-io` IS a real id in a
-    // file the agent does open, the strict variant cites it (observed verbatim, with
-    // `server/.dependency-cruiser.cjs:123–135` as the locator), and the lite variant is the one
-    // that stops. To get the gate half back, materialise the diff into a tree depcruise can
-    // actually cruise — do not re-add the practice against a pasted fixture.
-    threshold: 1.0,
+    // 0.5 = one of two, deliberately NOT 1.0: the pre-split history for these two dimensions was
+    // 15% and 38% — a 1.0 conjunction over them is the exact shape that sat at 0% for 20 CI runs.
+    // One attribution is enough to separate the arms: the lite variant, with the citation rule
+    // removed, is expected to land ZERO named contracts, so strict-vs-lite still reads clean at
+    // this bar while the per-practice table tracks each road separately.
+    threshold: 0.5,
     maxTurns: 25,
   },
   {
     name: "does not fabricate a documented-rule violation for a benign rename",
     kind: "quality",
     prompt: BENIGN_PROMPT,
+    setup: () => materializedWorktree(import.meta.url, "benign-refactor.diff"),
     practices: [
       "reports no violations for the benign rename (or records only `info`-level, non-blocking observations) — it does not invent a critical/high/medium finding",
       "does not fabricate a documented-rule violation where the diff violates none of the checked rules",
