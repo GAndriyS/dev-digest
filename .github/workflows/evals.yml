@@ -320,6 +320,20 @@ jobs:
           cache-dependency-path: evals/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
 
+      # The materialized fixture worktrees (evals/src/artifacts/worktree.ts) symlink each
+      # package's node_modules into the tree so the agent's machine gates (tsc, depcruise)
+      # actually run — that reachability is the whole point of materializing. Without these
+      # installs the symlink step silently no-ops and the agent burns its entire 25-turn budget
+      # trying to start gates that cannot run: measured 2026-08-26 on this job, three of five
+      # cases hit max-turns mid-narration and were judged 0 on a report that never got written.
+      # Mirrors server-unit.yml: server/ is pnpm, reviewer-core/ is npm (own lockfile).
+      - name: Install server deps (fixture worktree gates)
+        working-directory: server
+        run: pnpm install --frozen-lockfile
+      - name: Install reviewer-core deps (fixture worktree gates)
+        working-directory: reviewer-core
+        run: npm ci
+
       # The container reads OPENROUTER_API_KEY straight from the job env.
       # Only for a non-Anthropic tool model (a workflow_dispatch override). The Anthropic Skin
       # serves anthropic/* slugs directly, so the default path starts no container at all.

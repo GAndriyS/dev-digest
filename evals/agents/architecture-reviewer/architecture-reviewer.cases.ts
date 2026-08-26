@@ -137,7 +137,12 @@ export const cases: AgentCase[] = [
     // Three practices, one tolerated miss. The middle one is the real signal: the skipped-gate
     // violation is the harder of the two to see (46% across the old runs) and it is what this
     // case exists to track.
-    threshold: 0.67,
+    //
+    // 0.66, NOT 0.67: the score for "one miss of three" is 2/3 = 0.6667, which is strictly BELOW
+    // 0.67 — so the tolerated miss this threshold exists for failed its own bar. Measured in CI
+    // 2026-08-26: a run scored exactly 2/3 and went red on the design-intended outcome. A
+    // threshold meant as k-of-n must sit under k/n, never at its rounded-up decimal.
+    threshold: 0.66,
     maxTurns: 25,
   },
   {
