@@ -1,8 +1,14 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { renderHook, waitFor, cleanup, act } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, MutationCache } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import type { AgentEvalBatch, EvalCase, EvalDashboard, EvalDashboardOverview } from "@devdigest/shared";
+import type {
+  AgentEvalBatch,
+  EvalCase,
+  EvalDashboard,
+  EvalDashboardOverview,
+  EvalRunRecord,
+} from "@devdigest/shared";
 
 import {
   isNoProviderKeyError,
@@ -13,6 +19,7 @@ import {
   useCreateEvalCaseFromFinding,
   useEvalOverview,
   useRunAgentEvalBatch,
+  useRunAgentEvalCase,
   useRunAllAgentEvalBatches,
 } from "./eval";
 import { ApiError } from "../api";
@@ -74,6 +81,26 @@ function makeBatch(agentId: string, over: Partial<AgentEvalBatch> = {}): AgentEv
     duration_ms: 1200,
     cost_usd: 0.01,
     cases: [],
+    ...over,
+  };
+}
+
+function makeRunRecord(caseId: string, over: Partial<EvalRunRecord> = {}): EvalRunRecord {
+  return {
+    id: `run-${caseId}`,
+    case_id: caseId,
+    case_name: null,
+    batch_id: null,
+    agent_version: 1,
+    ran_at: "2026-08-27T00:00:00.000Z",
+    actual_output: { findings: [] },
+    error: null,
+    pass: true,
+    recall: 1,
+    precision: 1,
+    citation_accuracy: 1,
+    duration_ms: 400,
+    cost_usd: 0.002,
     ...over,
   };
 }
@@ -305,6 +332,106 @@ describe("useRunAgentEvalBatch — happy path", () => {
 
     expect(data?.batch_id).toBe("batch-1");
     expect(data?.traces_passed).toBe(2);
+  });
+});
+
+describe("useRunAgentEvalCase — per-case run (AC-63, AC-70, AC-71)", () => {
+  it("posts to /agents/:id/eval-cases/:caseId/run and returns the EvalRunRecord", async () => {
+    const record = makeRunRecord("case-1", { pass: true });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        expect(url).toContain("/agents/agent-1/eval-cases/case-1/run");
+        expect(init?.method).toBe("POST");
+        return jsonResponse(200, record);
+      })
+    );
+
+    const client = makeClient();
+    const { result } = renderHook(() => useRunAgentEvalCase(), { wrapper: wrapperFor(client) });
+
+    let data: EvalRunRecord | undefined;
+    await act(async () => {
+      data = await result.current.mutateAsync({ agentId: "agent-1", caseId: "case-1" });
+    });
+
+    expect(data?.id).toBe("run-case-1");
+    expect(data?.batch_id).toBeNull();
+    expect(data?.pass).toBe(true);
+  });
+
+  it("invalidates only the agent's own dashboard query, never the eval-overview query (AC-71)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse(200, makeRunRecord("case-1")))
+    );
+
+    const client = makeClient();
+    const invalidateSpy = vi.spyOn(client, "invalidateQueries");
+    const { result } = renderHook(() => useRunAgentEvalCase(), { wrapper: wrapperFor(client) });
+
+    await act(async () => {
+      await result.current.mutateAsync({ agentId: "agent-1", caseId: "case-1" });
+    });
+
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["agent-eval-dashboard", "agent-1"] });
+    expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ["eval-overview"] });
+  });
+
+  it("returns a 200 body with pass:null and an error on a failed run, rather than rejecting (AC-69)", async () => {
+    const failed = makeRunRecord("case-1", {
+      pass: null,
+      recall: null,
+      precision: null,
+      citation_accuracy: null,
+      error: { code: "provider_error", message: "provider timed out" },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse(200, failed))
+    );
+
+    const client = makeClient();
+    const { result } = renderHook(() => useRunAgentEvalCase(), { wrapper: wrapperFor(client) });
+
+    let data: EvalRunRecord | undefined;
+    await act(async () => {
+      data = await result.current.mutateAsync({ agentId: "agent-1", caseId: "case-1" });
+    });
+
+    expect(result.current.isError).toBe(false);
+    expect(data?.pass).toBeNull();
+    expect(data?.error).toEqual({ code: "provider_error", message: "provider timed out" });
+  });
+
+  it("opts out of the app-wide mutation toast (meta.ownErrorToast) so a component's own failure copy is not doubled", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        jsonResponse(404, { error: { code: "not_found", message: "Eval case not found" } })
+      )
+    );
+
+    const toasted: unknown[] = [];
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+      // Mirrors `providers.tsx`'s real mutationCache — the check this test
+      // exists for is that `meta.ownErrorToast` actually suppresses it.
+      mutationCache: new MutationCache({
+        onError: (err, _vars, _ctx, mutation) => {
+          if (mutation.meta?.ownErrorToast) return;
+          toasted.push(err);
+        },
+      }),
+    });
+    const { result } = renderHook(() => useRunAgentEvalCase(), { wrapper: wrapperFor(client) });
+
+    act(() => {
+      result.current.mutate({ agentId: "agent-1", caseId: "case-1" });
+    });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(toasted).toEqual([]);
   });
 });
 

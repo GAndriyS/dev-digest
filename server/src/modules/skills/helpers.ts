@@ -79,6 +79,7 @@ export function toEvalCaseDto(row: EvalCaseRow): EvalCase {
     input_meta: row.inputMeta ?? null,
     expected_output: row.expectedOutput ?? null,
     notes: row.notes,
+    expectation_kind: row.expectationKind ?? null,
   };
 }
 

@@ -54,3 +54,52 @@ export type ExpectationType = "must_find" | "must_not_flag";
 export function expectationType(expectedOutput: unknown): ExpectationType {
   return expectedFindings(expectedOutput).length > 0 ? "must_find" : "must_not_flag";
 }
+
+/**
+ * The kind to show for a case: the **stored** `expectation_kind` (AC-53),
+ * falling back to the derived `expectationType()` only when the field is
+ * absent or `null`. Defensive, not routine: after the wave-1 backfill (AC-56)
+ * every agent case carries a stored kind, so this branch exists only for a
+ * row written before that migration ran, never for one created since.
+ */
+export function expectationKindOf(evalCase: EvalCase): ExpectationType {
+  return evalCase.expectation_kind ?? expectationType(evalCase.expected_output);
+}
+
+/** `expectationMismatch`'s return shape: the stored kind that disagrees with
+    the case's actual expectations, and how many expectations there are. */
+export type ExpectationMismatch = { kind: ExpectationType; count: number };
+
+/**
+ * `null` when the case has no stored kind to contradict, or when the stored
+ * kind and the actual `expected_output` agree. Otherwise the mismatch (AC-58,
+ * both directions): a `must_find` case with zero expectations, or a
+ * `must_not_flag` case with some. Reads the **raw** `expectation_kind` field,
+ * never `expectationKindOf()` — a fallback-derived kind is computed from the
+ * same `expected_output` it would be compared against, so it can never
+ * disagree with it, which would silently hide the very state AC-58 exists to
+ * surface (a case edited after creation, so the stored intent and the
+ * current expectations have drifted apart).
+ */
+export function expectationMismatch(evalCase: EvalCase): ExpectationMismatch | null {
+  const kind = evalCase.expectation_kind;
+  if (!kind) return null;
+  const count = expectedFindings(evalCase.expected_output).length;
+  if (kind === "must_find" && count === 0) return { kind, count };
+  if (kind === "must_not_flag" && count > 0) return { kind, count };
+  return null;
+}
+
+export type CaseOrigin = "accepted" | "dismissed" | "manual";
+
+/**
+ * The case editor's subtitle origin (AC-59), derived from exactly two fields
+ * and no others (plan's Contract & migration impact): `source_finding_id ==
+ * null` is a hand-made case; otherwise the stored kind tells which decision
+ * minted it — `must_find` came from an accepted finding, anything else
+ * (`must_not_flag`, or a legacy row with no stored kind) from a dismissed one.
+ */
+export function caseOrigin(evalCase: EvalCase): CaseOrigin {
+  if (evalCase.source_finding_id == null) return "manual";
+  return evalCase.expectation_kind === "must_find" ? "accepted" : "dismissed";
+}

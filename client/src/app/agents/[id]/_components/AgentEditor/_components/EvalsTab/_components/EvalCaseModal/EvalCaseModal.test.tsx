@@ -29,6 +29,15 @@ vi.mock("@/lib/hooks/eval", () => ({
     isError: state.updateError,
     error: null,
   }),
+  // Step 7 stub: added in the same change as the export
+  // (`client/INSIGHTS.md` 2026-08-20) — this modal will consume it in step 9.
+  useRunAgentEvalCase: () => ({
+    mutate: vi.fn(),
+    mutateAsync: vi.fn(),
+    isPending: false,
+    isError: false,
+    error: null,
+  }),
 }));
 
 import { EvalCaseModal } from "./EvalCaseModal";

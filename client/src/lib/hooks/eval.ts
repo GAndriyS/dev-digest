@@ -34,6 +34,7 @@ import type {
   EvalCaseInput,
   EvalDashboard,
   EvalDashboardOverview,
+  EvalRunRecord,
 } from "@devdigest/shared";
 
 /** The 409 code the run-batch (and every other LLM-backed) endpoint answers
@@ -159,6 +160,43 @@ export function useRunAgentEvalBatch() {
       qc.invalidateQueries({ queryKey: ["agent-eval-dashboard", agentId] });
       qc.invalidateQueries({ queryKey: ["eval-overview"] });
     },
+  });
+}
+
+// ---- Run one agent-owned eval case (POST /agents/:id/eval-cases/:caseId/run) ----
+
+export interface RunAgentEvalCaseInput {
+  agentId: string;
+  caseId: string;
+}
+
+/** Runs exactly one case against its owning agent — one model call (AC-63) —
+    over the new, agent-scoped path the case editor's `Run case` button and
+    its `Run on save` toggle both use (plan step 6:
+    `POST /agents/:id/eval-cases/:caseId/run`, a different route than the
+    batch endpoint above). A failed run still answers 200 with an
+    `EvalRunRecord` whose `pass`/`error` describe the failure (plan's
+    "Contract & migration impact" — only "not found" and 409
+    `no_provider_key` reject the promise), so a caller reads `data.error`
+    for AC-69, not only `mutation.isError`.
+
+    `onSuccess` invalidates `["agent-eval-dashboard", agentId]` **only** —
+    never `["eval-overview"]`. AC-71: a single-case run must never disturb
+    the `/eval` landing page's batch aggregates, which are keyed off that
+    query and derived from a disjoint, batch-only read
+    (`repository.ts` `isNotNull(batchId)`).
+
+    The case editor renders its own failure reason (AC-69), so this opts out
+    of the app-wide mutation toast with `meta: { ownErrorToast: true }`
+    (`client/INSIGHTS.md` 2026-08-26) and then owns every error branch. */
+export function useRunAgentEvalCase() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ agentId, caseId }: RunAgentEvalCaseInput) =>
+      api.post<EvalRunRecord>(`/agents/${agentId}/eval-cases/${caseId}/run`),
+    onSuccess: (_data, { agentId }) =>
+      qc.invalidateQueries({ queryKey: ["agent-eval-dashboard", agentId] }),
+    meta: { ownErrorToast: true },
   });
 }
 

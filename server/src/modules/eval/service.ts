@@ -3,7 +3,7 @@ import type { EvalCase, EvalOwnerKind } from '@devdigest/shared';
 import { AppError, NotFoundError } from '../../platform/errors.js';
 import { DuplicateEvalCaseError, EvalRepository } from './repository.js';
 import type { EvalCaseRow } from './types.js';
-import { normalizeFilePath } from './helpers.js';
+import { expectedFindings, normalizeFilePath } from './helpers.js';
 
 /**
  * eval — agent-side service (SPEC-05, step 7). CRUD over `eval_cases` for
@@ -69,6 +69,12 @@ export class EvalService {
         400,
       );
     }
+    // AC-54: derive the kind ONCE, at creation, from `expected_output` — the
+    // same `expectedFindings()` the scorer reads, so the two cannot drift.
+    // Never re-derived on a later read or update (AC-55).
+    const expectationKind = expectedFindings(input.expected_output).length > 0
+      ? 'must_find'
+      : 'must_not_flag';
     const row = await this.repo.insertCase({
       workspaceId,
       ownerKind: 'agent',
@@ -79,6 +85,7 @@ export class EvalService {
       inputMeta: input.input_meta,
       expectedOutput: input.expected_output,
       notes: input.notes ?? null,
+      expectationKind,
     });
     return toEvalCaseDto(row);
   }
@@ -106,7 +113,9 @@ export class EvalService {
    * - Accepted finding → one `must_find` expectation built from the finding's
    *   own fields; dismissed finding → `must_not_flag` (`findings: []`) with a
    *   human-readable pointer to the dismissed finding in `notes` — the scorer
-   *   (`helpers.ts#expectedFindings`) never reads `notes`.
+   *   (`helpers.ts#expectedFindings`) never reads `notes`. `expectation_kind`
+   *   is stamped from this same accepted/dismissed decision, not from the
+   *   `expected_output` built alongside it (AC-3/AC-4).
    * - Neither decision set → refuse (AC-2's server-side backstop; the UI
    *   already disables the button, but the API must not trust that alone).
    * - Repeat call for the same finding → `created: false` with the existing
@@ -172,6 +181,12 @@ export class EvalService {
       ? null
       : `Dismissed finding — ${finding.file}:${finding.startLine}-${finding.endLine} — ${finding.title}`;
 
+    // AC-3/AC-4: the kind comes from the DECISION (`accepted`), never from the
+    // `expectedOutput` object just built above — the two agree today, but
+    // deriving from the built object would re-create exactly the coupling
+    // this field exists to remove.
+    const expectationKind = accepted ? 'must_find' : 'must_not_flag';
+
     try {
       const row = await this.repo.insertCase({
         workspaceId,
@@ -182,6 +197,7 @@ export class EvalService {
         expectedOutput,
         notes,
         sourceFindingId: findingId,
+        expectationKind,
       });
       return { case: toEvalCaseDto(row), created: true };
     } catch (err) {
@@ -232,5 +248,6 @@ function toEvalCaseDto(row: EvalCaseRow): EvalCase {
     expected_output: row.expectedOutput ?? null,
     notes: row.notes,
     source_finding_id: row.sourceFindingId ?? null,
+    expectation_kind: row.expectationKind ?? null,
   };
 }

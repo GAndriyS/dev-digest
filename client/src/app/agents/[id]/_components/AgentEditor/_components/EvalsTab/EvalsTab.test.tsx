@@ -45,6 +45,16 @@ vi.mock("@/lib/hooks/eval", () => ({
     isError: false,
     error: null,
   }),
+  // Step 7 stub: `EvalCaseModal` (rendered by this tab) imports this hook;
+  // an omitted export here is a hard vitest mock error mid-render, not an
+  // assertion failure (`client/INSIGHTS.md` 2026-08-20).
+  useRunAgentEvalCase: () => ({
+    mutate: vi.fn(),
+    mutateAsync: vi.fn(),
+    isPending: false,
+    isError: false,
+    error: null,
+  }),
 }));
 
 import { EvalsTab } from "./EvalsTab";

@@ -134,6 +134,7 @@ export class EvalRepository {
           expectedOutput: values.expectedOutput ?? null,
           notes: values.notes ?? null,
           sourceFindingId: values.sourceFindingId ?? null,
+          expectationKind: values.expectationKind ?? null,
         })
         .returning();
       return row!;
