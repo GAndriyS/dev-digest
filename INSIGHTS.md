@@ -132,6 +132,35 @@ live in `<package>/INSIGHTS.md`. Maintained by the `engineering-insights` skill.
   "its own finding" while `SKILL.md` instructs merging findings that share a
   root cause). Grep the artifact for the behaviour you are about to demand.
 
+- **2026-08-26** — **"All cases green in one run" is the same p^N conjunction one
+  floor up, and it is not a reachable acceptance criterion for a suite.**
+  Measured on `dependency-checker` across four validation rounds after the
+  design bugs were fixed: per-case-run pass rate 34/40 = 85%, which is healthy —
+  but a 5-case suite at n=2 needs **ten** independent case-runs to land at once,
+  so a flawless suite shows "all green" about 0.85¹⁰ ≈ 20% of the time. Rounds
+  2–5 each had a different case red, and every time the red one had been green
+  the round before. Chasing that is chasing luck, and worse, it invites
+  threshold-lowering that hides real signal. Judge a suite by **per-case pass
+  rate over n runs** — which is exactly what `eval:repeat` computes and what its
+  own header says it is for ("one green run proves little") — and treat a case
+  at ≤2/5 as broken, 4–5/5 as healthy. Reserve "zero reds" for the deterministic
+  lanes, where it means something.
+
+- **2026-08-26** — **Before concluding "the artifact is weak", read the run's
+  actual output.** Four consecutive red results on `dependency-checker` were all
+  defects in the measurement, and each looked exactly like an artifact failure
+  from the summary line alone: a fixture that named `chalk` as its dead
+  dependency while also declaring `pino-pretty`, which pulls `chalk` in (the
+  answer "loaded indirectly, keep it" was correct and scored 1/6); a grounding
+  gate on `node:fs` that failed a report which found the violation and called it
+  "Filesystem / readFile / disk"; a task that never said there was nowhere to
+  write a file, so a third of runs sent the report "to docs/" and returned the
+  chat summary the skill's own rule 6 prescribes; and a fixture line where
+  `esbuild` sat on a continuation of `dependencies:` directly above
+  `devDependencies:`, so the report filed it as dev. Diagnosing all four took
+  one look at the stored output each time. The per-practice rate table says
+  *that* something is wrong; only the output says *what*.
+
 - **2026-08-26** — A judge-scored case at `threshold: 1.0` is a CONJUNCTION
   over N stochastic binary judgements, so it passes at roughly p^N: six
   practices backed by a model that is right 19 times in 20 goes red about one run
