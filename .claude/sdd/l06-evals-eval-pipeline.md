@@ -5,6 +5,7 @@ Plan: .claude/plans/l06-evals-eval-pipeline.md · Spec: specs/SPEC-05-eval-pipel
 |---|---|---|---|
 | 1 read plan | 7 waves · max 4 lanes (run ≤3 in flight) | — | DAG stated in plan; baseline verified; spec already approved; human gate answered: run as shown, nav.ts by main session (user-authorized deny exception) |
 | 2 wave 1 | 4/4 lanes 1/1 | 77k + 94k + 119k + 107k | W1-A deviation: source_finding_id `.nullish()` not `.nullable()` (protects out-of-scope skills flow); W1-D: agents.json untouched (editor.tabs.evals already exists), findingAction.* keys live in eval.json → step 12 needs useTranslations("eval"); step 14 done by main session (+6 lines nav.ts, data-only) |
+| 2 wave 2 | 2/2 lanes 1/1 | 118k + 140k | W2-A: EvalRepository, owner_kind filter in repo, batch limit via group-then-fetch (no N+1), aggregation left to dashboard.ts. W2-B deviation (accepted): additive `apiFetchWithStatus` in client/src/lib/api.ts — 201/200 discriminant needs status, fetch-gate forbids bare fetch; apiFetch unchanged, 442/442 green. Hook→route seam table recorded in W2-B report (wave 3/4 delegations carry it) |
 
 ## Execution brief — l06-evals-eval-pipeline
 Mode: multi-agent · Spec: specs/SPEC-05-eval-pipeline-26-08-2026.md (draft) · Slices: frontend, backend, contracts, meta · Steps this run: 14 of 16 by implementer (row 14: human; row 16: doc-writer, stage 5)
