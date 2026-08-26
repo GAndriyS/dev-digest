@@ -215,7 +215,12 @@ here — `skills/routes.ts` already serves both generically over `eval_cases`
 Fastify's flat route table would throw `FST_ERR_DUPLICATED_ROUTE` on a second
 registration of the same method+path. `POST /agents/:id/eval-runs` runs an
 agent's whole case set as one batch; `GET /eval/overview` and `GET
-/eval/dashboard?owner_id=` back the Eval Dashboard read models.
+/eval/dashboard?owner_id=` back the Eval Dashboard read models. `GET
+/eval/overview` also carries a per-agent trend series
+(`EvalAgentSummary.trend`) for the overview's sparklines — chronological
+oldest-first, capped at `BATCH_TABLE_LIMIT`, with `traces_total = 0` batches
+excluded, derived at read time from the existing `eval_runs` rows (no
+migration).
 
 ## Environment
 

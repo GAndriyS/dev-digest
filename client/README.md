@@ -136,19 +136,45 @@ result refetches what the server actually persisted.
 
 `/eval` (`EvalOverview`, sidebar "Eval Dashboard", SKILLS LAB group, last item,
 no `g`-chord — `src/vendor/ui/nav.ts`) lists every agent with a non-empty
-eval-case set as a card off `GET /eval/overview` (the response is already
-filtered to `owner_kind='agent'` and non-empty sets, so the component never
-re-filters `data.agents`) plus a newest-first table of every batch across
-every agent. A card whose `last_batch` is `null` renders the dedicated "never
-run" badge, never a zero metric. `/eval/:agentId` (`AgentDashboard`) is one
-agent's dashboard off `GET /eval/dashboard?owner_id=<agentId>`: current-value
-metric tiles with a delta against the previous batch (omitted, not zeroed, on
-the very first batch), a regression banner when the response's `alert` is
-non-null, a recall/precision/citation-accuracy trend chart, and a batches
-table where selecting exactly two rows enables `Compare`. Running a batch
-(`POST /agents/:id/eval-runs`) happens from the agent editor's own **Evals**
-tab (`?tab=evals`, `AgentEditor/_components/EvalsTab/`), not from this
-read-only dashboard.
+eval-case set as one full-width row (`AgentRow`, `_components/AgentRow/`) off
+`GET /eval/overview` (the response is already filtered to `owner_kind='agent'`
+and non-empty sets, so the component never re-filters `data.agents`) — not the
+card grid this section used to describe. Each row is a square icon tile, the
+agent's bold name plus a mono model badge, a `Last run v<N> ·
+<YYYY-MM-DD HH:mm> · X/Y pass` meta line, a `recall` sparkline drawn only once
+the agent has at least two trend points (below that the vendored `Sparkline`
+would divide by zero on a single point), three `RECALL`/`PREC`/`CITE` stat
+blocks that always print the percentage (colour is additive, never the sole
+carrier), and a decorative `aria-hidden` chevron; the whole row is exactly one
+focusable `next/link` to `/eval/:agentId`. `last_batch === null` is the sole
+"never run" discriminant — it renders the badge, `—` for all three stats and
+no sparkline; an agent can legitimately have a non-null `last_batch` and an
+empty `trend` (every batch it ran measured nothing), so an empty trend alone
+must never be read as "never run". Below the rows, a newest-first table of
+every batch across every agent, columns agent → time → version → recall →
+precision → citation → pass → cost: the agent name is plain text, the batch
+version (`v<N>`) is the table's only link (to `/eval/:agentId`), and each
+metric renders as a horizontal bar plus the always-printed percentage.
+
+The header's accent `Run all agents` button opens a confirmation dialog
+(`RunAllDialog`) naming how many agents and how many eval cases in total will
+run; only once the human confirms does it fan out one `POST
+/agents/:id/eval-runs` call per agent with a non-empty set, sequentially
+(`useRunAllAgentEvalBatches`, `src/lib/hooks/eval.ts`) — the same endpoint the
+agent editor's own **Evals** tab (`?tab=evals`,
+`AgentEditor/_components/EvalsTab/`) already calls to run a single agent.
+Nothing runs before that confirmation, a run costs real model budget, and one
+agent failing (a provider error, a timeout, or 409 `no_provider_key`) does not
+stop the rest of the fan-out — the failing agent is reported with its reason
+instead of showing a batch. The button disables itself with a textual reason
+while no agent has cases and while a run is already in progress, and stays
+disabled once every attempted agent has failed with `no_provider_key`.
+`/eval/:agentId` (`AgentDashboard`) is one agent's dashboard off `GET
+/eval/dashboard?owner_id=<agentId>`: current-value metric tiles with a delta
+against the previous batch (omitted, not zeroed, on the very first batch), a
+regression banner when the response's `alert` is non-null, a
+recall/precision/citation-accuracy trend chart, and a batches table where
+selecting exactly two rows enables `Compare`.
 
 ### Skills Lab (`/skills`, master-detail)
 
