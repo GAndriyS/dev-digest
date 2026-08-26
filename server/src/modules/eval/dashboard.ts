@@ -9,7 +9,7 @@ import type {
   EvalTrendPoint,
 } from '@devdigest/shared';
 import { NotFoundError } from '../../platform/errors.js';
-import { EvalRepository } from './repository.js';
+import { EvalRepository, type BatchlessRunRow } from './repository.js';
 import type { EvalBatchRunRow, EvalBatchRuns } from './types.js';
 import { BATCH_TABLE_LIMIT, REGRESSION_THRESHOLD_PP } from './constants.js';
 import { aggregateEvalBatch, round2 } from './scoring.js';
@@ -118,7 +118,15 @@ function extractError(actualOutput: unknown, errorReason: string | null): { code
   return errorReason ? { code: 'error', message: errorReason } : null;
 }
 
-function toRunRecord(row: EvalBatchRunRow): EvalRunRecord {
+/**
+ * Shared by both `recent_runs` sources (step 9): a batch's own run row
+ * (`EvalBatchRunRow`, `batchId` always a real batch) and a single-case run
+ * outside any batch (`BatchlessRunRow`, `batchId` always `null`). One
+ * mapping for both is what keeps their wire shape identical — AC-70's status
+ * update and a batch run's row must read the same way to `recent_runs`'s one
+ * consumer (`latestRunByCase`).
+ */
+function toRunRecord(row: EvalBatchRunRow | BatchlessRunRow): EvalRunRecord {
   return {
     id: row.id,
     case_id: row.caseId,
@@ -282,9 +290,19 @@ export async function getEvalOverview(
  * across batches, the recent-batches table and the per-case run history, plus
  * the structural regression alert.
  *
- * No batch ever run: `recent_batches`, `trend` and `recent_runs` are all `[]`,
- * `delta` and `alert` are `null` — that combination is the "no runs yet"
- * signal a caller (step 11, step 13) must check for. `current`'s numeric
+ * `recent_runs` (AC-70/AC-71) carries every run row of the recent batches
+ * PLUS the newest single-case run per case that never joined a batch
+ * (`EvalRepository#latestBatchlessRunPerCase`) — so it can be non-empty even
+ * when NO batch has ever run (a case run once from its own editor, nothing
+ * else). `recent_batches`, `trend`, `delta`, `alert` and `current` stay
+ * batch-only and read `[]`/`null`/the `0`-filled placeholder in that same
+ * "no batch yet" state — see the contract's own doc comment
+ * (`vendor/shared/contracts/eval-ci.ts`).
+ *
+ * No batch ever run: `recent_batches` and `trend` are `[]`, `delta` and
+ * `alert` are `null` — that combination is the "no BATCH yet" signal a
+ * caller (step 11, step 13) must check for; it says nothing about whether
+ * `recent_runs` is empty too. `current`'s numeric
  * fields (`recall`, `precision`, `citation_accuracy`) cannot themselves carry
  * `null` in that state — `EvalDashboard.current.citation_accuracy` is
  * non-nullable by contract (`vendor/shared/contracts/eval-ci.ts`) — so they
@@ -305,9 +323,13 @@ export async function getEvalDashboard(
   if (!agent) throw new NotFoundError(`Agent ${agentId} not found`);
 
   const repo = new EvalRepository(container.db);
-  const [cases, batches] = await Promise.all([
+  const [cases, batches, batchlessRuns] = await Promise.all([
     repo.listAgentCases(workspaceId, agentId),
     repo.listBatchesForAgent(workspaceId, agentId, BATCH_TABLE_LIMIT),
+    // AC-70: the newest single-case run (`batch_id IS NULL`) per case — kept
+    // OUT of `batches`/`recentBatches` on purpose (AC-71), and merged only
+    // into `recentRuns` below, never into `trend`/`delta`/`alert`/`current`.
+    repo.latestBatchlessRunPerCase(workspaceId, agentId),
   ]);
 
   // `batches` is already newest-first (EvalRepository#recentBatches).
@@ -358,8 +380,12 @@ export async function getEvalDashboard(
     .filter((b) => b.traces_total > 0)
     .map(toTrendPoint);
 
-  const recentRuns = batches
-    .flatMap((b) => b.runs)
+  // Per-case rows: every run row of the recent batches PLUS the newest
+  // single-case (batchless) run per case (AC-70) — `latestRunByCase` (the
+  // sole consumer) reduces this to "latest run per case" by `ran_at`, so a
+  // case can never appear twice for the wrong reason: a run row is either
+  // inside a batch or it isn't, never both.
+  const recentRuns = [...batches.flatMap((b) => b.runs), ...batchlessRuns]
     .sort((a, b) => b.ranAt.getTime() - a.ranAt.getTime())
     .map(toRunRecord);
 

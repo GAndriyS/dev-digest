@@ -172,6 +172,40 @@ describe("EvalsTab", () => {
     expect(screen.getByText("1")).toBeInTheDocument();
   });
 
+  it("labels each case with its expectation kind in words, next to the icon+count badge (AC-7)", () => {
+    state.cases = [
+      makeCase("c1", "must find case", [{ file: "a.ts" }]),
+      makeCase("c2", "must not flag case", []),
+    ];
+    renderTab();
+    expect(screen.getByText("must_find")).toBeInTheDocument();
+    expect(screen.getByText("must_not_flag")).toBeInTheDocument();
+  });
+
+  it("prefers the stored expectation_kind over the derived one for the row's label", () => {
+    // Findings say must_find, but the stored kind says otherwise — the row
+    // must print the stored word (AC-7 reads the stored field, never
+    // re-derives it), not the one `expected_output` would imply on its own.
+    state.cases = [{ ...makeCase("c1", "drifted case", [{ file: "a.ts" }]), expectation_kind: "must_not_flag" }];
+    renderTab();
+    expect(screen.getByText("must_not_flag")).toBeInTheDocument();
+    expect(screen.queryByText("must_find")).not.toBeInTheDocument();
+  });
+
+  it("shows a textual mismatch warning when the stored kind contradicts the expectations (AC-58)", () => {
+    state.cases = [{ ...makeCase("c1", "drifted case", []), expectation_kind: "must_find" }];
+    renderTab();
+    expect(screen.getByText("Stored as must_find, but expected output has 0 findings")).toBeInTheDocument();
+  });
+
+  it("shows no mismatch warning when the stored kind agrees with the expectations", () => {
+    state.cases = [
+      { ...makeCase("c1", "case one", [{ file: "a.ts" }]), expectation_kind: "must_find" },
+    ];
+    renderTab();
+    expect(screen.queryByText(/^Stored as/)).not.toBeInTheDocument();
+  });
+
   it("reads status off the dashboard's latest run per case, not off run.data", () => {
     state.cases = [makeCase("c1", "case one", [{ file: "a.ts" }])];
     state.dashboard = makeDashboard({ recent_runs: [makeRun("c1", { pass: true, recall: 1 })] });

@@ -182,6 +182,15 @@ export const EvalDashboard = z.object({
     })
     .nullable(),
   trend: z.array(EvalTrendPoint),
+  // Per-case rows (AC-70/AC-71): every run row of the batches in
+  // `recent_batches` below PLUS the newest single-case run per case that
+  // never joined a batch (`batch_id: null` — a case run once from its own
+  // editor, `POST /agents/:id/eval-cases/:caseId/run`). Can be non-empty even
+  // when `recent_batches`/`trend`/`delta`/`alert` are all empty/`null` — a
+  // case run this way is visible here without ever entering a batch
+  // aggregate, trend point or regression comparison. Consumers reduce this
+  // to "latest run per case" by `ran_at`, so order and any overlap with
+  // `recent_batches`' own run rows never matter.
   recent_runs: z.array(EvalRunRecord),
   // Batch-level rows (one per agent-set run) for the "recent runs" table on the
   // agent's dashboard page (AC-30); `recent_runs` above stays per-case.

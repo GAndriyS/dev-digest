@@ -48,6 +48,8 @@ export const s = {
     whiteSpace: "nowrap",
   } satisfies CSSProperties,
   meta: { color: "var(--text-muted)", fontSize: 12.5, flex: 1, minWidth: 160 } satisfies CSSProperties,
+  kindLabel: { color: "var(--text-muted)", fontSize: 12 } satisfies CSSProperties,
+  mismatch: { color: "var(--warn)", fontSize: 12.5 } satisfies CSSProperties,
   rowActions: { display: "flex", alignItems: "center", gap: 6, marginLeft: "auto" } satisfies CSSProperties,
   metrics: {
     borderRadius: 9,

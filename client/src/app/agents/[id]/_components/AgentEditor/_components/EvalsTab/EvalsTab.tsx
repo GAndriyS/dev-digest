@@ -6,10 +6,12 @@
    structural COPY of the skill EvalsTab, not a shared ancestor (plan step 11,
    Recommendations R4).
 
-   Run state here is a single mutation (`useRunAgentEvalBatch`): one click
+   Run state here is two mutations, not one: the header's `useRunAgentEvalBatch`
    runs the agent's whole eval set as a batch (`POST /agents/:id/eval-runs`),
-   sequentially server-side (AC-12) — there is no per-case run for agents, so
-   each row only carries edit/delete, not its own Run button.
+   sequentially server-side (AC-12); a single case can also be run, but from
+   inside its own editor (`EvalCaseModal`'s `Run case` button, wave 3's
+   `POST /agents/:id/eval-cases/:caseId/run`), not from the row — each row
+   still carries only edit/delete, never its own Run button.
 
    Last-run status per case comes from the dashboard read
    (`useAgentEvalDashboard`, AC-9), never from the run mutation's own result:
@@ -40,7 +42,14 @@ import {
 } from "@/lib/hooks/eval";
 import { EvalCaseModal } from "./_components/EvalCaseModal";
 import { NO_VALUE, OUTCOME_COLORS } from "./constants";
-import { caseOutcome, countPassed, expectationType, expectedFindings, latestRunByCase } from "./helpers";
+import {
+  caseOutcome,
+  countPassed,
+  expectationKindOf,
+  expectationMismatch,
+  expectedFindings,
+  latestRunByCase,
+} from "./helpers";
 import { s } from "./styles";
 
 function pct(value: number | null): string {
@@ -86,7 +95,12 @@ export function EvalsTab({ agentId }: { agentId: string }) {
   return (
     <div style={s.wrap}>
       {editing !== undefined && (
-        <EvalCaseModal agentId={agentId} evalCase={editing} onClose={() => setEditing(undefined)} />
+        <EvalCaseModal
+          agentId={agentId}
+          evalCase={editing}
+          lastRun={editing ? latest.get(editing.id) : undefined}
+          onClose={() => setEditing(undefined)}
+        />
       )}
 
       <div style={s.header}>
@@ -132,8 +146,12 @@ export function EvalsTab({ agentId }: { agentId: string }) {
           {list.map((c) => {
             const lastRun = latest.get(c.id);
             const outcome = caseOutcome(lastRun);
-            const type = expectationType(c.expected_output);
+            // AC-7: read from the stored field, never re-derived from
+            // `expected_output` — `expectationKindOf` falls back to that
+            // derivation only for a pre-migration row with no stored kind.
+            const kind = expectationKindOf(c);
             const count = expectedFindings(c.expected_output).length;
+            const mismatch = expectationMismatch(c);
             return (
               <div key={c.id} style={s.row}>
                 <Badge color={OUTCOME_COLORS[outcome]} dot>
@@ -144,9 +162,19 @@ export function EvalsTab({ agentId }: { agentId: string }) {
                 <span style={s.name} title={c.name}>
                   {c.name}
                 </span>
-                <Badge color="var(--text-muted)" icon={type === "must_find" ? "Target" : "Slash"} mono>
+                <Badge color="var(--text-muted)" icon={kind === "must_find" ? "Target" : "Slash"} mono>
                   {count}
                 </Badge>
+                {/* AC-7: the kind in words — the icon+count badge above stays
+                    exactly as it was, this is additive. */}
+                <span className="mono" style={s.kindLabel}>
+                  {t(`evalsTab.kind.${kind === "must_find" ? "mustFind" : "mustNotFlag"}`)}
+                </span>
+                {mismatch && (
+                  <span style={s.mismatch}>
+                    {t("evalsTab.kindMismatch", { kind: mismatch.kind, count: mismatch.count })}
+                  </span>
+                )}
                 {outcome === "errored" && lastRun?.error ? (
                   <span style={s.meta}>{t("evalsTab.erroredReason", { reason: lastRun.error.message })}</span>
                 ) : lastRun?.recall != null ? (

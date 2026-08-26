@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import type { Db } from '../../db/client.js';
 import * as t from '../../db/schema.js';
 import { BATCH_TABLE_LIMIT } from './constants.js';
@@ -13,6 +13,35 @@ import type {
 } from './types.js';
 
 export type { EvalCaseRow, EvalRunRow } from './types.js';
+
+/**
+ * One case's newest run OUTSIDE any batch (`batch_id IS NULL`) — what the
+ * per-case run route persists (`EvalRunner#runSingleCase`, AC-63/AC-71).
+ * Same fields as `EvalBatchRunRow`, except `batchId`, which stays
+ * `string | null` here rather than the batch shape's plain `string`: this
+ * repository's own `WHERE batch_id IS NULL` (below) makes it always `null`
+ * at runtime, but nothing about the shape enforces that, so the type says
+ * what the column actually allows. Kept as its own type instead of widening
+ * `EvalBatchRunRow` itself — every batch read (`recentBatches`,
+ * `recentBatchesPerAgent`) still returns a genuinely non-null `batchId` for
+ * every row it touches, and that guarantee should stay visible in the type.
+ */
+export interface BatchlessRunRow {
+  id: string;
+  caseId: string;
+  caseName: string;
+  batchId: string | null;
+  agentVersion: number | null;
+  ranAt: Date;
+  actualOutput: unknown;
+  pass: boolean | null;
+  recall: number | null;
+  precision: number | null;
+  citationAccuracy: number | null;
+  durationMs: number | null;
+  costUsd: number | null;
+  errorReason: string | null;
+}
 
 /**
  * eval — data-access for the agent side of `eval_cases`/`eval_runs` (SPEC-05).
@@ -226,6 +255,50 @@ export class EvalRepository {
       })
       .returning();
     return inserted!;
+  }
+
+  /**
+   * The newest `eval_runs` row per case, OUTSIDE any batch (`batch_id IS
+   * NULL`) — this is what makes a single-case run (AC-63) visible on the
+   * agent's dashboard (AC-70) without ever feeding a batch aggregate
+   * (AC-71): nothing here is read by `getEvalOverview`, `recentBatches` or
+   * `recentBatchesPerAgent`, and this method touches no `isNotNull(batchId)`
+   * path either.
+   *
+   * ONE query: `DISTINCT ON (case_id)`, ordered `case_id, ran_at DESC` — a
+   * case with N single-case runs still contributes exactly one row, so the
+   * cost is bounded by the agent's case count, never by run count and never
+   * one query per case (NFR Продуктивність).
+   */
+  async latestBatchlessRunPerCase(workspaceId: string, agentId: string): Promise<BatchlessRunRow[]> {
+    return this.db
+      .selectDistinctOn([t.evalRuns.caseId], {
+        id: t.evalRuns.id,
+        caseId: t.evalRuns.caseId,
+        caseName: t.evalCases.name,
+        batchId: t.evalRuns.batchId,
+        agentVersion: t.evalRuns.agentVersion,
+        ranAt: t.evalRuns.ranAt,
+        actualOutput: t.evalRuns.actualOutput,
+        pass: t.evalRuns.pass,
+        recall: t.evalRuns.recall,
+        precision: t.evalRuns.precision,
+        citationAccuracy: t.evalRuns.citationAccuracy,
+        durationMs: t.evalRuns.durationMs,
+        costUsd: t.evalRuns.costUsd,
+        errorReason: t.evalRuns.errorReason,
+      })
+      .from(t.evalRuns)
+      .innerJoin(t.evalCases, eq(t.evalCases.id, t.evalRuns.caseId))
+      .where(
+        and(
+          eq(t.evalCases.workspaceId, workspaceId),
+          eq(t.evalCases.ownerKind, 'agent' as const),
+          eq(t.evalCases.ownerId, agentId),
+          isNull(t.evalRuns.batchId),
+        ),
+      )
+      .orderBy(t.evalRuns.caseId, desc(t.evalRuns.ranAt));
   }
 
   /**
