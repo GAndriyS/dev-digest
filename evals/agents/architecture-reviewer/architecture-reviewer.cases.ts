@@ -3,6 +3,14 @@ import { fixtureReader, materializedWorktree } from "../../src/index.js";
 
 const fx = fixtureReader(import.meta.url);
 
+// 35, raised from 25 on 2026-08-26 after two CI runs. With the worktree gates installed the
+// cases finish in 13-23 turns locally and on the reviewer-core fixtures in CI — but the checkout
+// case (six practices, the full report) rode the edge both runs: passed AT exactly 25, then hit
+// max-turns at 26 twice and was graded 0 on two sentences of narration. On the OpenRouter/Haiku
+// path the tool loop runs a few turns chattier than the local subscription. 35 is headroom over
+// the measured worst case, not an invitation — a case that needs 35 turns has a fixture problem.
+const MAX_TURNS = 35;
+
 // MATERIALIZED FIXTURES — the history that led here, so nobody walks it backwards:
 //
 // v1 (through 2026-08-25): diffs PASTED into the prompt, never applied. Two failure modes,
@@ -94,7 +102,7 @@ export const cases: AgentCase[] = [
     // miss buys back the stability the conjunction spends; the non-negotiables moved up into
     // `grounding`, where they are checked deterministically and cannot be the tolerated miss.
     threshold: 0.83,
-    maxTurns: 25,
+    maxTurns: MAX_TURNS,
   },
   {
     name: "does not fabricate an architecture finding for the out-of-scope security-shaped change",
@@ -109,7 +117,7 @@ export const cases: AgentCase[] = [
       "raises no FINDING about naming, style, formatting or test coverage — routing such an observation to the report's `Out of scope` / `Not flagged` section is correct and does not count as commenting on it",
     ],
     threshold: 1.0,
-    maxTurns: 25,
+    maxTurns: MAX_TURNS,
   },
   // ONE SESSION, TWO CASES. Split 2026-08-26 after 20 CI runs at 0% pass.
   //
@@ -143,7 +151,7 @@ export const cases: AgentCase[] = [
     // 2026-08-26: a run scored exactly 2/3 and went red on the design-intended outcome. A
     // threshold meant as k-of-n must sit under k/n, never at its rounded-up decimal.
     threshold: 0.66,
-    maxTurns: 25,
+    maxTurns: MAX_TURNS,
   },
   {
     kind: "quality",
@@ -171,7 +179,7 @@ export const cases: AgentCase[] = [
     // removed, is expected to land ZERO named contracts, so strict-vs-lite still reads clean at
     // this bar while the per-practice table tracks each road separately.
     threshold: 0.5,
-    maxTurns: 25,
+    maxTurns: MAX_TURNS,
   },
   {
     name: "does not fabricate a documented-rule violation for a benign rename",
@@ -184,6 +192,6 @@ export const cases: AgentCase[] = [
       "the final gate verdict is PASS",
     ],
     threshold: 1.0,
-    maxTurns: 25,
+    maxTurns: MAX_TURNS,
   },
 ];
