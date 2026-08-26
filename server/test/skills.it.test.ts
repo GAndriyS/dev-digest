@@ -415,7 +415,7 @@ d('skills module', () => {
     expect(bad.statusCode).toBe(422);
 
     const removed = await app.inject({ method: 'DELETE', url: `/eval-cases/${caseId}` });
-    expect(removed.json()).toEqual({ deleted: caseId });
+    expect(removed.json()).toEqual({ ok: true });
     expect(
       (await app.inject({ method: 'DELETE', url: `/eval-cases/${caseId}` })).statusCode,
     ).toBe(404);

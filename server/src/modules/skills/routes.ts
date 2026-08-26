@@ -194,7 +194,8 @@ export default async function skillsRoutes(appBase: FastifyInstance) {
 
   app.delete('/eval-cases/:id', { schema: { params: IdParams } }, async (req) => {
     const { workspaceId } = await getContext(app.container, req);
-    return { deleted: await service.deleteEvalCase(workspaceId, req.params.id) };
+    await service.deleteEvalCase(workspaceId, req.params.id);
+    return { ok: true };
   });
 
   app.post('/eval-cases/:id/run', { schema: { params: IdParams } }, async (req) => {
