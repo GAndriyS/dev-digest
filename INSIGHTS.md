@@ -297,6 +297,29 @@ live in `<package>/INSIGHTS.md`. Maintained by the `engineering-insights` skill.
   a model". Planners: read `verify: e2e flow` on a model-spending surface as a
   spec finding to re-lane, never as an instruction to write the flow.
 
+- **2026-08-26** — A "known pre-existing failure" carried in a handoff brief is
+  a tax every later agent pays, and it is often not pre-existing at all. L06
+  opened with 5 red server unit tests documented since 2026-08-20 as
+  macOS-only-and-ignorable; four separate agents re-confirmed them across the
+  run. They were a two-line fixture bug: `mkdtemp(join(tmpdir(), …))` on macOS
+  returns `/var/folders/…`, a symlink to `/private/var/folders/…`, and both the
+  clone-root symlink guard and dependency-cruiser resolve real paths, so the
+  fixture root matched nothing. Wrapping the fixture in `realpath` made
+  `--slice backend` 562/562 for the first time. **Budget an hour to fix a
+  standing red before writing it into a brief** — the brief entry costs more,
+  every run, than the fix did once, and a permanently-red lane trains everyone
+  to skim the one line that matters.
+
+- **2026-08-26** — Clicking the finished feature caught two defects that a
+  full review chain did not: `?tab=evals` silently fell back to Config (a
+  page-level whitelist no test covers), and one click stacked two error toasts.
+  Eight `/code-review` angles, a security pass, an architecture review and
+  `plan-verifier` all read the same code and found neither *as a user-visible
+  symptom* — `plan-verifier` did flag the tab one, from the code, and graded it
+  PARTIAL. Reviews find what is wrong in code; only running it finds what is
+  wrong on screen. Keep the manual click-through as its own stage, after the
+  reviews settle, not as an optional extra.
+
 ## Tool & Library Notes
 
 - **2026-08-25** — A headless session must expire BEFORE the test runner that
@@ -503,6 +526,15 @@ live in `<package>/INSIGHTS.md`. Maintained by the `engineering-insights` skill.
   never the raw error.
 
 ## Session Notes
+
+- **2026-08-26** — L06 SPEC-05 eval pipeline shipped end to end through
+  `/implement`: 7 waves, 16 steps, ~2.6M agent tokens. Eight `/code-review`
+  findings (all CONFIRMED, all fixed), one architecture WARNING, one security
+  MEDIUM, one `plan-verifier` PARTIAL, and two more defects found only by
+  clicking the app. Landed green: frontend 491, backend 562, integration 135,
+  mcp 67, reviewer-core 23. The two process lessons are in Codebase Patterns
+  above — fix a standing red instead of documenting it, and keep the manual
+  click-through as its own stage.
 
 - **2026-07-31** — Built the docs layer: three-section `CLAUDE.md` (Before
   answering / Conventions / Use when) at root + 4 packages, seeded docs/specs

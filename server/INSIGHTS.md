@@ -209,7 +209,40 @@ promotion rules → root `INSIGHTS.md`.
   override slot — rather than an import; a plan step that says "import blast's
   service" fails depcruise in CI, not at review.
 
+- **2026-08-26** — Two modules can legitimately need the *same* small Zod shape
+  while neither owns the other, and `no-cross-module-internals` allows a module
+  to import only a sibling's `constants.ts`/`types.ts`/`index.ts` — `helpers.ts`
+  is private even for a stable 6-field schema. When `skills/routes.ts` (which
+  owns the generic `PUT /eval-cases/:id` for both owner kinds) had to also accept
+  the agent-shaped `expected_output` defined in `eval/helpers.ts`, the
+  depcruise-legal move was to **duplicate the schema locally with a comment
+  naming the rule**, not to import across the boundary or hoist a shared file.
+  The repo already lives with the same duplication one level up: two eval
+  scorers, deliberately separate.
+
+- **2026-08-26** — A single generic route serving two owner kinds is a silent
+  data-corruption vector when its body schema only knows one of them. Zod's
+  default `z.object()` **strips** unknown keys instead of rejecting them, so the
+  skill-shaped `expected_output` schema on `PUT /eval-cases/:id` deleted
+  `file`/`start_line`/`end_line` from agent cases on every save, and the agent
+  scorer then read the result as "expects nothing" and scored the case as passed.
+  Nothing errored anywhere. The fix is an agent-branch-first `z.union` (the agent
+  branch is `.passthrough()`, so a record carrying both shapes keeps every key).
+  When one route serves two consumers, the request schema must be the union of
+  what both write, or the narrower consumer quietly truncates the wider one.
+
 ## Tool & Library Notes
+
+- **2026-08-26** — This repo's Postgres driver is `postgres` (porsager), not
+  `pg`: it attaches the wire-protocol error fields (`code`, `constraint_name`,
+  `table_name`, …) **directly** on the thrown `PostgresError` via `Object.assign`
+  — not nested under `.cause`. Check `err.code === '23505'` and
+  `err.constraint_name` on the error itself. Where that check belongs is the
+  other half of the lesson: it is SQL failure shape, so it lives in the
+  repository, which translates it into a domain error
+  (`EvalRepository#insertCase` → `DuplicateEvalCaseError`) for the service to
+  catch by type. A service that shape-matches driver internals compiles, passes
+  depcruise, and still breaks the moment anything wraps or retries the query.
 
 - **2026-08-19** — A Fastify route whose `schema.body` is a plain zod object
   rejects a **body-less** POST with 422, and `.optional()` does not fix it: with

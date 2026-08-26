@@ -90,6 +90,36 @@ append-only. Entry format and promotion rules → root `INSIGHTS.md`.
   stub matched by URL suffix, pattern in `hooks/onboarding.test.tsx` — not
   after a reviewer notices.
 
+- **2026-08-26** — A new editor tab needs TWO edits, and the second one has no
+  test that can catch it: the tab row in `AgentEditor/constants.ts` **and** the
+  page-level whitelist `VALID_TABS` in `client/src/app/agents/[id]/page.tsx:16`,
+  which silently falls back to `config` for any value it does not list. L06's
+  `evals` tab shipped with the first and not the second; every RTL suite stayed
+  green (491) because pages are thin and this repo has **no** `page.test.tsx`
+  anywhere, and `plan-verifier` graded the criterion PARTIAL from reading the
+  code — but it was clicking the app that showed `?tab=evals` landing on
+  Config. Same shape as the skill/route whitelists: when a feature's reachability
+  lives in a literal array outside the component, the component's own tests
+  cannot prove the feature is reachable.
+
+- **2026-08-26** — `src/lib/api.ts#apiFetch` discards the HTTP status on
+  success, which is fine until a route uses status itself as the discriminant
+  (`POST /findings/:id/eval-case` answers 201-created vs 200-already-existed
+  with an identical body). The sanctioned move is `apiFetchWithStatus<T>` —
+  added alongside `apiFetch`, same error path, returns `{ data, status }` —
+  **not** a bare `fetch` in the hook: `check-ui-conventions.mjs` hard-fails any
+  `fetch(` outside `lib/api.ts`, and the test suite stubs `fetch` globally, so a
+  bypass would silently defeat the mock too.
+
+- **2026-08-26** — The app's `QueryClient` fires a **global**
+  `mutationCache.onError` toast for every mutation, and TanStack fires
+  cache-level and instance-level `onError` both — so a component that adds its
+  own translated message for one failure branch stacks two toasts on one click
+  (confirmed live: the raw server message plus the translated one). The opt-out
+  is `meta: { ownErrorToast: true }` on the mutation, which
+  `providers.tsx` now honours; a mutation that opts out owns **every** error
+  branch, not just the one it translated.
+
 ## Tool & Library Notes
 
 - **2026-08-11** — Scrolling to an element that a sibling's effect is about to
