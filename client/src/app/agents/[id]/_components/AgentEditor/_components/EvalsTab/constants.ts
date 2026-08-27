@@ -8,6 +8,15 @@ export const OUTCOME_COLORS = {
   never: "var(--text-muted)",
 } as const;
 
+/** Colour per expectation kind, paired with the kind printed in words right
+    beside it — never colour alone (AC-62, NFR Доступність). The two tokens
+    are the ones the case editor's POSITIVE/NEGATIVE banner already uses, so
+    the same concept reads the same way on both surfaces. */
+export const KIND_COLORS = {
+  must_find: "var(--accent)",
+  must_not_flag: "var(--warn)",
+} as const;
+
 /** Locale-neutral placeholder for a metric the API reported as `null`
     (e.g. `citation_accuracy` when a run produced zero raw findings) — never
     "0%", which would read as a real, bad result. */

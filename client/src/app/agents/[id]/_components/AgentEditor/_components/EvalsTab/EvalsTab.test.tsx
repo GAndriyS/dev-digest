@@ -182,6 +182,34 @@ describe("EvalsTab", () => {
     expect(screen.getByText("must_not_flag")).toBeInTheDocument();
   });
 
+  it("colours each kind label, without letting colour be the only carrier", () => {
+    state.cases = [
+      makeCase("c1", "must find case", [{ file: "a.ts" }]),
+      makeCase("c2", "must not flag case", []),
+    ];
+    renderTab();
+    // The words stay readable on their own (AC-62) — the colour is additive,
+    // and the two match the case editor's POSITIVE/NEGATIVE banner tokens.
+    expect(screen.getByText("must_find")).toHaveStyle({ color: "var(--accent)" });
+    expect(screen.getByText("must_not_flag")).toHaveStyle({ color: "var(--warn)" });
+  });
+
+  it("explains the icon+count badge with a tooltip on its wrapper", () => {
+    state.cases = [
+      makeCase("c1", "must find case", [{ file: "a.ts" }]),
+      makeCase("c2", "must not flag case", []),
+    ];
+    renderTab();
+    // The vendored Badge takes no `title`, so the tooltip sits on the wrapper.
+    // Without it the icon and the bare number never said what was counted.
+    expect(
+      screen.getByTitle("Expects 1 finding — the agent must report it on this diff"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByTitle("Expects no findings — the agent must not flag anything on this diff"),
+    ).toBeInTheDocument();
+  });
+
   it("prefers the stored expectation_kind over the derived one for the row's label", () => {
     // Findings say must_find, but the stored kind says otherwise — the row
     // must print the stored word (AC-7 reads the stored field, never

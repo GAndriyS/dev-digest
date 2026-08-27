@@ -48,7 +48,11 @@ export const s = {
     whiteSpace: "nowrap",
   } satisfies CSSProperties,
   meta: { color: "var(--text-muted)", fontSize: 12.5, flex: 1, minWidth: 160 } satisfies CSSProperties,
-  kindLabel: { color: "var(--text-muted)", fontSize: 12 } satisfies CSSProperties,
+  /* Colour comes from `KIND_COLORS` at the call site, not from here — every
+     other entry in this file is a plain object and the row already reads its
+     status colour the same way (`OUTCOME_COLORS`). */
+  kindLabel: { fontSize: 12 } satisfies CSSProperties,
+  expectedCountWrap: { display: "inline-flex" } satisfies CSSProperties,
   mismatch: { color: "var(--warn)", fontSize: 12.5 } satisfies CSSProperties,
   rowActions: { display: "flex", alignItems: "center", gap: 6, marginLeft: "auto" } satisfies CSSProperties,
   metrics: {

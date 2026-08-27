@@ -41,7 +41,7 @@ import {
   useRunAgentEvalBatch,
 } from "@/lib/hooks/eval";
 import { EvalCaseModal } from "./_components/EvalCaseModal";
-import { NO_VALUE, OUTCOME_COLORS } from "./constants";
+import { KIND_COLORS, NO_VALUE, OUTCOME_COLORS } from "./constants";
 import {
   caseOutcome,
   countPassed,
@@ -162,12 +162,23 @@ export function EvalsTab({ agentId }: { agentId: string }) {
                 <span style={s.name} title={c.name}>
                   {c.name}
                 </span>
-                <Badge color="var(--text-muted)" icon={kind === "must_find" ? "Target" : "Slash"} mono>
-                  {count}
-                </Badge>
-                {/* AC-7: the kind in words — the icon+count badge above stays
-                    exactly as it was, this is additive. */}
-                <span className="mono" style={s.kindLabel}>
+                {/* The vendored Badge takes no `title`, so the tooltip lives on
+                    a wrapper — same shape EvalOverview uses for its errored
+                    badge. The icon alone never said what the number counts. */}
+                <span
+                  style={s.expectedCountWrap}
+                  title={t(
+                    `evalsTab.expectedCount.${kind === "must_find" ? "mustFind" : "mustNotFlag"}`,
+                    { count },
+                  )}
+                >
+                  <Badge color="var(--text-muted)" icon={kind === "must_find" ? "Target" : "Slash"} mono>
+                    {count}
+                  </Badge>
+                </span>
+                {/* AC-7: the kind in words — colour is additive on top of the
+                    words, never the sole carrier (AC-62). */}
+                <span className="mono" style={{ ...s.kindLabel, color: KIND_COLORS[kind] }}>
                   {t(`evalsTab.kind.${kind === "must_find" ? "mustFind" : "mustNotFlag"}`)}
                 </span>
                 {mismatch && (

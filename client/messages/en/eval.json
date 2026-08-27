@@ -118,6 +118,10 @@
       "mustFind": "must_find",
       "mustNotFlag": "must_not_flag"
     },
+    "expectedCount": {
+      "mustFind": "Expects {count, plural, one {# finding} other {# findings}} — the agent must report {count, plural, one {it} other {them}} on this diff",
+      "mustNotFlag": "Expects no findings — the agent must not flag anything on this diff"
+    },
     "kindMismatch": "Stored as {kind}, but expected output has {count, plural, one {# finding} other {# findings}}",
     "loadingCases": "Loading cases…",
     "loadError": "Could not load eval cases.",
