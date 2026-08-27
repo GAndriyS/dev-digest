@@ -4,6 +4,42 @@ Plan: .claude/plans/l06-evals-expectation-kind.md · Spec: specs/SPEC-05-eval-pi
 | Stage | Result | Agent tokens | Note |
 |---|---|---|---|
 | 1 read plan | 5 waves this run · 3 lanes at widest | 255k (planner) | DAG stated in plan; step 12 → doc-writer (stage 5). **Split gate skipped** — the human pre-authorised going straight from plan to implementation, and authorised resolving any remaining judgement call without asking |
+| 2 implement | 11/11 | 70k+108k+69k ∥ 84k+81k+108k ∥ 120k ∥ 154k+208k+133k ∥ 224k | one wave-4 lane went red on the pinned `lastRun` seam until its sibling landed — expected, and it correctly did not touch the other lane's file |
+| 3 find | arch: PASS 0 findings · code-review: 1 · security: empty report | 105k ∥ — ∥ 103k | `/code-review medium` — hand-written delta ≈2000 lines (3836 of the diff are a generated drizzle snapshot) |
+| 3b review loop | PASS after 1 loop, 2 fix passes | 102k + 122k + 57k | the one finding turned up a second bug of the same root; both fixed rather than half-fixed |
+| 4 verify | 87 MET · 0 PARTIAL · 0 NOT MET · Gaps: none | 166k | verdict INCOMPLETE only because docs had not landed at verification time — stage 5 closed it |
+| 5 docs | `server/README.md`, `client/README.md` | 147k | `client/README.md` had no Evals-tab description at all; written from scratch rather than patched |
+| 6 pr | PASS · 0 CRITICAL · `pr-gate-ci` clean · `verify:l06` 8/8 | — | body + report in `.claude/reviews/`; **human opens the PR and flips the spec to `implemented`** |
+| 7 wrap-up | 4 insights + 1 session note | — | root ×2 (1 dated follow-up, 1 session note), `client/INSIGHTS.md` ×3, `server/INSIGHTS.md` ×1 |
+
+Total agent spend: ~2.1M tokens across 17 subagent runs.
+
+## Findings this run
+
+One `/code-review` finding — and the fix pass surfaced a second bug of the same
+root, which was fixed rather than deferred:
+
+1. `EvalCaseModal.tsx` — after `Run on save` created a case, the modal kept
+   reading the never-changing `evalCase` prop: no kind banner for a case that
+   now had a stored kind, and `Run case` disabled with "save it first" on an
+   already-saved case.
+2. The same stale prop drove `submit()`'s create-vs-update branch, so a second
+   `Save` minted a **duplicate** case instead of updating the row just created.
+   Fixing only the first symptom would have made this likelier, not rarer — the
+   modal would have looked settled and invited that second Save.
+
+## Judgement calls made without asking
+
+The human authorised resolving these directly. Recorded so a reviewer can
+disagree with them:
+
+- **Scope of the modal work** — the design screenshots also show Input tabs
+  (Diff / Files / PR meta) and a `+ Finding skeleton` button. Neither was asked
+  for; both were left out and recorded as deferred in the spec's Non-goals.
+- **Finishing the second bug in the same run** rather than filing it as a
+  follow-up, because the half-fix made it easier to hit.
+- **The modal title still reads the prop**, so a case created in this session
+  keeps its `New eval case` heading rather than renaming itself mid-edit.
 
 ## Execution brief — l06-evals-expectation-kind
 Mode: multi-agent · Spec: specs/SPEC-05-eval-pipeline-26-08-2026.md (approved) · Slices: contracts, backend, frontend, meta · Steps this run: 11 of 12 (row 12: doc-writer)
