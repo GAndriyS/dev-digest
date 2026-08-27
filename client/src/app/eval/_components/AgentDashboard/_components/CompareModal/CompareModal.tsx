@@ -10,12 +10,17 @@
 "use client";
 
 import { useTranslations } from "next-intl";
-import { Modal, Skeleton, Button } from "@devdigest/ui";
+import { Modal, Skeleton, Button, Badge, Icon } from "@devdigest/ui";
 import type { EvalBatchRecord } from "@devdigest/shared";
 import { useAgentVersionSnapshot } from "@/lib/hooks/eval";
-import { NO_VALUE } from "./constants";
-import { diffLines, formatCostDelta, formatDeltaPt } from "./helpers";
+import { COMPARE_METRICS, DELTA_TONE, DIFF_COLORS } from "./constants";
+import { diffLines, deltaBadge } from "./helpers";
+import { formatCost, pct } from "../../helpers";
 import { s } from "./styles";
+
+/** The three scored metrics live directly on the batch; cost is read
+    separately because its field is named differently. */
+type MetricKey = "recall" | "precision" | "citation_accuracy";
 
 function byRanAtAscending(a: EvalBatchRecord, b: EvalBatchRecord): number {
   return new Date(a.ran_at).getTime() - new Date(b.ran_at).getTime();
@@ -50,15 +55,20 @@ export function CompareModal({
       ? diffLines(earlierVersion.data.config.system_prompt, laterVersion.data.config.system_prompt)
       : [];
 
-  const citationDelta =
-    earlier.citation_accuracy == null || later.citation_accuracy == null
-      ? NO_VALUE
-      : t("dashboard.delta", { value: formatDeltaPt(later.citation_accuracy - earlier.citation_accuracy) });
+  // AC-32 lets a user tick two runs of the SAME version. There is then no
+  // prompt to diff, so this branch is evaluated BEFORE loading and error:
+  // neither an in-flight fetch nor a 404 should preempt the plain truth that
+  // the prompt did not change.
+  const sameVersion = earlier.agent_version === later.agent_version;
 
   return (
     <Modal
       width={760}
-      title={t("compare.title")}
+      title={
+        sameVersion
+          ? t("compare.titleSameVersion", { version: later.agent_version })
+          : t("compare.titleVersions", { older: earlier.agent_version, newer: later.agent_version })
+      }
       subtitle={t("compare.subtitle")}
       onClose={onClose}
       footer={
@@ -70,46 +80,81 @@ export function CompareModal({
       }
     >
       <div style={s.section}>
-        <h3 style={s.h3}>{t("compare.metricsHeading")}</h3>
-        <div style={s.metricGrid}>
-          <div style={s.metricRow}>
-            <span>{t("dashboard.metrics.recall")}</span>
-            <span className="tnum">{t("dashboard.delta", { value: formatDeltaPt(later.recall - earlier.recall) })}</span>
-          </div>
-          <div style={s.metricRow}>
-            <span>{t("dashboard.metrics.precision")}</span>
-            <span className="tnum">
-              {t("dashboard.delta", { value: formatDeltaPt(later.precision - earlier.precision) })}
-            </span>
-          </div>
-          <div style={s.metricRow}>
-            <span>{t("dashboard.metrics.citationAccuracy")}</span>
-            <span className="tnum">{citationDelta}</span>
-          </div>
-          <div style={s.metricRowLast}>
-            <span>{t("compare.costLabel")}</span>
-            <span className="tnum">{formatCostDelta(earlier.cost_usd, later.cost_usd)}</span>
-          </div>
+        <div style={s.headingRow}>
+          <span style={s.microHeading}>{t("compare.metricsHeading")}</span>
+        </div>
+        <div style={s.cardGrid}>
+          {COMPARE_METRICS.map((metric) => {
+            const isCost = metric.unit === "usd";
+            const before = isCost ? earlier.cost_usd : earlier[metric.key as MetricKey];
+            const after = isCost ? later.cost_usd : later[metric.key as MetricKey];
+            const badge = deltaBadge(before, after, metric.higherIsBetter, metric.unit);
+            const show = (v: number | null) => (isCost ? formatCost(v) : pct(v));
+
+            return (
+              <div key={metric.key} style={s.card}>
+                <span style={s.cardLabel}>{t(`compare.${metric.labelKey}`)}</span>
+                <div style={s.cardValues}>
+                  <span className="tnum" style={s.cardBefore}>
+                    {show(before)}
+                  </span>
+                  <span style={s.cardArrow} aria-hidden>
+                    →
+                  </span>
+                  <span className="tnum" style={s.cardAfter(metric.color)}>
+                    {show(after)}
+                  </span>
+                </div>
+                {/* No badge at all when a side is null: "not measured" is not
+                    "unchanged", and a 0.0 there would read as a real result. */}
+                {badge && (
+                  <Badge color={DELTA_TONE[badge.tone].fg} bg={DELTA_TONE[badge.tone].bg} mono>
+                    {badge.arrow ? `${badge.arrow} ` : ""}
+                    {metric.unit === "pt" ? t("dashboard.delta", { value: badge.text }) : badge.text}
+                  </Badge>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
 
       <div style={s.section}>
-        <h3 style={s.h3}>{t("compare.promptDiffHeading")}</h3>
-        {promptLoading ? (
+        <div style={s.headingRow}>
+          <Icon.FileText size={13} aria-hidden />
+          <span style={s.microHeading}>{t("compare.promptDiffHeading")}</span>
+        </div>
+        {sameVersion ? (
+          <p style={s.muted}>{t("compare.promptDiffSameVersion", { version: later.agent_version })}</p>
+        ) : promptLoading ? (
           <Skeleton height={120} />
         ) : promptUnavailable ? (
           <p style={s.muted}>{t("compare.promptDiffUnavailable")}</p>
         ) : (
-          <div className="mono" style={s.diff}>
-            {rows.map((row, i) => (
-              <div key={i} style={s.diffRow(row.kind)}>
-                <span style={s.sign(row.kind)}>{row.kind === "add" ? "+" : row.kind === "del" ? "−" : " "}</span>
-                {/* Text node only — a system prompt is untrusted, free-form
-                    text; never dangerouslySetInnerHTML, never Markdown. */}
-                <span>{row.text}</span>
-              </div>
-            ))}
-          </div>
+          <>
+            {/* Names which colour means which version — the diff below is two
+                prompts, not one file's history, so "old"/"new" alone is thin. */}
+            <div style={s.legend}>
+              <span style={s.legendItem}>
+                <span style={s.legendSwatch(DIFF_COLORS.del.fg)} aria-hidden />
+                {t("compare.legendOld", { version: earlier.agent_version })}
+              </span>
+              <span style={s.legendItem}>
+                <span style={s.legendSwatch(DIFF_COLORS.add.fg)} aria-hidden />
+                {t("compare.legendNew", { version: later.agent_version })}
+              </span>
+            </div>
+            <div className="mono" style={s.diff}>
+              {rows.map((row, i) => (
+                <div key={i} style={s.diffRow(row.kind)}>
+                  <span style={s.sign(row.kind)}>{row.kind === "add" ? "+" : row.kind === "del" ? "−" : " "}</span>
+                  {/* Text node only — a system prompt is untrusted, free-form
+                      text; never dangerouslySetInnerHTML, never Markdown. */}
+                  <span>{row.text}</span>
+                </div>
+              ))}
+            </div>
+          </>
         )}
       </div>
     </Modal>

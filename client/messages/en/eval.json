@@ -151,15 +151,25 @@
     "failed": "Couldn't create an eval case from this finding."
   },
   "compare": {
-    "title": "Compare runs",
-    "subtitle": "Metric deltas and prompt diff between two eval runs",
+    "subtitle": "Old prompt vs new — metric deltas and prompt diff",
     "button": "Compare",
     "selectHint": "Select exactly two runs to compare",
-    "metricsHeading": "Metric deltas",
+    "metricsHeading": "METRIC DELTAS",
     "costLabel": "Cost",
-    "promptDiffHeading": "System prompt diff",
+    "promptDiffHeading": "SYSTEM PROMPT DIFF",
     "promptDiffUnavailable": "Prompt diff isn't available — the agent configuration snapshot for one of these runs no longer exists.",
-    "close": "Close"
+    "close": "Close",
+    "titleVersions": "Compare runs · v{older} → v{newer}",
+    "titleSameVersion": "Compare runs · v{version}",
+    "cards": {
+      "recall": "RECALL",
+      "precision": "PRECISION",
+      "citation": "CITATION",
+      "cost": "COST"
+    },
+    "legendOld": "v{version} (old)",
+    "legendNew": "v{version} (new)",
+    "promptDiffSameVersion": "Both runs were made on v{version} — the system prompt didn't change between them."
   },
   "page": {
     "crumbSkillsLab": "Skills Lab",

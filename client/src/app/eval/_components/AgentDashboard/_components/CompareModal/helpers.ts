@@ -1,4 +1,4 @@
-import { MAX_DIFF_LINES, NO_VALUE } from "./constants";
+import { DELTA_ARROW, MAX_DIFF_LINES } from "./constants";
 
 export type DiffKind = "add" | "del" | "context";
 
@@ -82,26 +82,54 @@ function wholesale(a: string[], b: string[]): DiffRow[] {
   ];
 }
 
-/**
- * A metric delta (fraction) formatted as a SIGNED percentage point for
- * `dashboard.delta` ("{value} pt") — same rule as
- * `AgentDashboard/helpers.ts` `formatDeltaPt`, duplicated locally (co-located
- * per component, matching this codebase's existing convention, e.g.
- * `EvalsTab`'s local `pct`).
- */
-export function formatDeltaPt(fraction: number): string {
-  const pt = Math.round(fraction * 1000) / 10;
-  if (pt === 0) return "0.0";
-  const sign = pt > 0 ? "+" : "-";
-  return `${sign}${Math.abs(pt).toFixed(1)}`;
+export type DeltaTone = "good" | "bad" | "neutral";
+
+export interface DeltaBadge {
+  tone: DeltaTone;
+  /** `null` on a neutral delta — nothing moved, so nothing points anywhere. */
+  arrow: string | null;
+  /** Unsigned magnitude; the arrow carries the direction. */
+  text: string;
 }
 
-/** USD cost delta, 4 decimals, signed. Either side `null` (no cost recorded)
-    renders as an em dash — the null-metric rule applies to cost too. */
-export function formatCostDelta(before: number | null, after: number | null): string {
-  if (before == null || after == null) return NO_VALUE;
-  const delta = after - before;
-  if (delta === 0) return "$0.0000";
-  const sign = delta > 0 ? "+" : "-";
-  return `${sign}$${Math.abs(delta).toFixed(4)}`;
+/**
+ * The delta badge for one card: how far the metric moved, and whether that
+ * was an improvement.
+ *
+ * Two rules worth stating, because both are easy to get wrong:
+ *
+ * 1. **Tone is direction-of-improvement, never sign.** `higherIsBetter` comes
+ *    from `COMPARE_METRICS`, and it is `false` for cost — a rise there is a
+ *    regression. Colouring by sign would paint the worst outcome green.
+ * 2. **Tone and arrow derive from the ROUNDED, PRINTED magnitude**, not the
+ *    raw float. `0.9 - 0.8` is `0.09999999999999998`, and a delta of `1e-16`
+ *    would otherwise render as "▲ 0.0" — an arrow and a tone insisting on a
+ *    direction the number next to them denies.
+ *
+ * Returns `null` when the delta cannot be computed at all (either side of the
+ * comparison is `null`), so the caller omits the badge rather than inventing
+ * a zero (AC-78).
+ */
+export function deltaBadge(
+  before: number | null | undefined,
+  after: number | null | undefined,
+  higherIsBetter: boolean,
+  unit: "pt" | "usd",
+): DeltaBadge | null {
+  if (before == null || after == null) return null;
+
+  const raw = after - before;
+  // Round FIRST, then decide — see rule 2 above.
+  const magnitude = unit === "pt" ? Math.round(raw * 1000) / 10 : Math.round(raw * 10000) / 10000;
+  const text = unit === "pt" ? Math.abs(magnitude).toFixed(1) : `$${Math.abs(magnitude).toFixed(4)}`;
+
+  if (magnitude === 0) return { tone: "neutral", arrow: null, text };
+
+  const rose = magnitude > 0;
+  const improved = rose === higherIsBetter;
+  return {
+    tone: improved ? "good" : "bad",
+    arrow: rose ? DELTA_ARROW.good : DELTA_ARROW.bad,
+    text,
+  };
 }

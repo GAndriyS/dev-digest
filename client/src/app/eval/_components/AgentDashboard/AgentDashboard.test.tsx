@@ -228,7 +228,10 @@ describe("AgentDashboard", () => {
     fireEvent.click(boxes[1]!);
     fireEvent.click(screen.getByRole("button", { name: evalMessages.compare.button }));
 
-    expect(screen.getByText(evalMessages.compare.title)).toBeInTheDocument();
+    // Both fixture batches carry `agent_version: 3`, so this is the
+    // same-version pair (AC-79) — the title names the one version rather than
+    // a transition. What this test is really asserting is that Compare opened.
+    expect(screen.getByText("Compare runs · v3")).toBeInTheDocument();
   });
 
   it("marks a batch with errored cases", () => {
