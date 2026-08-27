@@ -88,7 +88,7 @@ flowchart TB
     brief["brief<br/>/pulls/:id/brief"]
   end
   subgraph Eval["Eval Pipeline (L06)"]
-    eval["eval<br/>/eval-cases · /eval-cases/:id<br/>/findings/:id/eval-case<br/>/agents/:id/eval-runs<br/>/eval/overview · /eval/dashboard"]
+    eval["eval<br/>/eval-cases · /eval-cases/:id<br/>/findings/:id/eval-case<br/>/agents/:id/eval-runs · /agents/:id/eval-cases/:caseId/run<br/>/eval/overview · /eval/dashboard"]
   end
   subgraph Platform["Platform"]
     settings["settings<br/>/settings · /providers"]
@@ -221,6 +221,25 @@ agent's whole case set as one batch; `GET /eval/overview` and `GET
 oldest-first, capped at `BATCH_TABLE_LIMIT`, with `traces_total = 0` batches
 excluded, derived at read time from the existing `eval_runs` rows (no
 migration).
+
+`POST /agents/:id/eval-cases/:caseId/run` (SPEC-05, L06 follow-up) runs
+**exactly one** case against its owning agent through the same preamble and
+scoring path as the batch loop (`EvalRunner#runSingleCase`) — one model call,
+persisted as its own `eval_runs` row with `batch_id: null` so it can never be
+folded into a batch aggregate. It 404s when the agent or the case is missing
+or the case isn't owned by that agent, and 409s `no_provider_key` before any
+write; any other failure (provider error, timeout, empty `input_diff`) still
+answers **200** with `pass: null` and an `error: {code, message}` and still
+persists a row (never the diff text). Because the row's `batch_id` is `null`,
+it stays invisible to `recent_batches`, `trend`, `alert`, `current` and `GET
+/eval/overview` — the one read widened to see it is `GET
+/eval/dashboard`'s `recent_runs` (`EvalRepository#latestBatchlessRunPerCase`).
+`eval_cases.expectation_kind` (`must_find` / `must_not_flag`) is assigned by
+the server exactly once — from the finding's accept/dismiss decision when a
+case is minted via `POST /findings/:id/eval-case`, or derived from
+`expected_output` at creation via `POST /eval-cases` — and is **immutable**
+afterwards: neither `PUT /eval-cases/:id` nor any other route can change it,
+and it stays `null` for `owner_kind: "skill"` cases.
 
 ## Environment
 

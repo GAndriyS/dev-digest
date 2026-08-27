@@ -176,6 +176,45 @@ regression banner when the response's `alert` is non-null, a
 recall/precision/citation-accuracy trend chart, and a batches table where
 selecting exactly two rows enables `Compare`.
 
+The agent editor's own **Evals** tab (`/agents/:id?tab=evals`,
+`AgentEditor/_components/EvalsTab/`) lists that agent's own case set — name,
+a last-run outcome badge (`passed`/`failed`/`errored`/`never run`, read from
+`EvalDashboard.recent_runs` via `latestRunByCase`), the existing icon+count
+expectation badge — plus, additively, the case's stored `expectation_kind`
+printed in words (`must_find`/`must_not_flag`, `expectationKindOf()`, which
+falls back to deriving it from `expected_output` only for a case written
+before the kind existed) and a text warning when that stored kind disagrees
+with the case's current `expected_output` (`expectationMismatch()`); neither
+addition replaces the existing badge or icon. Selecting `New case` or a row's
+`Edit` opens `EvalCaseModal` (`_components/EvalCaseModal/`) for create/edit,
+whose subtitle names the case's origin from `caseOrigin()`
+(`source_finding_id` plus the stored kind) — `Seeded from an accepted
+finding · assert the expected output`, `Seeded from a dismissed finding ·
+assert the expected output`, or `Created by hand · assert the expected
+output` — and whose form is topped by a words-not-colour banner driven by
+that same stored kind: `POSITIVE CASE` with one `MUST find "<title>" at
+<file>:<line>` line per expected finding (the case's own name in place of
+`<title>` when a finding carries none), or `NEGATIVE CASE` with `MUST NOT
+flag`; colour is additive only, never the sole carrier. Below the diff/JSON
+fields, an `Actual output` panel reads `Never run yet` when the case has no
+run at all (never a zero-filled metrics object read as a result), otherwise a
+pass/fail label, the three percentage metrics plus duration, and the model's
+own findings from that run as escaped text — or, on a failed run, only the
+failure reason, never the diff. The footer's `Run case` button spends exactly
+one model call against `POST /agents/:id/eval-cases/:caseId/run`
+(`useRunAgentEvalCase`, `src/lib/hooks/eval.ts`; disabled while pending, on an
+unsaved case, or when the agent has no provider key configured), and a `Run
+on save` toggle — off every time the modal opens, never persisted — fires
+that same run only after a save succeeds, keeping the modal open afterwards
+so the result stays visible (a failed save never triggers a run). The
+vendored `Toggle` has no `disabled` prop, so the no-provider-key state is a
+guarded `onChange` plus an `aria-disabled` wrapper carrying the same textual
+reason the `Run case` button shows, not a `disabled` attribute. A run made
+this way is persisted outside any batch (`batch_id: null`, server-side) and
+so never moves the trend, sparkline or regression banner described above —
+its only visible effect is this case's own row and the panel that just ran
+it.
+
 ### Skills Lab (`/skills`, master-detail)
 
 `/skills` and `/skills/:id` share one nested `src/app/skills/layout.tsx` — the

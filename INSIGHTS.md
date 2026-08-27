@@ -367,6 +367,20 @@ live in `<package>/INSIGHTS.md`. Maintained by the `engineering-insights` skill.
   the `Vendor-update:` declaration but says nothing about who may perform the
   edit. Note the block is wider than the file documents: `Bash rm -rf` under
   `server/clones/**` is also hard-denied, `dangerouslyDisableSandbox` included.
+  - **2026-08-27** — The same carve-out gap exists on
+    `Edit|Write(./server/src/db/migrations/*.sql)`, and it lands differently
+    because that deny has **no matching `Bash` deny**. `AGENTS.md:81-83`
+    forbids editing an *applied* migration; the glob cannot tell one from the
+    file `pnpm db:generate` produced thirty seconds ago, which the generating
+    step legitimately owns and must hand-append its backfill to. So a lane
+    doing exactly what its plan told it to is refused by `Edit`, finds
+    `printf >> file` uncontested, and completes — the rule is enforced against
+    the sanctioned tool and advisory against the unsanctioned one, which is
+    backwards. Two consequences: **a deny glob with no matching `Bash` deny
+    does not enforce anything, it only redirects**, and a step that generates
+    a migration and then edits it needs either a scoped exception or a
+    human/main-session row. Both reviewers flagged the glob independently on
+    the run this comes from.
 
 - **2026-08-13** — Any `file:line` derived from repo-intel resolves against
   `repo_index_state.last_indexed_sha`, **never** the PR's `head_sha` — the index
@@ -653,6 +667,17 @@ live in `<package>/INSIGHTS.md`. Maintained by the `engineering-insights` skill.
 
 ## Session Notes
 
+- **2026-08-27** — SPEC-05 follow-up: the expectation kind (`must_find` /
+  `must_not_flag`) stopped being derived from `expected_output` on every render
+  and became a stored column, set from the finding's accept/dismiss decision —
+  the requirement both earlier L06 plans had missed. Around it: a per-case run
+  route that writes outside any batch, the case editor's POSITIVE/NEGATIVE
+  banner with `Run case` / `Run on save` / `Actual output`, and the kind
+  printed in words on the Evals row. 11 steps, 5 waves, ~1.5M agent tokens;
+  architecture PASS twice and an empty security report, so the whole fix loop
+  was one `/code-review` finding — which then turned up a second bug of the
+  same root (a stale prop minting duplicate rows) that the first fix would
+  have made likelier.
 - **2026-08-26** — SPEC-05 design-fidelity delta: the `/eval` overview was
   rebuilt to its mock (full-width agent rows with a `recall` sparkline, metric
   bars in the runs table, version-as-link) and `Run all agents` added behind a

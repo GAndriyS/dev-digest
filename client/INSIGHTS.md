@@ -119,6 +119,27 @@ append-only. Entry format and promotion rules → root `INSIGHTS.md`.
   is `meta: { ownErrorToast: true }` on the mutation, which
   `providers.tsx` now honours; a mutation that opts out owns **every** error
   branch, not just the one it translated.
+- **2026-08-27** — **When a stored field gets a derived fallback, the check
+  that detects drift must read the RAW field, never the fallback.** A
+  fallback-derived value is computed from the very thing it would be compared
+  against, so the comparison can never fail and the check is structurally
+  dead — it looks implemented, passes review, and reports "no problem"
+  forever. `expectationKindOf()` falls back to deriving the kind from
+  `expected_output`, so `expectationMismatch()` reads `evalCase.expectation_kind`
+  directly (`EvalsTab/helpers.ts`); routing it through the fallback would have
+  silently disabled the whole stored-vs-actual warning it exists to raise.
+  Applies to any "stored intent + derived default" pair, not just this one.
+- **2026-08-27** — A modal the parent keeps mounted after a successful save
+  (here: `Run on save` deliberately keeps the case editor open) turns its
+  `entity` prop stale for the rest of the session — the parent's state did not
+  change, so the prop never will. Everything downstream of the save must read
+  a local state seeded from that prop, not the prop: the case editor showed no
+  kind banner for a case it had just created, disabled `Run case` with "save it
+  first" on an already-saved case, and — the expensive half — kept branching
+  `submit()` on the prop, so a second Save minted a **duplicate** row instead
+  of updating the one it had made. Fixing only the visible symptoms makes the
+  data bug likelier, because the modal then looks settled and invites that
+  second Save.
 
 ## Tool & Library Notes
 
@@ -195,6 +216,14 @@ append-only. Entry format and promotion rules → root `INSIGHTS.md`.
   and only finds out mid-suite, at module-resolution time. Three separate lanes
   of one run each hit this independently. Use `fireEvent`; do not add the
   dependency to satisfy a skill's default.
+- **2026-08-27** — `@testing-library/dom`'s default normalizer collapses
+  whitespace in the **DOM's** text/value only, never in the string you pass as
+  the matcher. So `getByDisplayValue(someMultiLineDiff)` never matches: the
+  textarea's value comes back with its newlines collapsed to spaces, the
+  matcher string keeps its `\n`s, and the two can't be equal — while the value
+  is plainly correct in the rendered output, which sends you looking at the
+  component. Assert a multi-line value with a regex (or a normalizer-stripped
+  matcher). Bit the `input_diff` assertion in `EvalCaseModal.test.tsx`.
 
 ## Recurring Errors & Fixes
 

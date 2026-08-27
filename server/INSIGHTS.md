@@ -284,6 +284,16 @@ promotion rules → root `INSIGHTS.md`.
   `test/depgraph-adapter.test.ts`). Separately, `relative()` returns backslashes
   on win32 — every path leaving an adapter must go through
   `.split(sep).join('/')`, the same normalisation `walk.ts:119` applies.
+- **2026-08-27** — `pnpm verify:l06`'s integration slice runs all 15
+  `*.it.test.ts` files in ONE vitest invocation, each spinning its own
+  testcontainers Postgres, and under that load the lane produces genuine
+  non-deterministic failures that are not regressions: `Error: No host port
+  found for host IP` from Docker port contention (seen in
+  `smart-diff.it.test.ts`), and at least one cross-file ordering flake
+  (`reviews.it.test.ts`'s `trace.specs_read`). Both passed in isolation and on
+  the next full run. **Re-run a red integration gate once before treating it as
+  a regression** — and when it is red, check whether the failing file is one
+  your change even touches.
 
 ## Recurring Errors & Fixes
 
