@@ -19,6 +19,24 @@
    record (`ranRecord` below) and never merges it with the incoming prop —
    the prop may be stale (this page's last load), the mutation result is not.
 
+   Fix pass 1 (L06 expectation-kind, 2026-08-27): the banner, the mismatch
+   warning, the subtitle origin and the "Run case" enablement all read
+   `caseRecord` — the `evalCase` prop until THIS session saves one of its
+   own, then the mutation's own returned case. Without it, a `Run on save`
+   that creates a brand-new case kept presenting the just-created, just-run
+   case as unsaved (`kind` stuck at `null`, `Run case` disabled with
+   "Save the case before running it") until the modal was closed and
+   reopened.
+
+   Fix pass 2 (same day): `submit()`'s create-vs-update branch reads
+   `caseRecord` too, not the `evalCase` prop — the prop never changes after
+   mount, so once `Run on save` had created a case, a second `Save` in the
+   same session still believed there was nothing to update and minted a
+   duplicate via `create` instead of updating the row just made. The modal's
+   `title` is the one place still keyed off `evalCase` (so a case created in
+   this session keeps the "New eval case" title rather than switching to the
+   name-based one mid-session) — cosmetic only, left as is.
+
    i18n note (seam item — see implementation report): the `caseEditor.*`
    namespace in messages/en/eval.json already carries exactly the field
    labels/JSON-validity words this modal needs (nameLabel, inputLabel,
@@ -88,6 +106,16 @@ export function EvalCaseModal({
   // modal session — takes over the panel from `lastRun` and is never merged
   // with it (file header, AC-70's "no client-side merging" rule).
   const [ranRecord, setRanRecord] = React.useState<EvalRunRecord | undefined>(undefined);
+  // The case behind everything DOWNSTREAM of a save — the banner, the
+  // mismatch warning, the subtitle origin and the "Run case" enablement all
+  // read this, never the `evalCase` prop directly. It starts as that prop
+  // (create: null, edit: the existing row) and is replaced by the mutation's
+  // own returned record once THIS session saves one of its own — which for a
+  // brand-new case already carries the server-assigned `expectation_kind`
+  // (AC-53), so a `Run on save` on a new case no longer presents as unsaved.
+  // Never re-synced from the prop afterwards: this component remounts fresh
+  // on every open (see file header), so there is nothing to reconcile.
+  const [caseRecord, setCaseRecord] = React.useState<EvalCase | null>(evalCase);
 
   const parsed = parseExpectedOutput(expectedText);
   const pending = create.isPending || update.isPending;
@@ -123,9 +151,14 @@ export function EvalCaseModal({
     if (!parsed.ok) return;
     const input = { name: name.trim(), input_diff: diff, expected_output: parsed.value };
     try {
-      const savedCase = evalCase
-        ? await update.mutateAsync({ agentId, id: evalCase.id, patch: input })
+      // Branches on `caseRecord`, not the `evalCase` prop: once THIS session
+      // has saved a case (e.g. a `Run on save` that created one), a second
+      // Save must update that row, not mint a duplicate via `create` again —
+      // `evalCase` never changes after mount, so it cannot see that save.
+      const savedCase = caseRecord
+        ? await update.mutateAsync({ agentId, id: caseRecord.id, patch: input })
         : await create.mutateAsync({ owner_id: agentId, ...input });
+      setCaseRecord(savedCase);
       if (runOnSave) {
         try {
           const result = await run.mutateAsync({ agentId, caseId: savedCase.id });
@@ -149,18 +182,18 @@ export function EvalCaseModal({
   // EvalsTab.tsx's `onRun`). `mutateAsync`, not `mutate`, so this modal reads
   // the resolved record directly rather than relying on a per-call callback.
   const onRunCase = async () => {
-    if (!evalCase || run.isPending || noProviderKey) return;
+    if (!caseRecord || run.isPending || noProviderKey) return;
     try {
-      const result = await run.mutateAsync({ agentId, caseId: evalCase.id });
+      const result = await run.mutateAsync({ agentId, caseId: caseRecord.id });
       setRanRecord(result);
     } catch {
       // Surfaced via `run.isError`/`noProviderKey` above.
     }
   };
 
-  const kind = evalCase ? expectationKindOf(evalCase) : null;
-  const mismatch = evalCase ? expectationMismatch(evalCase) : null;
-  const origin = evalCase ? caseOrigin(evalCase) : "manual";
+  const kind = caseRecord ? expectationKindOf(caseRecord) : null;
+  const mismatch = caseRecord ? expectationMismatch(caseRecord) : null;
+  const origin = caseRecord ? caseOrigin(caseRecord) : "manual";
 
   return (
     <Modal
@@ -170,7 +203,7 @@ export function EvalCaseModal({
       onClose={onClose}
       footer={
         <div style={s.footer}>
-          {(noProviderKey || !evalCase) && (
+          {(noProviderKey || !caseRecord) && (
             <div role="alert" style={s.disabledReason}>
               {noProviderKey ? t("evalsTab.noProviderKey") : t("caseEditor.runNeedsSave")}
             </div>
@@ -194,7 +227,7 @@ export function EvalCaseModal({
                 kind="secondary"
                 icon="Play"
                 onClick={onRunCase}
-                disabled={!evalCase || run.isPending || noProviderKey}
+                disabled={!caseRecord || run.isPending || noProviderKey}
               >
                 {run.isPending ? t("caseEditor.running") : t("caseEditor.runCase")}
               </Button>
@@ -214,15 +247,15 @@ export function EvalCaseModal({
           </div>
         )}
 
-        {evalCase && kind === "must_find" && (
+        {caseRecord && kind === "must_find" && (
           <div style={s.bannerPositive}>
             <div style={s.bannerTitle}>{t("caseEditor.banner.positiveTitle")}</div>
-            {expectedFindings(evalCase.expected_output).map((finding, i) => {
+            {expectedFindings(caseRecord.expected_output).map((finding, i) => {
               const locator = expectedFindingLocator(finding);
               return (
                 <div key={i} style={s.bannerLine}>
                   {t("caseEditor.banner.mustFind", {
-                    title: locator.title ?? evalCase.name,
+                    title: locator.title ?? caseRecord.name,
                     file: locator.file,
                     line: locator.line,
                   })}
@@ -231,7 +264,7 @@ export function EvalCaseModal({
             })}
           </div>
         )}
-        {evalCase && kind === "must_not_flag" && (
+        {caseRecord && kind === "must_not_flag" && (
           <div style={s.bannerNegative}>
             <div style={s.bannerTitle}>{t("caseEditor.banner.negativeTitle")}</div>
             <div style={s.bannerLine}>{t("caseEditor.banner.mustNotFlag")}</div>

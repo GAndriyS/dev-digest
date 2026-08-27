@@ -406,6 +406,71 @@ describe("EvalCaseModal — Run on save (AC-67)", () => {
     await waitFor(() => expect(screen.getByText("Last run passed")).toBeInTheDocument());
   });
 
+  it("presents the newly created case as saved: banner shown, Run case enabled, no runNeedsSave reason", async () => {
+    const created = makeCase({ id: "brand-new", expectation_kind: "must_find" });
+    createMutateAsync.mockResolvedValue(created);
+    runMutateAsync.mockResolvedValue(makeRun({ case_id: created.id, pass: true }));
+    renderModal(null, vi.fn());
+
+    fireEvent.change(screen.getByPlaceholderText("stripe-key-leak"), { target: { value: "new case" } });
+    fireEvent.change(screen.getByPlaceholderText(/--- a\/src\/config.ts/), { target: { value: "@@ -1 +1 @@" } });
+    fireEvent.click(screen.getByRole("switch")); // turn Run on save on
+    fireEvent.click(screen.getByText("Save"));
+
+    await waitFor(() => expect(screen.getByText("Last run passed")).toBeInTheDocument());
+
+    // The case now exists (and has a stored kind), so it no longer presents
+    // as unsaved: the POSITIVE/NEGATIVE banner appears and "Run case" is
+    // enabled with no "Save the case before running it" reason.
+    expect(screen.getByText("POSITIVE CASE")).toBeInTheDocument();
+    expect(screen.getByText("Run case").closest("button")).not.toBeDisabled();
+    expect(screen.queryByText("Save the case before running it")).not.toBeInTheDocument();
+
+    // Re-running from here works without closing and reopening the modal.
+    fireEvent.click(screen.getByText("Run case"));
+    expect(runMutateAsync).toHaveBeenCalledWith({ agentId: AGENT_ID, caseId: "brand-new" });
+  });
+
+  it("updates, not creates, on a second Save after Run on save created the case", async () => {
+    const created = makeCase({ id: "brand-new" });
+    createMutateAsync.mockResolvedValue(created);
+    updateMutateAsync.mockResolvedValue(created);
+    runMutateAsync.mockResolvedValue(makeRun({ case_id: created.id, pass: true }));
+    renderModal(null, vi.fn());
+
+    fireEvent.change(screen.getByPlaceholderText("stripe-key-leak"), { target: { value: "new case" } });
+    fireEvent.change(screen.getByPlaceholderText(/--- a\/src\/config.ts/), { target: { value: "@@ -1 +1 @@" } });
+    fireEvent.click(screen.getByRole("switch")); // turn Run on save on
+    fireEvent.click(screen.getByText("Save"));
+
+    await waitFor(() => expect(createMutateAsync).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.getByText("Last run passed")).toBeInTheDocument());
+
+    // Turn Run on save back off, tweak the expected-output JSON and save
+    // again — this must UPDATE the row the first Save just created, never
+    // mint a second case via `create` (the regression: the branch used to key
+    // off the never-changing `evalCase` prop instead of the just-saved case).
+    fireEvent.click(screen.getByRole("switch"));
+    const jsonBox = screen.getByDisplayValue(/"findings": \[\]/);
+    fireEvent.change(jsonBox, {
+      target: { value: '{ "findings": [{ "file": "a.ts", "start_line": 1 }] }' },
+    });
+    fireEvent.click(screen.getByText("Save"));
+
+    await waitFor(() =>
+      expect(updateMutateAsync).toHaveBeenCalledWith({
+        agentId: AGENT_ID,
+        id: "brand-new",
+        patch: {
+          name: "new case",
+          input_diff: "@@ -1 +1 @@",
+          expected_output: { findings: [{ file: "a.ts", start_line: 1 }] },
+        },
+      }),
+    );
+    expect(createMutateAsync).toHaveBeenCalledTimes(1);
+  });
+
   it("does not run when Run on save is on but the save itself fails", async () => {
     createMutateAsync.mockRejectedValue(new Error("boom"));
     state.createError = true;
