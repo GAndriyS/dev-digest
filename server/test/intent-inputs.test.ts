@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { UnifiedDiff } from '@devdigest/shared';
-import { parseUnifiedDiff } from '../src/adapters/git/diff-parser.js';
+import { parseUnifiedDiff, unifiedDiffFromPatches } from '../src/adapters/git/diff-parser.js';
 import { BREAKING_PR_FILES } from '../src/db/seed.js';
 import {
   hunkHeaderDigest,
@@ -21,14 +21,7 @@ import {
  * how a real request would build the diff for this PR.
  */
 function breakingDiff(): UnifiedDiff {
-  const parts: string[] = [];
-  for (const f of BREAKING_PR_FILES) {
-    parts.push(`diff --git a/${f.path} b/${f.path}`);
-    parts.push(`--- a/${f.path}`);
-    parts.push(`+++ b/${f.path}`);
-    parts.push(f.patch);
-  }
-  return parseUnifiedDiff(parts.join('\n'));
+  return parseUnifiedDiff(unifiedDiffFromPatches(BREAKING_PR_FILES));
 }
 
 describe('hunkHeaderDigest', () => {
