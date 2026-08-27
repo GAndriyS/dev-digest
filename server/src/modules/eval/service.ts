@@ -4,6 +4,7 @@ import { AppError, NotFoundError } from '../../platform/errors.js';
 import { DuplicateEvalCaseError, EvalRepository } from './repository.js';
 import type { EvalCaseRow } from './types.js';
 import { expectedFindings, normalizeFilePath } from './helpers.js';
+import { ensureDiffFileHeader } from '../../adapters/git/diff-parser.js';
 
 /**
  * eval — agent-side service (SPEC-05, step 7). CRUD over `eval_cases` for
@@ -106,7 +107,10 @@ export class EvalService {
    * - `input_diff` is the `pr_files` row whose `path` matches the finding's
    *   file, normalized on both sides (`normalizeFilePath` — the same
    *   comparison the scorer uses, so a case never fails to match its own
-   *   source file). A missing row or an empty patch both refuse with a
+   *   source file), with the unified-diff file header reconstructed: GitHub's
+   *   patch is hunks only, and a headerless diff grounds to nothing, so a
+   *   case stored raw could never fail (`must_not_flag`) or never pass
+   *   (`must_find`). A missing row or an empty patch both refuse with a
    *   message that names the situation, never the diff/patch text itself
    *   (AC-5's secret-leak edge case: a `stripe-key-leak`-style finding must
    *   not put its secret into an error message).
@@ -193,7 +197,11 @@ export class EvalService {
         ownerKind: 'agent',
         ownerId: agentId,
         name: finding.title,
-        inputDiff: fileRow.patch,
+        // Headered, not raw: GitHub's patch is hunks only, and a headerless
+        // diff parses to no files at all — every finding the agent produces
+        // would then be dropped by the grounding gate as uncited, making this
+        // case unscoreable forever (see `ensureDiffFileHeader`).
+        inputDiff: ensureDiffFileHeader(fileRow.path, fileRow.patch),
         expectedOutput,
         notes,
         sourceFindingId: findingId,

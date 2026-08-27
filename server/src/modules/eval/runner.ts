@@ -304,6 +304,21 @@ export class EvalRunner {
     // prompt materials already resolved by the caller.
     const diff = parseUnifiedDiff(diffText);
 
+    // A diff with no parseable file header yields NO files, which makes the
+    // grounding gate drop every finding as uncited — so the case would score
+    // a permanent, meaningless pass (`must_not_flag`) or a permanent fail
+    // (`must_find`) no matter what the agent did. Fail it loudly instead, and
+    // do it BEFORE the model call so a broken case costs nothing (AC-23's
+    // spirit). The message is built from the case NAME only — never
+    // `diffText`, which may carry a secret (AC-25 / NFR Секрети).
+    if (diff.files.length === 0) {
+      throw new AppError(
+        'eval_case_unparseable_diff',
+        `Eval case "${row.name}" has no parseable file header — a diff needs a "+++ b/<path>" line, or every finding is dropped as uncited.`,
+        422,
+      );
+    }
+
     const outcome = await reviewPullRequest({
       systemPrompt: agent.systemPrompt,
       model: agent.model,

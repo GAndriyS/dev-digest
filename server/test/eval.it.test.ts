@@ -10,6 +10,7 @@ import { loadConfig } from '../src/platform/config.js';
 import { seed } from '../src/db/seed.js';
 import * as t from '../src/db/schema.js';
 import { MockGitClient, MockGitHubClient, MockLLMProvider, MockSecretsProvider } from '../src/adapters/mocks.js';
+import { parseUnifiedDiff } from '../src/adapters/git/diff-parser.js';
 import { AgentEvalBatch, EvalCase, EvalDashboard, EvalDashboardOverview } from '@devdigest/shared';
 import type {
   EvalRunRecord,
@@ -161,19 +162,32 @@ d('eval module (SPEC-05)', () => {
     return pr!.id;
   }
 
-  /** A minimal, realistic unified-diff patch for `path` — one added line at
-   *  new-side line 12 (matches the grounding-gate fixture pattern already
-   *  proven in `skills-eval.test.ts`). */
-  function makeDiffPatch(path: string): string {
+  /** What GitHub actually stores in `pr_files.patch`: hunks only, NO file
+   *  header. This is the shape that made agent eval scoring inert — a
+   *  headerless diff parses to zero files, so the grounding gate drops every
+   *  finding as uncited. Kept separate from `makeDiffPatch` so the two shapes
+   *  cannot drift: the old fixture was fully headered, which is exactly why
+   *  the suite never caught the bug. */
+  function makeGithubPatch(): string {
     return [
-      `diff --git a/${path} b/${path}`,
-      `--- a/${path}`,
-      `+++ b/${path}`,
       '@@ -10,3 +10,4 @@',
       ' export const config = {',
       '   value: 1,',
       '+  flag: true,',
       ' };',
+    ].join('\n');
+  }
+
+  /** A minimal, realistic unified-diff patch for `path` — one added line at
+   *  new-side line 12 (matches the grounding-gate fixture pattern already
+   *  proven in `skills-eval.test.ts`). Headered, i.e. what a case looks like
+   *  AFTER `ensureDiffFileHeader`. */
+  function makeDiffPatch(path: string): string {
+    return [
+      `diff --git a/${path} b/${path}`,
+      `--- a/${path}`,
+      `+++ b/${path}`,
+      makeGithubPatch(),
     ].join('\n');
   }
   const FIXTURE_LINE = 12;
@@ -1832,5 +1846,203 @@ d('eval module (SPEC-05)', () => {
 
     await app.close();
     await app2.close();
+  });
+
+  // ---- The grounding-header fix ----------------------------------------
+  //
+  // GitHub's `pr_files.patch` is hunks only. A case that stored it raw parsed
+  // to ZERO files, so the citation-grounding gate dropped every finding as
+  // uncited: a `must_not_flag` case passed no matter what the agent did, and a
+  // `must_find` case could never pass. The suite missed it because every
+  // fixture here was already headered — a shape real `pr_files` never has.
+
+  /** One finding at the fixture line, as the model would return it. */
+  function flaggingLlm(path: string, line = FIXTURE_LINE): MockLLMProvider {
+    return new MockLLMProvider('openai', {
+      structured: {
+        verdict: 'comment',
+        summary: 'ok',
+        score: 80,
+        findings: [
+          {
+            id: 'f1',
+            severity: 'CRITICAL',
+            category: 'security',
+            title: 'Hardcoded key',
+            file: path,
+            start_line: line,
+            end_line: line,
+            rationale: 'r',
+            confidence: 0.9,
+          },
+        ],
+      },
+    });
+  }
+
+  it('stores a parseable diff when the pr_files patch is GitHub-shaped (hunks only)', async () => {
+    const app = await makeApp();
+    const workspaceId = await defaultWorkspaceId();
+    const prId = await pr482Id();
+    const agent = await createAgent(app, 'Header Creation');
+
+    const path = 'src/eval/header-creation.ts';
+    // The real shape: no `diff --git`, no `+++`.
+    await pg.handle.db
+      .insert(t.prFiles)
+      .values({ prId, path, additions: 1, deletions: 0, patch: makeGithubPatch() });
+    const findingId = await insertDecidedFinding({
+      prId,
+      workspaceId,
+      agentId: agent.id,
+      file: path,
+      decision: 'accepted',
+    });
+
+    const res = await app.inject({ method: 'POST', url: `/findings/${findingId}/eval-case` });
+    expect(res.statusCode).toBe(201);
+    const created = res.json();
+
+    expect(created.input_diff.startsWith(`diff --git a/${path} b/${path}`)).toBe(true);
+    // The property that actually matters: the stored diff names its file.
+    expect(parseUnifiedDiff(created.input_diff).files.map((f: { path: string }) => f.path)).toEqual([
+      path,
+    ]);
+
+    await app.close();
+  });
+
+  it('FAILS a must_not_flag case when the agent flags — the bug this fix exists for', async () => {
+    const path = 'src/eval/header-negative.ts';
+    const llm = flaggingLlm(path);
+    const app = await makeApp(llm);
+    const workspaceId = await defaultWorkspaceId();
+    const prId = await pr482Id();
+    const agent = await createAgent(app, 'Header Negative');
+
+    await pg.handle.db
+      .insert(t.prFiles)
+      .values({ prId, path, additions: 1, deletions: 0, patch: makeGithubPatch() });
+    const findingId = await insertDecidedFinding({
+      prId,
+      workspaceId,
+      agentId: agent.id,
+      file: path,
+      decision: 'dismissed',
+    });
+    await app.inject({ method: 'POST', url: `/findings/${findingId}/eval-case` });
+
+    const run = await app.inject({ method: 'POST', url: `/agents/${agent.id}/eval-runs` });
+    expect(run.statusCode).toBe(200);
+    const batch = run.json();
+    const result = batch.cases[0];
+
+    // Before the fix these read: grounded_count 0, citation_accuracy 0,
+    // precision 1, pass TRUE — a case that could never fail.
+    expect(result.raw_count).toBe(1);
+    expect(result.grounded_count).toBe(1);
+    expect(result.citation_accuracy).toBe(1);
+    expect(result.precision).toBe(0);
+    expect(result.pass).toBe(false);
+    expect(batch.traces_passed).toBe(0);
+
+    await app.close();
+  });
+
+  it('PASSES a must_find case created from a GitHub-shaped patch when the agent flags the expected line', async () => {
+    const path = 'src/eval/header-positive.ts';
+    const llm = flaggingLlm(path);
+    const app = await makeApp(llm);
+    const workspaceId = await defaultWorkspaceId();
+    const prId = await pr482Id();
+    const agent = await createAgent(app, 'Header Positive');
+
+    await pg.handle.db
+      .insert(t.prFiles)
+      .values({ prId, path, additions: 1, deletions: 0, patch: makeGithubPatch() });
+    const findingId = await insertDecidedFinding({
+      prId,
+      workspaceId,
+      agentId: agent.id,
+      file: path,
+      decision: 'accepted',
+    });
+    await app.inject({ method: 'POST', url: `/findings/${findingId}/eval-case` });
+
+    const run = await app.inject({ method: 'POST', url: `/agents/${agent.id}/eval-runs` });
+    const result = run.json().cases[0];
+
+    expect(result.grounded_count).toBe(1);
+    expect(result.recall).toBe(1);
+    expect(result.precision).toBe(1);
+    expect(result.pass).toBe(true);
+
+    await app.close();
+  });
+
+  it('still drops a finding that cites a line outside the hunk — the gate is not disabled', async () => {
+    const path = 'src/eval/header-offhunk.ts';
+    // Same fixture, but the model cites a line the diff never touched.
+    const llm = flaggingLlm(path, 999);
+    const app = await makeApp(llm);
+    const workspaceId = await defaultWorkspaceId();
+    const prId = await pr482Id();
+    const agent = await createAgent(app, 'Header Off Hunk');
+
+    await pg.handle.db
+      .insert(t.prFiles)
+      .values({ prId, path, additions: 1, deletions: 0, patch: makeGithubPatch() });
+    const findingId = await insertDecidedFinding({
+      prId,
+      workspaceId,
+      agentId: agent.id,
+      file: path,
+      decision: 'accepted',
+    });
+    await app.inject({ method: 'POST', url: `/findings/${findingId}/eval-case` });
+
+    const run = await app.inject({ method: 'POST', url: `/agents/${agent.id}/eval-runs` });
+    const result = run.json().cases[0];
+
+    // Without this, the two tests above would also pass if grounding had
+    // simply been turned off.
+    expect(result.raw_count).toBe(1);
+    expect(result.grounded_count).toBe(0);
+    expect(result.recall).toBe(0);
+    expect(result.pass).toBe(false);
+
+    await app.close();
+  });
+
+  it('errors a hand-pasted headerless case instead of scoring it, without calling the model', async () => {
+    const llm = new MockLLMProvider('openai');
+    const app = await makeApp(llm);
+    const agent = await createAgent(app, 'Header Guard');
+
+    const created = await app.inject({
+      method: 'POST',
+      url: '/eval-cases',
+      payload: {
+        owner_kind: 'agent',
+        owner_id: agent.id,
+        name: 'pasted-without-header',
+        input_diff: '@@ -1 +1 @@\n-a\n+b',
+        expected_output: { findings: [] },
+      },
+    });
+    expect(created.statusCode).toBe(201);
+
+    const run = await app.inject({ method: 'POST', url: `/agents/${agent.id}/eval-runs` });
+    const result = run.json().cases[0];
+
+    expect(result.pass).toBeNull();
+    expect(result.error.code).toBe('eval_case_unparseable_diff');
+    expect(result.error.message).toContain('pasted-without-header');
+    // Never the diff text itself (AC-25 / NFR Секрети).
+    expect(result.error.message).not.toContain('+b');
+    // The guard fires before the provider is ever reached.
+    expect(llm.calls.filter((c) => c.method === 'completeStructured')).toHaveLength(0);
+
+    await app.close();
   });
 });
