@@ -142,6 +142,9 @@ export type EvalRun = z.infer<typeof EvalRun>;
 export const EvalOwnerKind = z.enum(['skill', 'agent']);
 export type EvalOwnerKind = z.infer<typeof EvalOwnerKind>;
 
+export const ExpectationKind = z.enum(['must_find', 'must_not_flag']);
+export type ExpectationKind = z.infer<typeof ExpectationKind>;
+
 export const EvalCase = z.object({
   id: z.string(),
   owner_kind: EvalOwnerKind,
@@ -152,6 +155,25 @@ export const EvalCase = z.object({
   input_meta: z.unknown(),
   expected_output: z.unknown(),
   notes: z.string().nullish(),
+  // Provenance, not a relation: the finding a case was minted from (L06 "Turn
+  // into eval case"). No FK — deleting the finding must not invalidate the
+  // case (onion-architecture Team decision: new FKs are ON DELETE RESTRICT,
+  // which would fight that requirement, so this stays an unenforced pointer).
+  // `.nullish()`, not just `.nullable()`: skill-owned cases (unchanged by this
+  // plan — Non-goals) never set this field, so it must stay optional on the
+  // wire, not force every existing skill eval-case payload to carry it.
+  // `null`/absent = created by hand.
+  source_finding_id: z.string().nullish(),
+  // Server-assigned once at creation, immutable afterwards (AC-55): set from
+  // the finding's decision for a minted case (accepted -> `must_find`,
+  // dismissed -> `must_not_flag`) or derived once from `expected_output` for a
+  // hand-made one (AC-54). Absent/`null` for `owner_kind: "skill"` — the
+  // skills module neither reads nor writes it. `.nullish()`, matching the
+  // `source_finding_id` precedent above: a client never sends this field, and
+  // a sent value is ignored (stripped by the non-strict `POST /eval-cases`
+  // body schema, rejected by the `.strict()` shared `PUT` body) — never
+  // client-settable (AC-53).
+  expectation_kind: ExpectationKind.nullish(),
 });
 export type EvalCase = z.infer<typeof EvalCase>;
 

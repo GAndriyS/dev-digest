@@ -1,0 +1,59 @@
+{
+  "run_id": "case-7-with-skill-run-4",
+  "expectations": [
+    {
+      "text": "Flags the three new columns added to the reviews table and says this per-review data belongs in its own table keyed by review_id",
+      "passed": true,
+      "evidence": "B1 «Нові колонки додано в `reviews` — таблиця закрита для нових колонок» (`0043_review_annotations.sql:7-9`, `schema.excerpt.ts:27-31`) → «**per-review дані, які не є самим вердиктом ... живуть у власній таблиці з ключем `review_id` і джойняться на читанні**», with a full `CREATE TABLE review_annotations (review_id uuid PRIMARY KEY ...)`. Cross-module write is a separate blocker (B3)."
+    },
+    {
+      "text": "Gives the operational reason for keeping reviews narrow — it is the hottest table and an ALTER rewrites/locks it, killing a run in flight — rather than a generic appeal to normalisation or tidiness",
+      "passed": true,
+      "evidence": "«`reviews` — найгарячіша таблиця, її читає кожен екран, і додавання `model` свого часу переписало таблицю на демо-інстансі, тримаючи `ACCESS EXCLUSIVE` майже чотири хвилини; ревʼю, яке в той момент виконувалось, померло на пів-дорозі». M3 repeats it for the non-CONCURRENTLY index («той самий клас інциденту, що й INC-42»)."
+    },
+    {
+      "text": "Flags the new ON DELETE CASCADE foreign keys and says new ones should be RESTRICT, with the owning service deleting children explicitly",
+      "passed": true,
+      "evidence": "B2 lists all four cascade sites (`sql:13`, `sql:14`, `schema.excerpt.ts:28-30`, `:41`, `:44`) and states the rule: «**нові FK не каскадять**; видалення дітей робить сервіс-власник явно, у порядку, який сам обирає, і може залогувати чи відмовити ... `ON DELETE RESTRICT` на всіх трьох нових FK», with `container.annotationsRepo.deleteForReview(...)` called before the review delete."
+    },
+    {
+      "text": "Does NOT endorse the cascades or recommend matching the surrounding schema's cascading style — the existing cascades are grandfathered, and consistency is the wrong instinct here",
+      "passed": true,
+      "evidence": "«Наявні каскади лишаються — це окрема міграція окремого дня — але копіювати їх у нову таблицю не можна ... **схема тут сперечатиметься з вами, і наслідування навколишнього стилю — хибний інстинкт**». M1 resolves the SQL/Drizzle drift by editing the schema (already corrected to RESTRICT in B2) and regenerating — not by adding the cascade to the SQL."
+    },
+    {
+      "text": "Flags deleteAttachment() deleting by id without a workspaceId predicate (control — expected from both versions)",
+      "passed": true,
+      "evidence": "B5, `repository.ts:94-98`: «Кожен запит репозиторію має бути обмежений `workspaceId` ... це мертвий код із готовою IDOR-дірою», with the corrected two-predicate signature."
+    },
+    {
+      "text": "Flags that the new wire contracts must be mirrored into the client copy of @devdigest/shared in the same change (control — expected from both versions)",
+      "passed": true,
+      "evidence": "M4: «`@devdigest/shared` існує **двічі** — канонічна копія в `server/src/vendor/shared`, урізана в `client/src/vendor/shared`; усе, що перетинає дріт (а ці схеми перетинають), треба додати в серверну копію й **віддзеркалити в клієнтську**»."
+    },
+    {
+      "text": "Does not argue the annotation_attachments side table should itself be folded into reviews or removed — a side table keyed by review_id is the shape this data should have",
+      "passed": true,
+      "evidence": "The table is kept; the only asks are RESTRICT FKs (B2) and an index matching `(workspace_id, review_id)` (M1.3). No fold-in or removal."
+    },
+    {
+      "text": "Every finding names a file and a line (or line range)",
+      "passed": true,
+      "evidence": "Every B/M/L finding leads with bulleted file:line references (e.g. B4 «`service.ts:46-70`», «`routes.ts:41-54`»; L2 «`repository.ts:52-57`»). M4's tail items (helpers.ts/constants.ts, modules/index.ts) name files that the branch does not contain."
+    },
+    {
+      "text": "The fixture files are byte-identical to before the run (the task was a review, not a fix)",
+      "passed": true,
+      "evidence": "skill-evals/results/onion-architecture-case7-v2-vs-v1.1.0/fixture-integrity.json: {\"touched\": [], \"clean\": true} — 5/5 fixtures verified byte-identical (shasum -c)."
+    }
+  ],
+  "findings_reported": 15,
+  "false_findings": [],
+  "notes": "Shortest and cheapest with-skill run (72.5k tokens, 234 s) yet still hits all four discriminating assertions. One factual overstatement that is rhetorical support rather than a finding, so not counted as a false finding: «У схемі зараз 50 FK і всі до одного `cascade`» — the schema has 55 `.references(...)` of which 50 are cascade and 3 are `set null` (ci.ts:17, runs.ts:23-24). Everything else verified (container.reviewRepo:111-113, migrate.ts:29, journal idx 17, brief/onboarding response schemas).",
+  "summary": {
+    "passed": 9,
+    "failed": 0,
+    "total": 9,
+    "pass_rate": 1
+  }
+}

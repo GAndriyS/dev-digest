@@ -87,6 +87,9 @@ flowchart TB
   subgraph Brief["PR Why + Risk Brief (L05)"]
     brief["brief<br/>/pulls/:id/brief"]
   end
+  subgraph Eval["Eval Pipeline (L06)"]
+    eval["eval<br/>/eval-cases · /eval-cases/:id<br/>/findings/:id/eval-case<br/>/agents/:id/eval-runs · /agents/:id/eval-cases/:caseId/run<br/>/eval/overview · /eval/dashboard"]
+  end
   subgraph Platform["Platform"]
     settings["settings<br/>/settings · /providers"]
     workspace["workspace<br/>/workspace"]
@@ -202,6 +205,41 @@ flowchart LR
   GROUND --> CACHE2[("pr_brief row<br/>head_sha · generated_at · model")]
   CACHE2 --> READ["GET /pulls/:id/brief<br/>(zero model calls; stale = head_sha mismatch)"]
 ```
+
+`eval` (`modules/eval/`, L06/SPEC-05) owns agent-scoped eval cases: `GET`/
+`POST /eval-cases` and `GET /eval-cases/:id`, plus `POST /findings/:id/eval-case`
+to mint (or return) a case from a decided finding (201 created / 200 existing).
+`PUT /eval-cases/:id` and `DELETE /eval-cases/:id` are **not** registered
+here — `skills/routes.ts` already serves both generically over `eval_cases`
+(filtered by workspace + id only, so it already covers agent-owned rows), and
+Fastify's flat route table would throw `FST_ERR_DUPLICATED_ROUTE` on a second
+registration of the same method+path. `POST /agents/:id/eval-runs` runs an
+agent's whole case set as one batch; `GET /eval/overview` and `GET
+/eval/dashboard?owner_id=` back the Eval Dashboard read models. `GET
+/eval/overview` also carries a per-agent trend series
+(`EvalAgentSummary.trend`) for the overview's sparklines — chronological
+oldest-first, capped at `BATCH_TABLE_LIMIT`, with `traces_total = 0` batches
+excluded, derived at read time from the existing `eval_runs` rows (no
+migration).
+
+`POST /agents/:id/eval-cases/:caseId/run` (SPEC-05, L06 follow-up) runs
+**exactly one** case against its owning agent through the same preamble and
+scoring path as the batch loop (`EvalRunner#runSingleCase`) — one model call,
+persisted as its own `eval_runs` row with `batch_id: null` so it can never be
+folded into a batch aggregate. It 404s when the agent or the case is missing
+or the case isn't owned by that agent, and 409s `no_provider_key` before any
+write; any other failure (provider error, timeout, empty `input_diff`) still
+answers **200** with `pass: null` and an `error: {code, message}` and still
+persists a row (never the diff text). Because the row's `batch_id` is `null`,
+it stays invisible to `recent_batches`, `trend`, `alert`, `current` and `GET
+/eval/overview` — the one read widened to see it is `GET
+/eval/dashboard`'s `recent_runs` (`EvalRepository#latestBatchlessRunPerCase`).
+`eval_cases.expectation_kind` (`must_find` / `must_not_flag`) is assigned by
+the server exactly once — from the finding's accept/dismiss decision when a
+case is minted via `POST /findings/:id/eval-case`, or derived from
+`expected_output` at creation via `POST /eval-cases` — and is **immutable**
+afterwards: neither `PUT /eval-cases/:id` nor any other route can change it,
+and it stays `null` for `owner_kind: "skill"` cases.
 
 ## Environment
 

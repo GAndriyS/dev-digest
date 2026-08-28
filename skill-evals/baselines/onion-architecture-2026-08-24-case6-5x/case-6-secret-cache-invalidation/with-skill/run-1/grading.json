@@ -1,0 +1,59 @@
+{
+  "run_id": "case-6-with-skill-run-1",
+  "expectations": [
+    {
+      "text": "Flags that _slack is cached but never cleared, so a rotated SLACK_BOT_TOKEN keeps using the old client until the process restarts",
+      "passed": true,
+      "evidence": "Finding 2: «`_slack` не скидається в `invalidateSecretCaches()` — ротація токена не діє… після ротації токена процес до рестарту продовжить ходити відкликаним» with the elided method body quoted and `container.excerpt.ts:49/:77/:106-110` cited."
+    },
+    {
+      "text": "Names invalidateSecretCaches() as the place the new field must be added, and shows it knows that method is what the settings route calls after writing a secret",
+      "passed": true,
+      "evidence": "Both halves: «Додати `this._slack = undefined;` у `invalidateSecretCaches()`» AND «Метод — не sweep, а захардкоджений перелік полів… його викликає `server/src/modules/settings/routes.ts:84` після того, як користувач зберіг новий ключ». Line 84 is the real call site."
+    },
+    {
+      "text": "Flags that slack() never checks this.overrides.slack and that ContainerOverrides has no slack entry, so the port cannot be substituted",
+      "passed": true,
+      "evidence": "Finding 1: «`container.slack()` не перевіряє `overrides.slack` — порт неможливо підмінити», plus the step table in finding 4 marking «`slack?: SlackClient` у `ContainerOverrides` (:27–39) | **немає**»."
+    },
+    {
+      "text": "Connects the test's vi.mock of the adapter module path to the missing ContainerOverrides entry as its cause, rather than flagging the vi.mock alone as a style problem",
+      "passed": true,
+      "evidence": "Finding 1 ends «Наслідок видно одразу нижче, у пункті 5: тест мусив піти в `vi.mock` файлу адаптера, бо іншого входу йому не лишили»; finding 4 repeats «пункти 1 та 5 — прямий наслідок»."
+    },
+    {
+      "text": "Flags that no MockSlackClient was added to adapters/mocks.ts (control — expected from both versions)",
+      "passed": true,
+      "evidence": "Finding 4 table: «`MockSlackClient` у `adapters/mocks.ts` | **немає** (див. `mocks.excerpt.ts` — 12 експортів, жодного slack)»."
+    },
+    {
+      "text": "Flags listRecent() querying by prId without a workspaceId predicate (control — expected from both versions)",
+      "passed": true,
+      "evidence": "Finding 12: «`listRecent(prIds)` без `workspaceId` — крос-воркспейсний витік… Єдиний метод репозиторію без скоупу воркспейса» at `repository.ts:90-99`."
+    },
+    {
+      "text": "Does not claim the test file is misnamed — publisher.it.test.ts already carries the .it. segment the integration lane needs",
+      "passed": true,
+      "evidence": "Finding 16 states the opposite of a misnaming claim: «Ім'я `*.it.test.ts` — правильне, лейни діляться саме по цьому глобу». Only the folder and the missing Docker gate are objected to."
+    },
+    {
+      "text": "Every finding names a file and a line (or line range)",
+      "passed": true,
+      "evidence": "Every finding about existing code carries file + line (e.g. `service.ts:137`, `repository.ts:90-99`, `publisher.it.test.ts:9-13`). Findings 13-14 name files only, but they are absence-of-file findings (module not registered, table/contracts missing) where no line exists to cite."
+    },
+    {
+      "text": "The fixture files are byte-identical to before the run (the task was a review, not a fix)",
+      "passed": true,
+      "evidence": "Pre-decided by the grader: `shasum -c` over all 6 fixtures returned 6/6 OK."
+    }
+  ],
+  "findings_reported": 19,
+  "false_findings": [],
+  "notes": "The strongest of the with-skill runs on the blind-spot pair: it not only names invalidateSecretCaches() and settings/routes.ts:84 but adds the correct secondary observation that SLACK_BOT_TOKEN is absent from SecretKey and SECRET_KEY_BY_PROVIDER, so there is no UI path to rotate it at all — both verified true in the repo. All claims I checked against the real tree hold (AppError.statusCode, ReviewRepository.getReview/listReviews, 14 existing *.it.test.ts under server/test/, no-orphans severity warn). Only cosmetic slips: settings rate-limit cited as :71 (actually :72).",
+  "summary": {
+    "passed": 9,
+    "failed": 0,
+    "total": 9,
+    "pass_rate": 1
+  }
+}

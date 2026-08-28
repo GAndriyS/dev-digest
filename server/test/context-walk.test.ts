@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it, expect, afterEach } from 'vitest';
@@ -18,7 +18,12 @@ describe('walkContextFiles', () => {
   });
 
   async function tmp(prefix: string): Promise<string> {
-    const d = await mkdtemp(join(tmpdir(), prefix));
+    // `realpath` on purpose: on macOS `tmpdir()` is `/var/folders/…`, a symlink
+    // to `/private/var/folders/…`. The walker resolves the real path of every
+    // candidate and rejects anything that escapes the root it was handed — so a
+    // symlinked root makes every read fail with "escapes the clone root", on
+    // this machine only. Linux CI has no such symlink and never saw it.
+    const d = await realpath(await mkdtemp(join(tmpdir(), prefix)));
     dirs.push(d);
     return d;
   }
@@ -195,7 +200,12 @@ describe('classifyAndRead', () => {
     await Promise.all(dirs.splice(0).map((d) => rm(d, { recursive: true, force: true })));
   });
   async function tmp(prefix: string): Promise<string> {
-    const d = await mkdtemp(join(tmpdir(), prefix));
+    // `realpath` on purpose: on macOS `tmpdir()` is `/var/folders/…`, a symlink
+    // to `/private/var/folders/…`. The walker resolves the real path of every
+    // candidate and rejects anything that escapes the root it was handed — so a
+    // symlinked root makes every read fail with "escapes the clone root", on
+    // this machine only. Linux CI has no such symlink and never saw it.
+    const d = await realpath(await mkdtemp(join(tmpdir(), prefix)));
     dirs.push(d);
     return d;
   }

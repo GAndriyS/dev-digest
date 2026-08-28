@@ -129,6 +129,9 @@ export type EvalRun = z.infer<typeof EvalRun>;
 export const EvalOwnerKind = z.enum(['skill', 'agent']);
 export type EvalOwnerKind = z.infer<typeof EvalOwnerKind>;
 
+export const ExpectationKind = z.enum(['must_find', 'must_not_flag']);
+export type ExpectationKind = z.infer<typeof ExpectationKind>;
+
 export const EvalCase = z.object({
   id: z.string(),
   owner_kind: EvalOwnerKind,
@@ -139,6 +142,18 @@ export const EvalCase = z.object({
   input_meta: z.unknown(),
   expected_output: z.unknown(),
   notes: z.string().nullish(),
+  // Provenance, not a relation: the finding a case was minted from (L06 "Turn
+  // into eval case"). No FK — deleting the finding must not invalidate the
+  // case. `.nullish()`, not just `.nullable()`: skill-owned cases (unchanged
+  // by this plan) never set this field, so it stays optional on the wire.
+  // `null`/absent = created by hand.
+  source_finding_id: z.string().nullish(),
+  // Server-assigned once at creation, immutable afterwards (AC-55): accepted
+  // finding -> `must_find`, dismissed finding -> `must_not_flag`, hand-made
+  // case -> derived once from `expected_output` (AC-54). Absent/`null` for
+  // `owner_kind: "skill"`. `.nullish()`, matching `source_finding_id` above —
+  // never client-settable, a sent value is ignored (AC-53).
+  expectation_kind: ExpectationKind.nullish(),
 });
 export type EvalCase = z.infer<typeof EvalCase>;
 
@@ -417,3 +432,32 @@ export const AgentSkillLink = z.object({
   order: z.number().int(),
 });
 export type AgentSkillLink = z.infer<typeof AgentSkillLink>;
+
+// The immutable config snapshot captured in `agent_versions` whenever an agent's
+// config changes (everything but `enabled`). Mirrors the shape written by the
+// agents repository — provider/model/prompt/output_schema/strategy/gate/repo_intel
+// plus the ordered skill ids linked at snapshot time. Used for reproducibility
+// (eval replays a past version) and for surfacing an agent's edit history.
+// Mirrored from `server/src/vendor/shared/contracts/knowledge.ts` (fix pass,
+// item 9) — additive only, the client copy was missing it even though the
+// server route (`GET /agents/:id/versions/:version`) has served this shape
+// since before this plan.
+export const AgentVersionConfig = z.object({
+  provider: Provider,
+  model: z.string(),
+  system_prompt: z.string(),
+  output_schema: z.unknown().nullish(),
+  strategy: ReviewStrategy,
+  ci_fail_on: CiFailOn,
+  repo_intel: z.boolean(),
+  skills: z.array(z.string()),
+});
+export type AgentVersionConfig = z.infer<typeof AgentVersionConfig>;
+
+export const AgentVersion = z.object({
+  agent_id: z.string(),
+  version: z.number().int(),
+  config: AgentVersionConfig,
+  created_at: z.string(),
+});
+export type AgentVersion = z.infer<typeof AgentVersion>;

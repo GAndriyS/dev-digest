@@ -5,7 +5,7 @@ import { SkillImportRequest, SkillInput, SkillPatch, SkillType } from '@devdiges
 import { getContext } from '../_shared/context.js';
 import { IdParams } from '../_shared/schemas.js';
 import { IMPORT_BODY_LIMIT_BYTES } from './constants.js';
-import { ExpectedEvalOutput } from './helpers.js';
+import { ExpectedEvalOutput as SkillExpectedEvalOutput } from './helpers.js';
 import { SkillsService } from './service.js';
 
 /**
@@ -55,19 +55,73 @@ const ListSkillsQuery = z.object({
 /**
  * An eval case. `expected_output` is validated against the shape the comparator
  * actually reads, so a malformed expectation fails at the edge (422) instead of
- * silently scoring every run against "expected nothing".
+ * silently scoring every run against "expected nothing". This shape is for
+ * `POST /skills/:id/eval-cases` ONLY — it always creates a SKILL-owned case, so
+ * it keeps the skill-only (severity-required) expectation shape.
  */
 const EvalCaseBody = z.object({
   name: z.string().min(1),
   input_diff: z.string().min(1),
   input_files: z.unknown().optional(),
   input_meta: z.unknown().optional(),
-  expected_output: ExpectedEvalOutput.optional(),
+  expected_output: SkillExpectedEvalOutput.optional(),
   notes: z.string().nullish(),
 });
+
+/**
+ * Mirrors `server/src/modules/eval/helpers.ts#ExpectedFinding`/
+ * `ExpectedEvalOutput` (the agent-owned scorer's expectation shape) —
+ * deliberately NOT imported from there: `no-cross-module-internals`
+ * (`.dependency-cruiser.cjs`) only publishes a module's `constants.ts`/
+ * `types.ts` across a module boundary, and `helpers.ts` is not on that list.
+ * Duplicating this small, stable zod shape here is cheaper than widening the
+ * boundary, and matches the plan's own "two scorers stay independent"
+ * decision (Non-goals) for the skill vs. agent comparators. `.passthrough()`
+ * so unrecognised extra keys (e.g. `severity`/`category` on an agent case
+ * minted from a finding) are never stripped.
+ */
+const AgentExpectedFinding = z
+  .object({
+    file: z.string(),
+    start_line: z.number().int(),
+    end_line: z.number().int(),
+    severity: z.string().optional(),
+    category: z.string().optional(),
+    title: z.string().optional(),
+  })
+  .passthrough();
+const AgentExpectedEvalOutput = z.object({ findings: z.array(AgentExpectedFinding) });
+
+/**
+ * `PUT /eval-cases/:id` is registered here but generic across BOTH owners —
+ * `SkillsRepository#updateEvalCase` filters by workspace+id only, never
+ * `owner_kind` (see the doc comment on `eval/routes.ts` for why there is no
+ * second, agent-scoped `PUT`). Its `expected_output` must therefore accept
+ * EITHER shape without stripping fields from the other: the agent shape is
+ * tried FIRST (a `z.union` takes the first branch that parses), so a record
+ * carrying BOTH `severity` and `file`/line fields — a hand-authored or "Turn
+ * into eval case"-minted agent case — matches the `.passthrough()` agent
+ * schema and keeps every key, including `file`/`start_line`/`end_line` that
+ * the skill-only shape would otherwise strip. A skill-owned record (severity,
+ * no `file`) still matches the second branch. A body matching NEITHER shape
+ * still 422s — `z.union` fails closed when every branch fails.
+ */
+const EvalCasePatchExpectedOutput = z.union([AgentExpectedEvalOutput, SkillExpectedEvalOutput]);
+
 // Strict for the same reason as `SkillPatch`: a typo'd key would otherwise be
-// stripped, match nothing, and answer 200 as if the edit had landed.
-const EvalCasePatchBody = EvalCaseBody.partial()
+// stripped, match nothing, and answer 200 as if the edit had landed. Built
+// independently from `EvalCaseBody` (not `.partial()` of it) because its
+// `expected_output` needs the wider union, not the skill-only shape.
+const EvalCasePatchBody = z
+  .object({
+    name: z.string().min(1),
+    input_diff: z.string().min(1),
+    input_files: z.unknown().optional(),
+    input_meta: z.unknown().optional(),
+    expected_output: EvalCasePatchExpectedOutput.optional(),
+    notes: z.string().nullish(),
+  })
+  .partial()
   .strict()
   .refine((v) => Object.keys(v).length > 0, {
     message: 'Provide at least one field to update',
@@ -194,7 +248,8 @@ export default async function skillsRoutes(appBase: FastifyInstance) {
 
   app.delete('/eval-cases/:id', { schema: { params: IdParams } }, async (req) => {
     const { workspaceId } = await getContext(app.container, req);
-    return { deleted: await service.deleteEvalCase(workspaceId, req.params.id) };
+    await service.deleteEvalCase(workspaceId, req.params.id);
+    return { ok: true };
   });
 
   app.post('/eval-cases/:id/run', { schema: { params: IdParams } }, async (req) => {

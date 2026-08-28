@@ -1,0 +1,795 @@
+# evals
+
+Evals for the DevDigest Claude Code harness — **skills** (`.claude/skills/*`), **subagents**
+(`.claude/agents/*`), and **workflow-level** behavior (`CLAUDE.md` + on-disk config). Plain
+**vitest + the Claude Agent SDK**, in the same toolchain as the rest of the repo (`pnpm`).
+
+Runs on the Claude Code **subscription** by default — the API key is stripped from spawned
+processes, so calls use the login / credential helper, never per-token API billing. No external
+services, no third-party judge.
+
+The **same tests** can also run on **OpenRouter** (DeepSeek and other cheap models) by setting
+`EVAL_BACKEND=openrouter` — no code changes, just env vars. See
+[Runners: Claude Code vs OpenRouter](#runners-claude-code-default-vs-openrouter) below.
+
+> Built to the *eval statistics upgrade* plan (`evals/docs/eval-stats-upgrade.md`): persisted
+> per-run records, per-practice statistics, and a with-vs-without-artifact benchmark, on top of
+> the modular `src/` engine described below.
+
+## Install (from the lesson template)
+
+This package is self-contained — it only adds the `evals/` folder and never touches `server/`
+or `client/`, so it merges into your repo cleanly:
+
+```bash
+git fetch upstream
+git merge upstream/l06-evals    # adds evals/ only — no conflicts
+cd evals && pnpm install
+```
+
+If your repo has diverged too far for a clean merge, just copy the `evals/` directory in whole
+and commit it. It is deliberately **not** an npm package: it reads your `.claude/skills/*` and
+`.claude/agents/*` by relative path, and you write cases in it — so the code sits in front of
+you, not hidden in `node_modules`.
+
+## Three tiers
+
+1. **Static gate (no model)** — `pnpm eval:quality` checks SKILL.md structure/frontmatter/links,
+   every agent's frontmatter (`name` is the dispatch address; `tools` is what the eval grants), and
+   the [A/B pairs](#ab-pairs--the-manipulation-is-equipment-too).
+2. **Quality evals (LLM-judged)** — per skill/agent, isolate the artifact's *content* and judge it.
+3. **Workflow evals (trace-asserted)** — load the real harness and check *systemic* behavior:
+   does a subagent get dispatched, does a skill activate, does `CLAUDE.md` change what gets read.
+
+On top of the tiers sit three statistical tools: **repeat** (run one thing N times → stability),
+**delta** (diff two labeled repeat runs → version-vs-version), **benchmark** (run with vs without
+the artifact → measured lift). All three read the same persisted `results/records.jsonl`.
+
+## Two ways to run a case (and why)
+
+- **`skillTask` / `agentTask`** inject the artifact's content as the system prompt and load **no**
+  on-disk config. This isolates the artifact's *content* — the right question for skill/agent
+  quality. (Relies on the SDK default `settingSources: []`, which reads nothing from disk.)
+- **`workflowTask`** loads the real harness (`settingSources: ["project"]` → `CLAUDE.md` + project
+  skills/agents). The *systemic* tier: does a skill actually **activate**, does a subagent actually
+  get **dispatched**, does `CLAUDE.md` change behavior? A content-only eval can't see this.
+
+## Two scorers (both subscription-only)
+
+- `patternMatch(output, expected)` — deterministic substring coverage, no model. Use it as a
+  cheap first tier: don't pay the judge for what a substring settles. When a case has a `grounding`
+  gate it runs first and must equal `1.0`; the judge is skipped if it fails (cheap-tier economy).
+- `llmJudge(output, practices)` — one structured `query()` → strict JSON, binary PASS/FAIL per
+  practice, PASS only with a verbatim evidence quote (the LLM Message Pattern). The judge defaults
+  to a **stronger family** (`EVAL_JUDGE_MODEL=claude-sonnet-5`) than the task (`claude-haiku-4-5`)
+  to soften single-model self-preference. On a shared subscription families still overlap — the
+  real mitigations are *blind + binary + verbatim evidence*.
+
+## Runners: Claude Code (default) vs OpenRouter
+
+The same eval tests run against two backends, chosen by `EVAL_BACKEND` — you never edit a test to
+switch. The model name is a **separate** knob (`EVAL_MODEL` / `EVAL_JUDGE_MODEL`), and its format
+differs per backend.
+
+| `EVAL_BACKEND` | Runtime | Auth | Model name format |
+|---|---|---|---|
+| `subscription` *(default)* | Claude Agent SDK on the Claude Code login | none (API key stripped) | Anthropic ID — `claude-haiku-4-5` |
+| `openrouter` | see split below | `OPENROUTER_API_KEY` | OpenRouter slug — `deepseek/deepseek-chat`, `anthropic/claude-haiku-4.5`, `google/gemini-...` |
+
+**Why the backend splits by tier.** OpenRouter's native "Anthropic Skin" only serves *Anthropic*
+models, and only the Claude Agent SDK produces the subagent/skill/file-read trace the workflow tier
+asserts on. So under `openrouter`:
+
+- **Content tier** (`skillTask` + the LLM judge) → a **direct** OpenAI-compatible call
+  (`src/runtime/run-openrouter.ts`, mirroring `reviewer-core/src/llm/openrouter.ts`). DeepSeek and
+  any non-Anthropic model work here **natively, no proxy**. Routed via `src/runtime/dispatch.ts`.
+- **Tool tiers** (`agentTask`, `workflowTask`) → stay on the Claude Agent SDK, pointed at
+  `ANTHROPIC_BASE_URL`. This works out-of-the-box only with `anthropic/*` slugs (the Skin). Cheap
+  **non-Anthropic** models here need a LiteLLM translating proxy — **now bundled** under
+  `evals/proxy/`. Start it (`pnpm proxy:up`) and point `OPENROUTER_BASE_URL` at it
+  (`http://localhost:4000`). See [Running tool tiers on cheap models](#running-tool-tiers-on-cheap-models-litellm-proxy).
+
+The default (`subscription`) path is untouched — the dispatcher only diverges when
+`EVAL_BACKEND=openrouter`.
+
+### Examples — the same `pnpm eval:skills`, three ways
+
+```bash
+# 1. Local, Anthropic (default — set nothing)
+pnpm eval:skills
+
+# 2. OpenRouter + DeepSeek (native, no proxy)
+EVAL_BACKEND=openrouter \
+EVAL_MODEL=deepseek/deepseek-chat \
+EVAL_JUDGE_MODEL=deepseek/deepseek-chat \
+OPENROUTER_API_KEY=sk-or-... \
+pnpm eval:skills
+
+# 3. OpenRouter, but an Anthropic model via the Skin
+EVAL_BACKEND=openrouter \
+EVAL_MODEL=anthropic/claude-haiku-4.5 \
+OPENROUTER_API_KEY=sk-or-... \
+pnpm eval:skills
+```
+
+> **Gotcha:** always set `EVAL_MODEL` together with `EVAL_BACKEND=openrouter` — the default
+> `claude-haiku-4-5` is an Anthropic ID and OpenRouter won't find it. Use an OpenRouter slug.
+
+### The OpenRouter engine — running EVERY tier (incl. tool tiers) on cheap models
+
+The content tier talks to OpenRouter natively, but the **tool tiers** (`agentTask`, `workflowTask`)
+run inside the Claude Agent SDK, which speaks the Anthropic wire protocol. OpenRouter's Anthropic
+Skin only serves that shape for `anthropic/*` slugs — so to back the tool tiers with a cheap
+non-Anthropic model (Gemini Flash, DeepSeek, …) the SDK is routed through the bundled **LiteLLM
+translating proxy**. This is the "engine" that makes cheap CI runs possible; it lives entirely
+inside `evals/` and needs no code changes to use.
+
+**Engine pieces** (all in `evals/`):
+
+| File | Role |
+|------|------|
+| `proxy/litellm.config.yaml` | LiteLLM config: a wildcard route forwarding any `EVAL_MODEL` slug to OpenRouter, in no-auth mode |
+| `proxy/docker-compose.yml` | Runs `ghcr.io/berriai/litellm` on `:4000`, both wire formats on one port |
+| `scripts/litellm-proxy.sh` | `up` / `down` / `wait` wrapper (reads `OPENROUTER_API_KEY` from env, else `~/.devdigest/secrets.json`) |
+| `src/runtime/env.ts` | Points the SDK's `ANTHROPIC_BASE_URL` at `OPENROUTER_BASE_URL` (the proxy) under `EVAL_BACKEND=openrouter` |
+| `src/runtime/run-openrouter.ts` | Content tier's direct OpenAI-format call — also honours `OPENROUTER_BASE_URL` |
+
+The proxy accepts **both** shapes on one port — `POST /v1/messages` (Anthropic, from the SDK) and
+`POST /chat/completions` (OpenAI, from the content tier) — and translates each to the target model
+on OpenRouter. Because `OPENROUTER_BASE_URL` overrides the base for **both** tiers, a single env var
+routes the whole suite through it. `pnpm proxy:*` are thin wrappers over the script.
+
+```bash
+# 1. Start the proxy (Docker). Reads OPENROUTER_API_KEY from env or ~/.devdigest/secrets.json.
+pnpm proxy:up                                  # → http://localhost:4000
+
+# 2. Point every tier at it and run the workflow tier on a cheap model
+EVAL_BACKEND=openrouter \
+OPENROUTER_BASE_URL=http://localhost:4000 \
+OPENROUTER_API_KEY=sk-or-... \
+EVAL_MODEL=google/gemini-2.5-flash \
+EVAL_JUDGE_MODEL=google/gemini-2.5-flash \
+pnpm eval:workflow
+
+# 3. Stop it when done
+pnpm proxy:down
+```
+
+`EVAL_MODEL` is forwarded verbatim to OpenRouter (the wildcard route in `proxy/litellm.config.yaml`),
+so you never edit config to try a new model. The proxy runs in **no-auth** mode — do not expose the
+port publicly.
+
+#### Which cheap model — verified
+
+The tool tiers assert on real tool use (subagent dispatch, doc reads, skill activation), so the
+model has to be capable enough to actually *do* it, not just be reachable. Measured on the bundled
+workflow cases:
+
+| Model | Content + routing/read traces | Subagent **dispatch** (`Agent`→ `architecture-reviewer`) |
+|-------|------------------------------|-----------------------------------------------------------|
+| `google/gemini-2.5-flash` | ✅ | ✅ **recommended** |
+| `deepseek/deepseek-chat` | ✅ | ❌ does the work inline instead of dispatching |
+| `openai/gpt-4.1-mini` | ✅ | ❌ |
+
+**Three caveats for the tool tiers on cheap models:**
+
+1. **Rate-limit flakiness under load.** Running the whole suite back-to-back can get throttled by
+   OpenRouter, degrading runs to a single turn (so a dispatch that passes in isolation may fail in a
+   full run). Run tool-tier cases **sequentially** and/or with retries; keep concurrency low in CI.
+2. **`activation` cases are behaviour-shaped.** They assert the model invokes the **Skill** tool.
+   A capable model may instead perform the underlying action directly (e.g. `Write` the insight
+   file), which the test counts as a miss even though it did the right thing. Treat `activation` as
+   **indicative, not blocking** when running on non-Anthropic models. (On the Anthropic path the
+   model invokes the Skill tool, so it passes.)
+3. **A threshold is calibrated against a model, not only against an artifact.** The bundled
+   agent cases sit at `threshold: 1`, set on `claude-haiku-4-5`. On `google/gemini-2.5-flash` the
+   same cases measured 0.83 / 0.5 / 0 in CI (2026-08-25), mostly losing the attribution practice.
+   That is a real difference between models, not a regression in the artifact — so either run the
+   gate on the model its bar was set against, or lower the bar deliberately and treat the two
+   numbers as separate series.
+
+> **Isolation note.** `workflowTask` runs with `settingSources:["project"]` + `bypassPermissions`
+> against the live repo. A model that decides to `Write` can touch real files (e.g. your local
+> memory dir) even though `WORKFLOW_ALLOWED_TOOLS` is a read-only list. In CI this is harmless (the
+> checkout is disposable); locally, prefer the Anthropic path or a throwaway clone for the workflow
+> tier.
+
+### In CI — `.github/workflows/evals.yml` (per-PR)
+
+This repo runs the evals on every pull request that touches the harness. The workflow file is the
+source of truth; what follows is why it is shaped the way it is.
+
+**Prerequisite (once):** put the OpenRouter key in the repo's **Actions secrets** as
+`OPENROUTER_API_KEY` (Settings → Secrets and variables → Actions).
+
+**Five jobs.**
+
+| Job | Fires when | Runs | Cost |
+|---|---|---|---|
+| `gate` | any PR matching the path filter, **forks included** | `pnpm typecheck`, `pnpm eval:quality`, `pnpm vitest run src/` | 0 tokens |
+| `detect` | same | `evals/scripts/ci-detect.mjs` over the PR diff | 0 tokens |
+| `skills` | matrix, one leg per changed skill that has evals | `pnpm vitest run skills/<name>` | content tier |
+| `agents` | matrix, one leg per changed agent that has evals | `pnpm vitest run agents/<name>` | tool tier + proxy |
+| `workflow` | an `AGENTS.md`/`CLAUDE.md`, any agent, or the engine changed | `pnpm eval:workflow` | tool tier + proxy |
+
+**The `paths:` filter does not do the routing.** It only decides whether the workflow starts.
+Which suite runs comes from `ci-detect.mjs`, which reads the actual diff and emits
+`skills` / `agents` / `run_workflow` / `skipped_skills` / `skipped_agents`. Three of its rules are
+easy to get wrong, so they are pinned by `src/ci-detect.test.ts` in the model-free lane:
+
+- The workflow trigger matches **any `AGENTS.md`**, at any depth — not just `CLAUDE.md`. In this
+  repo `CLAUDE.md` is a two-line `@AGENTS.md` import, so a detector keyed on that literal name is a
+  trigger that cannot fire.
+- `.claude/agents/README.md` is the catalog, not an agent.
+- The frozen half of an [A/B pair](#ab-pairs--the-manipulation-is-equipment-too) never enters the
+  blocking matrix — it is *supposed* to score lower. Editing either half is already caught by
+  `checkPairs()` in the zero-token `gate`.
+
+**A changed artifact with no evals is not a failure.** It prints `SKIP <name> (no evals)` in the
+`detect` job's summary and nothing runs for it. Most skills and agents are in that state; that is
+the designed behaviour, not a gap.
+
+**Models — one place to change them.** The `Resolve models` step in the `detect` job holds every
+default and hands them to the other jobs as outputs:
+
+| Tier | Model under test | Judge | Proxy |
+|---|---|---|---|
+| content (`skills`) | `anthropic/claude-haiku-4.5` | `anthropic/claude-sonnet-5` | no — goes direct |
+| tool (`agents`, `workflow`) | `anthropic/claude-haiku-4.5` | `anthropic/claude-sonnet-5` | no — the Anthropic Skin |
+
+**Why no tier runs on a cheap model, though the engine fully supports it.** A threshold is a
+property of the model as much as of the artifact. These cases carry thresholds up to `1.0`, set
+against `claude-haiku-4-5`. Measured in CI on 2026-08-25: the agent cases scored 0.83 / 0.5 / 0 on
+`google/gemini-2.5-flash`, and the skill cases 0 / 0.25 / 0.6 on `deepseek/deepseek-chat` against
+thresholds of 0.75–0.8. Red for a model reason is not a harness regression, and a check that goes
+red for reasons nobody can act on stops being read. **Run a gate on the model its bar was set
+against** — or lower the bar deliberately and know that the two numbers no longer belong to the
+same series.
+
+DeepSeek is worth one more sentence, because it is the trap: it *looked* like a 4-of-5 pass on two
+consecutive runs, and only turned into 2 of 5 when the judge was restored to `claude-sonnet-5`.
+The cheap task model and the cheap judge were flattering each other.
+
+**Do not trade the judge down for cost — it is the instrument, not the subject.** The judge was
+briefly set to `deepseek/deepseek-chat`: cheap, and cross-family with the task, which looked like
+the [Two scorers](#two-scorers-both-subscription-only) self-preference argument applied. It was
+not. Against a local baseline of 100% at n=5 with `claude-sonnet-5`, attribution kept failing in
+CI — frequently with an **empty evidence string**, and worst on absence-shaped practices ("does
+not invent a violation"), which are exactly what a weaker judge handles badly. Two variables had
+moved at once (backend and judge), so neither run proved anything on its own. The judge is back to
+the documented default, which leaves one variable for the next run to answer.
+
+**Overriding the model for one run.** `workflow_dispatch` takes `content_model`, `tool_model` and
+`judge_model` (OpenRouter slugs) plus `force_workflow_tier`. Nothing is exposed in a UI beyond that
+dialog. A manual run has **no diff to route from**, so it routes *every* artifact that has evals
+rather than nothing — a model switch needs a target, and the repo's own rule (["Which change →
+which run"](#which-change--which-run)) says a model change calls for the whole suite. The skip
+rules are unchanged: no evals and A/B baselines are still skipped. Setting `tool_model` to a
+non-Anthropic slug additionally **brings the LiteLLM proxy up automatically** — the proxy steps
+are conditional on `startsWith(tool_model, 'anthropic/')`, so the default path starts no container
+at all. Read a cheap-model tool-tier run as indicative, never as a gate.
+
+**Blocking policy.** `gate` is the required check. `skills` and `agents` go red on failure but are
+deliberately *not* required yet — promote them after two consecutive triggered green runs.
+`continue-on-error` is not the ramp, for a simpler reason than it first appears: it does **not**
+paint a job green (a job that fails with it still has conclusion `failure` — confirmed on the
+2026-08-25 run); what it does is stop the *run* from failing. An advisory job therefore cannot
+hold the Merge button, which is exactly what these two are meant to grow into. `workflow` does
+carry it, for the one honest reason — `activation` cases are behaviour-shaped and a capable model
+may do the action directly instead of invoking the `Skill` tool (see the caveats above).
+
+**Fork PRs** get no secrets, so only `gate` runs; the other jobs skip via a job `if:` and `gate`
+writes one line into the step summary saying why.
+
+Notes:
+- The default path starts no container. When a dispatch override does start the proxy, ubuntu
+  runners ship Docker + `docker compose` so it needs no extra setup, and the container reads
+  `OPENROUTER_API_KEY` straight from the job `env`.
+- The tool-tier matrices run `max-parallel: 1` — OpenRouter throttling degrades a session to a
+  single turn, which turns a real dispatch into a spurious failure.
+- Each model-backed job uploads `evals/results` as an artifact (7 days). A red run is unreadable
+  without it.
+- Cost, **measured** on the first full run (2026-08-25, all three tiers, 19 records): 324.5k
+  input + 15.3k output tokens and ~227 s of model time — roughly $0.10–0.15 at list prices, well
+  under the $0.2–0.5 that had been estimated. A PR touching one skill is a fraction of that.
+- A dispatched subagent does not inherit `EVAL_MODEL`: it resolves its own frontmatter alias
+  (`model: sonnet`, `model: opus`) to an Anthropic model id, which no redirected backend knows.
+  `src/runtime/env.ts` pins `ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU}_MODEL` to `EVAL_MODEL` for this
+  reason — without it the workflow tier's dispatch dies on
+  `claude-opus-4-8 is not a valid model ID`.
+
+## Module layout — `src/` (the engine)
+
+The engine is split by responsibility with one-directional dependencies (config knows nothing of
+runtime; runtime nothing of scoring; the `dsl/` composes everything). Eval files import from the
+single barrel `src/index.ts`, never by deep relative path.
+
+```
+src/
+  config.ts             # all tunables: EVAL_MODEL, EVAL_JUDGE_MODEL, MAX_TURNS, EVAL_CONFIG,
+                        #   thresholds, flaky bounds (20/80), cost-regression ratio (125%), tool allow-lists
+  ansi.ts               # color constants + color() helper (one place owns terminal styling)
+  git.ts                # gitInfo() — short sha + dirty flag (shared by record.ts and repeat.ts)
+  runtime/
+    env.ts              # subscriptionEnv() — strips ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN
+    run-claude.ts       # runClaude() — the headless turn-loop; Result / RunOptions / Metrics types
+  artifacts/
+    paths.ts            # REPO_ROOT / SKILLS_DIR / AGENTS_DIR / RESULTS_DIR anchors
+    load.ts             # skillContent() (SKILL.md + references/*.md), agentContent()
+    fixture.ts          # fixtureReader(import.meta.url) — inline a case's fixtures into a prompt
+    worktree.ts         # materializedWorktree() — fixtures/tree/ + diff applied in a real git worktree
+    pairs.ts            # A/B pairs (source ↔ frozen variant): hashes + "the dimension is gone"
+    pairs.test.ts       # the pair guard, as a test (no model)
+  tasks.ts              # skillTask / agentTask / workflowTask — compose runtime + artifacts;
+                        #   skill/agentTask skip injection under EVAL_CONFIG=baseline (benchmark lift)
+  scoring/
+    pattern-match.ts    # patternMatch() — deterministic substring coverage
+    llm-judge.ts        # llmJudge(), parseVerdict(), Verdict, the judge rubric
+  logging/
+    log.ts              # logTrace() (tools/subagents/skills/reads/metrics), logVerdict() (per-practice)
+  records/
+    record.ts           # record() → results/records.jsonl + full output to results/outputs/<run>/<slug>.md
+    stats.ts            # pure: calcStats(), loadRecords(), aggregate(), byConfig(), computeFlags()
+    stats.test.ts       # non-model unit tests — the statistics math
+    benchmark.ts        # eval:benchmark CLI (with vs without artifact)
+  ci-detect.test.ts     # non-model unit tests — the CI routing in scripts/ci-detect.mjs
+  trend-reporter.ts     # vitest reporter: pass/fail rows → results/history.jsonl
+  compare.ts            # eval:compare — run-flip view over history.jsonl
+  repeat.ts             # eval:repeat — N runs of one pattern → stability stats (reads records.jsonl)
+  delta.ts              # eval:delta — diff two labeled repeat runs
+  scaffold.ts           # eval:scaffold — list skills/agents, generate template eval files
+  skill-quality.ts      # eval:quality — static gate over skills, agents and A/B pairs (no model)
+  dsl/
+    describe.ts         # describeSkill / describeAgent / describeWorkflow — labeled groups
+    case.ts             # SkillCase / AgentCase / WorkflowCase types; runSkillCases / runAgentCases / runWorkflowCases
+  index.ts              # barrel — the only import surface for eval files
+```
+
+## Case layout — where your tests, prompts, and fixtures live
+
+> The package ships with **no example cases** — `skills/`, `agents/`, and `workflow/` are yours to
+> fill. The names below (`onion-architecture`, `architecture-reviewer`, …) are **illustrations of
+> the format only**, not files in the repo. Create your own with `pnpm eval:scaffold`.
+
+You bring your own skills/agents, so **you scaffold cases, not hand-copy files**:
+
+```bash
+pnpm eval:scaffold                 # list every skill/agent in .claude and whether it has evals
+pnpm eval:scaffold <skill-name>    # generate evals/skills/<name>/{eval.ts, cases.ts, fixtures/}
+pnpm eval:scaffold --agent <name>  # same under evals/agents/<name>/  (refuses to overwrite)
+```
+
+Then fill in the generated `*.cases.ts` and run `pnpm vitest run skills/<name>`. Keep it minimal —
+one or two cases per skill is enough; there is no need to cover every skill.
+
+Cases live in the `evals/` package (**not** inside `.claude/skills/*` or `.claude/agents/*` —
+that folder is the skill's *payload*; a fixture there would leak into the assembled prompt).
+The folders mirror the artifacts one-to-one, and each case folder holds three kinds of file:
+
+| File | Holds | Example |
+|------|-------|---------|
+| `*.eval.ts` | thin: `describe* + run*Cases` — *what* runs, nothing else | `onion-architecture.eval.ts` |
+| `*.cases.ts` | the data: prompt, practices, grounding, threshold, maxTurns, kind | `onion-architecture.cases.ts` |
+| `fixtures/` | raw inputs inlined into prompts (diffs, code, session traces) | `fixtures/widgets-service.ts` |
+| `fixtures/tree/` | pre-image files for a **materialized** fixture — a case with `setup: () => materializedWorktree(import.meta.url, "x.diff")` runs its session inside a real git worktree with `tree/` committed and the diff applied, so `git diff` shows the fixture verbatim and the machine gates (tsc, depcruise) actually fire. Use for any tool-using agent that will (correctly) check the working tree before reviewing a diff. | `fixtures/tree/server/src/...` |
+
+```
+evals/
+  skills/onion-architecture/
+    onion-architecture.eval.ts     # describeSkill("onion-architecture", () => runSkillCases(...))
+    onion-architecture.cases.ts    # export const cases: SkillCase[] = [ { name, prompt, practices, threshold } ]
+    fixtures/widgets-service.ts
+  agents/architecture-reviewer/
+    architecture-reviewer.eval.ts  # describeAgent(...) — identical shape to a skill
+    architecture-reviewer.cases.ts
+    fixtures/auth-route-violation.diff
+  workflow/
+    review-workflow.eval.ts        # describeWorkflow("review", () => runWorkflowCases(cases))
+    review-workflow.cases.ts       # export const cases: WorkflowCase[] = [ ... ]  (see below)
+```
+
+A thin eval file is the whole file:
+
+```ts
+import { describeSkill, runSkillCases } from "../../src";
+import { cases } from "./onion-architecture.cases.js";
+
+describeSkill("onion-architecture", () => runSkillCases("onion-architecture", cases));
+// vitest output groups as:  skill:onion-architecture > review flags widget-module layering violations
+```
+
+`run*Cases` owns the one true **measure → record → assert** body (model call + scorers in a
+`try`, `record()` in `finally`, `expect` strictly after). Case authors never write that loop, so
+the assert-before-record bug can't recur.
+
+### Skill / agent case (`SkillCase` / `AgentCase`)
+
+Judge-and-grounding shaped. Same type for both tiers; only the task differs (`skillTask` vs
+`agentTask`).
+
+```ts
+export const cases: SkillCase[] = [
+  {
+    name: "review flags widget-module layering violations",
+    kind: "quality",
+    prompt: reviewPrompt(["widgets-service.ts", "widgets-routes.ts"]),  // inlines fixtures
+    practices: [
+      "flagged the direct Drizzle DB query inside service.ts as a layering violation",
+      "flagged that the service leaks the Drizzle row type out of infrastructure",
+      // ...
+    ],
+    grounding: [],        // optional substrings that must ALL appear before the judge runs
+    threshold: 0.6,       // judge score gate
+    maxTurns: 8,          // optional
+  },
+];
+```
+
+`kind`: `quality` (judge) · `grounding` (patternMatch only, must equal 1).
+
+### Workflow case (`WorkflowCase`)
+
+Trace-asserted, not judged — a discriminated union routed by `kind`. The folder is organized by
+*scenario* (`review-workflow`), not by a single artifact, because a workflow is cross-cutting
+(`CLAUDE.md` + skills + agents together).
+
+```ts
+export const cases: WorkflowCase[] = [
+  { kind: "dispatch",   name: "dispatches the architecture-reviewer subagent",
+    prompt: `Use the architecture-reviewer subagent to audit ${AUTH_DIFF}...`,
+    expectSubagent: "architecture-reviewer", maxTurns: 6 },
+
+  { kind: "activation", name: "engineering-insights activates on a discovery prompt",
+    prompt: "I just figured out why the pgvector query returned nothing...",
+    skill: "engineering-insights", shouldActivate: true, maxTurns: 4 },
+
+  { kind: "activation", name: "near-miss negative — same topic as a question must NOT activate",
+    prompt: "Explain how pgvector column dimensions work and why a mismatch returns zero rows...",
+    skill: "engineering-insights", shouldActivate: false, maxTurns: 4 },
+
+  { kind: "contrast",   name: "CLAUDE.md routes an API-route task to api-contracts doc",
+    prompt: "I'm about to add POST /reviews/:id/rerun. Follow this repo's conventions...",
+    expectFileRead: "server/docs/api-contracts.md", tools: ["Read", "Grep", "Glob"], maxTurns: 6 },
+
+  { kind: "trace",      name: "client work reaches client/AGENTS.md and its package-only rules",
+    prompt: "Adding a review-list page; data comes from the API. Follow this package's conventions...",
+    expectFilesRead: ["client/AGENTS.md"], expectMentions: ["_components", "pnpm arch"], maxTurns: 12 },
+];
+```
+
+How each `kind` asserts:
+
+| `kind` | Runs | Passes when |
+|--------|------|-------------|
+| `dispatch` | `workflowTask` | `result.subagents` contains `expectSubagent` |
+| `activation` | `workflowTask`, stopping as soon as the skill engages (or a forbidden subagent launches) — the verdict is settled at that point either way | `activated(result, skill) === shouldActivate` (positive **and** near-miss negative); `forbidSubagents` additionally requires an empty `result.subagents` |
+| `contrast` | treatment (real repo) **and** control (empty tmpdir, `settingSources:[]`) | `expectFileRead` read in treatment, NOT in control |
+| `trace` | `workflowTask`, **one** session | every provided facet holds: `expectSubagents`, `expectSkills`, `expectFilesRead`, `expectMentions` |
+
+Workflow records carry an empty `practices[]` (no judge) but a full trace; `contrast` writes two
+records — `<label>:treatment` and `<label>:control`.
+
+### `trace` — the composite kind
+
+`trace` folds several assertions into ONE session. Use it to cut session count; the price is
+coarser diagnostics (a red case does not say which rule broke) and lower stability, since the
+per-facet probabilities multiply. Merge along **one task**, never by topic: if the prompt does not
+genuinely need an artifact to be answered, the model will answer from the routing table without
+opening it and `filesRead` — which counts real `Read` calls only — scores a miss.
+
+`expectMentions` asserts on the final **text** (`patternMatch`, case-insensitive, must equal 1),
+not on the trace. It exists because a rule delivered as *config* leaves no tool call: the root
+`CLAUDE.md` is loaded by `settingSources`, and a package `CLAUDE.md` is injected when work touches
+that subtree. A repo-unique token in the answer (`pnpm arch`, `devdigest_pgdata`) is the only
+evidence those files took effect — and, being unguessable, doubles as its own control, so no
+second run is needed to establish causality. Pick literal tokens, not paraphrasable prose.
+
+Presence of `expectMentions` **disables the early stop**: `stopWhen` breaks the loop at a
+`tool_use`, before the result message that carries the final answer, so a text assertion would be
+judging an answer the session never wrote. Tool-only traces keep the saving. The coverage number is
+persisted as `grounded`, so `repeat`/`delta` can show it drifting instead of only flipping red.
+
+## Commands & parameters
+
+```bash
+cd evals && pnpm install
+
+pnpm eval:quality        # fast static gate (no model)
+pnpm eval                # all quality + workflow evals, once
+pnpm eval:skills         # just skills/
+pnpm eval:agents         # just agents/
+pnpm eval:workflow       # just workflow/
+pnpm vitest run skills/onion-architecture       # one artifact
+pnpm vitest run src/                            # every non-model unit test (stats, trace
+                                                #   extraction, the deadline, the A/B pairs)
+```
+
+### `eval:repeat` — stability of one thing
+
+```bash
+pnpm eval:repeat <vitest pattern> [-n times<=2, default 2] [-t testNamePattern] [--label name]
+pnpm eval:repeat workflow --label baseline
+```
+Runs the pattern N times, then prints per-test pass rate, a per-**practice** table
+(`passed/total (pct)`), and metric stats (`turns`, `duration_ms`, `tokens_out` as mean ± stddev;
+n<5 prints an "indicative only" caveat). `--label` saves the aggregate to
+`results/repeat-<label>.json` for delta.
+
+Rates are over **valid** rows only — zero-turn-timeout runs print as their own
+`N invalid run(s) … excluded` line, never averaged in (see
+[Zero-turn timeouts](#zero-turn-timeouts-are-invalid-not-failed)). A pass rate strictly inside
+20–80% is tagged `FLAKY` — a distinct verdict from red: a 40% case needs more n or a case fix,
+a 0% case needs the artifact fixed. When flaky cases exist, the summary ends with a ready-made
+`-t "case1|case2"` command that raises n for JUST those cases instead of multiplying the whole
+suite's cost — printed as a suggestion, never executed, since model-backed lanes are spent by a
+human decision (root `AGENTS.md`).
+
+**`-n` defaults to 2 and is capped at 2** (`MAX_REPEATS` in `config.ts`) — anything higher is
+clamped with a notice. Two runs catch a blatantly flaky case cheaply, and a session is the
+expensive unit here, so the cap is the budget rather than a suggestion.
+
+Two runs are *not* enough for a delta: at n=2 every rate is 0/50/100%, so one coin-flip moves a
+practice by 50 points, and below n=5 `repeat` stamps its own stddev "indicative only". For an A/B
+you intend to draw a conclusion from, raise the cap deliberately for that one command:
+
+```bash
+EVAL_MAX_REPEATS=5 pnpm eval:repeat skills/onion-architecture -n 5 --label baseline
+```
+
+### `eval:delta` — version vs version (the canonical loop)
+
+The primary "before vs after a change" workflow. **Capture the baseline label BEFORE you edit** —
+there is no way to reconstruct it afterwards short of reverting.
+
+```bash
+export EVAL_MAX_REPEATS=5                                          # a delta needs n=5 to mean anything
+pnpm eval:repeat skills/onion-architecture -n 5 --label baseline   # BEFORE the edit
+#   ...edit SKILL.md...
+pnpm eval:repeat skills/onion-architecture -n 5 --label candidate  # AFTER the edit
+pnpm eval:delta baseline candidate
+```
+Shows the delta at three levels: per-test pass rate, per-**practice** (which practice
+improved/regressed — the main signal), and metrics (`baseline → candidate (±diff)`). Green =
+improved, red = regressed, dim = unchanged. A practice on one side only renders `— → X%`.
+
+### `eval:benchmark` — measured lift (with vs without the artifact)
+
+```bash
+pnpm eval:benchmark <vitest pattern> [-n runs<=2, default 2]
+pnpm eval:benchmark skills/engineering-insights     # a skill
+pnpm eval:benchmark agents/architecture-reviewer    # an agent
+```
+
+Benchmark runs the pattern **twice per repetition** (candidate + baseline), so its n doubles
+before it reaches a session: `-n 2` over a 6-case file is already 24 sessions. Same cap and same
+escape hatch as repeat — `EVAL_MAX_REPEATS=5 pnpm eval:benchmark …` when the lift number has to
+survive scrutiny.
+
+**candidate vs baseline** — the whole idea. The benchmark runs the *same test case* in two
+configurations:
+
+- **candidate** = *with the artifact*. The skill's content (or the agent's definition) is
+  injected into the system prompt — the normal, artifact-on condition.
+- **baseline** = *without it*. The identical prompt, case, and model, but the artifact is **not**
+  injected (raw model). Enabled by `EVAL_CONFIG=baseline`, which makes `skillTask`/`agentTask`
+  skip injection.
+
+The **difference** between them is the artifact's measured value ("lift") — not a feeling that it
+"seems to help." If candidate and baseline score the same, the artifact adds nothing the model
+didn't already do. Example output:
+
+```
+  metric      candidate   baseline    Δ
+  pass_rate   100%        80%        +20%     ← the skill added 20% reliability on this case
+
+  practices (candidate → baseline):
+     80% → 100%  noted the rejected alternative ...   ← read as candidate% → baseline%
+```
+
+**What `baseline` removes — and what it must NOT.** A case has two text parts: the *user prompt*
+(the task + its fixture — the input the model must work on) and the *system prompt* (the
+artifact under test). `baseline` removes **only the artifact**. The user prompt and fixture stay
+**identical** to candidate. That is the definition of a controlled A/B: change exactly one
+variable (artifact on/off), hold everything else constant, so the delta is attributable to the
+artifact and nothing else. This is not a quirk of this package — it is how controlled evals work
+everywhere (skill-creator v2's with_skill/without_skill runs the same prompt too).
+
+You therefore **cannot (and should not) "hide the fixture" from baseline.** The fixture is not a
+hint the baseline peeked at — it is the shared task both configurations must perform. Giving
+baseline a different input would change two variables at once and make Δ meaningless (two runners,
+different distances).
+
+**Low lift is usually a task-design signal, not a baseline problem.** If a fixture already spells
+out the answers the practices check for (e.g. `session-pgvector-dim.md` literally contains
+"1536", "3072", the rejected alternative, the follow-up), then even the raw model just has to
+summarize faithfully — so baseline scores high and lift is small (`non_discriminating` flags mark
+the practices that no longer discriminate). The lever is **the task, not baseline isolation**: to
+measure real lift, feed a *raw* input with the answer removed (e.g. the bug symptom with no
+diagnosis) and check whether the model reaches the conclusion on its own. Baseline fails it, the
+artifact-equipped candidate passes it, and Δ becomes large and honest. Both sides still get the
+same raw input — the experiment stays controlled.
+
+It runs N candidate + N baseline **sequentially** (subscription rate limits) and writes
+`results/benchmarks/<timestamp>/benchmark.json` + `benchmark.md` (mean ± stddev / min / max per
+config, the delta, a per-practice matrix, and analyst flags). **Skills/agents only** — it refuses
+`workflow/` patterns (a "no artifact" baseline is meaningless for the systemic tier, which has its
+own control-vs-treatment design).
+
+### `eval:compare` — run-flip history
+
+```bash
+pnpm eval:compare            # last two runs from results/history.jsonl
+pnpm eval:compare --list     # list recorded runs
+```
+Cheap and orthogonal; the `TrendReporter` keeps writing test-level outcome rows on every run.
+
+### Environment variables
+
+| Env var | Default | Meaning |
+|---------|---------|---------|
+| `EVAL_BACKEND` | `subscription` | runner: `subscription` (Claude Code) or `openrouter` — see [Runners](#runners-claude-code-default-vs-openrouter) |
+| `EVAL_MODEL` | `claude-haiku-4-5` | model under test. Anthropic ID on `subscription`; OpenRouter slug on `openrouter` |
+| `EVAL_JUDGE_MODEL` | `claude-sonnet-5` | judge model (stronger family); same slug-format rule as `EVAL_MODEL` |
+| `OPENROUTER_API_KEY` | — | required when `EVAL_BACKEND=openrouter`; also in `~/.devdigest/secrets.json` |
+| `OPENROUTER_BASE_URL` | OpenRouter | override to point at a local LiteLLM proxy for non-Anthropic tool-tier models |
+| `EVAL_MAX_TURNS` | `8` | max agent turns per case |
+| `EVAL_CONFIG` | `candidate` | `benchmark` sets this to `baseline` to skip artifact injection |
+| `EVAL_TEST_TIMEOUT_MS` | `240000` | vitest's per-test ceiling (read by `vitest.config.ts`) |
+| `EVAL_RUN_TIMEOUT_MS` | `TEST_TIMEOUT_MS - 60s` | the SESSION's own ceiling. Must stay below the one above — see [Deadlines](#deadlines--why-a-session-times-itself-out) |
+| `EVAL_RETRY` | `0` | re-runs of a FAILED model-backed case before it is called red; CI sets `1` |
+| `EVAL_QUIET` | unset | suppress per-run trace spam during multi-run aggregation |
+
+## Records, statistics, flags
+
+Every run appends one line to `results/records.jsonl` and the full model output to
+`results/outputs/<run_id>/<slug>.md`. `results/` is gitignored and append-only — **deleting
+`results/` is always safe**.
+
+Record schema (`schema: 1`):
+
+```jsonc
+{ "schema": 1, "run_id": "...", "git_sha": "...", "dirty": false, "config": "candidate",
+  "nodeid": "…/onion-architecture.eval.ts > skill:onion-architecture > review flags ...", "label": "...",
+  "outcome": true, "score": 0.8, "threshold": 0.6,
+  "practices": [ { "practice": "...", "passed": true, "evidence": "verbatim quote" } ],
+  "grounded": 1, "timed_out": false, "num_turns": 1,
+  "metrics": { "durationMs": 0, "inputTokens": 0, "outputTokens": 0, "toolCallCount": 0 },
+  "trace": { "tools": [], "subagents": [], "skills": [], "reads": [] }, "output_file": "..." }
+```
+
+Statistics semantics:
+
+- **Sample stddev** (n−1). n<5 is indicative only — the tools say so.
+- **Practice identity is the practice text.** Reword a practice and you start a new statistics
+  series by design (a practice is a prompt; a reworded prompt is a different measurement).
+- **Empty ≠ zero.** A series with n=0 renders `—` and flags `missing_data`; a series of n>0 all
+  failing renders `0%` and flags `always_failing`. The two are never conflated (this matters for
+  grounding-gated tests at baseline, whose per-practice series is legitimately empty because the
+  judge was skipped).
+
+Analyst flags (benchmark): `non_discriminating` (100% in both configs), `always_failing` (0% in
+both), `flaky` (pass rate strictly 20–80% within a config), `cost_regression` (candidate mean
+tokens > 125% of baseline), `missing_data` (a config has zero records for a test/practice).
+
+## Which change → which run
+
+| Change | Run |
+|--------|-----|
+| A skill's `SKILL.md` (quick check) | `pnpm vitest run skills/<skill>` |
+| A subagent file (quick check) | `pnpm vitest run agents/<agent>` |
+| Any `AGENTS.md` (or `CLAUDE.md`) / activation / dispatch | `pnpm eval:workflow` |
+| The CI routing itself (`scripts/ci-detect.mjs`) | `pnpm vitest run src/` — it is covered by `src/ci-detect.test.ts` |
+| Any artifact's structure | `pnpm eval:quality` |
+| A `SKILL.md` edit you want to **measure** | repeat/delta loop: `--label baseline` before, `--label candidate` after, then `eval:delta` |
+| New skill/agent — is it **worth its tokens**? | `pnpm eval:benchmark skills/<skill>` (n=2; `EVAL_MAX_REPEATS=5` to measure properly) |
+| Adding evals for one of **your** skills/agents | `pnpm eval:scaffold <name>` (or `--agent <name>`) |
+| Model / Claude Code version | `pnpm eval` (whole suite) |
+| Stats math, trace extraction, the pair guard | `pnpm vitest run src/` |
+| An A/B pair's SOURCE artifact edited | `pnpm eval:quality` — then re-sync the variant and update both hashes in `src/artifacts/pairs.ts` |
+
+On a pull request the same table is applied automatically, from the diff, by
+[`.github/workflows/evals.yml`](../.github/workflows/evals.yml) — you do not run these by hand for
+a PR. The rows above are for the local loop.
+
+## Stability — why a judged case goes red with nothing wrong
+
+A judge-scored case at `threshold: 1.0` is a **conjunction over N stochastic binary judgements**.
+If each practice independently holds at probability *p*, the case passes at *p^N*:
+
+| practices | p = 0.95 | p = 0.90 |
+|---|---|---|
+| 2 | 90% | 81% |
+| 3 | 86% | 73% |
+| 6 | **74%** | **53%** |
+
+So a six-practice case backed by a model that is right 19 times out of 20 still goes red about
+one run in four, with nothing wrong anywhere. This is not a hypothetical: on 2026-08-25 two CI
+runs with an **identical** configuration scored the same case 1.0 and then 0.83, and the workflow
+tier went 6/6 then 5/6. The cases that never moved were the ones with two and three practices —
+exactly what the arithmetic predicts.
+
+Three levers, in the order they are worth reaching for:
+
+1. **Move the mechanical half into `grounding`.** A deterministic substring gate takes the judge
+   out of the loop for the parts that are literally string presence (an identifier the report must
+   quote, the verdict line it must end on). It removes *judge* variance, not model variance — and
+   it is a hard gate, so every string in it must be one you have actually observed in real output.
+2. **Do not use `1.0` as a conjunction over many practices.** `0.83` over six tolerates exactly one
+   miss and takes the same case from ~74% to ~97%. That IS a deliberate loosening; the compensation
+   is that the non-negotiables moved up into `grounding`, where they cannot be the tolerated miss.
+3. **`EVAL_RETRY=1` in CI.** Only a failed case re-runs, so it is nearly free. It costs sensitivity
+   in one narrow band — a case that degraded from "always" to "usually" now goes green — and it
+   does **not** distort the data: `record()` fires per attempt, so both rows land in
+   `results/records.jsonl` and the recorded rate stays honest while the checkmark is lenient.
+
+What none of this buys is a green check on a case that is genuinely failing. The point is to make
+red **reproducible**: after these changes a red case means a real, repeatable gap, which is the
+only kind of red a team keeps reading.
+
+> The tool tiers have one variance source that cannot be closed here: `run-openrouter.ts` pins
+> `temperature: 0`, but the Claude Agent SDK exposes no sampling controls, so `agentTask` and
+> `workflowTask` run at the provider default. Compensate in the case design, above — there is no
+> knob.
+
+## Deadlines — why a session times itself out
+
+There are two ceilings and the ORDER between them is load-bearing. `runClaude()` aborts itself at
+`RUN_TIMEOUT_MS`; vitest kills the test at `TEST_TIMEOUT_MS`. The session must lose that race.
+
+`record()` fires from a `finally`, and a test killed by its runner never reaches one — so a run
+that ends on vitest's timeout leaves **no row at all**. Not a red row: an absent one. `repeat`
+builds its summary from records, so a 6-case run once printed a green `5/5` with the sixth case
+silently missing (2026-08-25). A run that dies on its own deadline instead comes back as a normal
+`Result` — `isError: true`, `timedOut: true`, the partial trace intact — and the case is recorded
+as the failure it was.
+
+Keep the gap wide enough for everything that happens after the session inside the same test: the
+judge is another model round-trip, and `record()` then writes the row. Both knobs live in
+`src/config.ts`; `vitest.config.ts` imports the outer one rather than repeating the number.
+
+### Zero-turn timeouts are invalid, not failed
+
+A session that dies on its deadline having made **zero turns** measured nothing — it queued
+behind a busy subscription and was aborted before reading a byte. Counting that as a failure
+charges the artifact for the infrastructure: in one n=5 repeat, 14 of 40 sessions died this way
+and a case whose live runs went 2/2 printed as 2/5 40% (measured 2026-08-26). So `measuredRun`
+(dsl/case.ts) gives a zero-turn timeout ONE fresh retry; a second one records a row with
+`valid: false`, skips the judge (nothing to judge — and that pointless round-trip after a dead
+180s session is what used to push tests over vitest's ceiling and lose the row entirely), and
+fails the test with an explicit "invalid run" message — red, because missing is not passing.
+The stats layer excludes `valid: false` rows from every rate and surfaces them as their own
+count. A timeout **mid-work** (turns > 0) stays a normal graded failure — it had its chance.
+
+Two things keep zero-turn timeouts rare in the first place: `vitest.config.ts` runs eval files
+serially (`fileParallelism: false` — concurrent strict+lite sessions queued each other into the
+deadline in whole bands), and the sessions are the only concurrent model work a repeat run does.
+
+## A/B pairs — the manipulation is equipment too
+
+A with-vs-without measurement over two artifacts (`architecture-reviewer` vs
+`architecture-reviewer-lite`) is only valid while the **only** difference between them is the
+dimension under test. Two ways that stops being true, both measured on 2026-08-25:
+
+- **The dimension was removed in one place, not all of them.** A cosmetic two-line edit moved the
+  target practice by −20 while an untouched control moved −40 — noise. Removing the requirement
+  everywhere it appeared measured −80 with every control flat.
+- **The source drifted after the copy was cut.** The variant is frozen; the original is a live
+  artifact someone will edit. A delta across a drifted pair reports the drift.
+
+`src/artifacts/pairs.ts` holds each pair, a hash of both normalised bodies, and one marker per
+place the dimension appears. `pnpm eval:quality` and `pnpm vitest run src/` both check it: an edit
+to either file, or a marker that survived into the variant, fails with what to do about it. After
+a deliberate re-sync, update both hashes in the same commit — the failure message prints them.
+## Safety
+
+Sessions run with `permissionMode: "bypassPermissions"`, so `workflowTask` keeps a **read-only
+allow-list** (`Read, Grep, Glob, Task, Agent, Skill` — no `Bash`/`Write`/`Edit`). Don't copy the
+bypass pattern into a context that grants write tools.
+
+## Deferred (recorded so it isn't rediscovered)
+
+- **Data-driven case DSL** — markdown case files + a `gray-matter` loader + `{{file:...}}`
+  placeholders. `*.cases.ts` already carries the same fields as typed TS; convert to markdown only
+  once the case count approaches ~15–20, when a parser earns its keep. `run*Cases` won't change.
+- **`--baseline <git-ref>`** via git worktree — rejected; the repeat/delta label discipline gives
+  version-vs-version comparison without worktree lifecycle risk.

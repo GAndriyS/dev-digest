@@ -1,0 +1,73 @@
+import type { CSSProperties } from "react";
+
+/** Co-located styles for AgentRow (full-width row, AC-26, AC-38…AC-40). */
+export const s = {
+  row: (hover: boolean): CSSProperties => ({
+    display: "flex",
+    alignItems: "center",
+    gap: 18,
+    padding: "16px 18px",
+    borderRadius: 9,
+    border: "1px solid " + (hover ? "var(--border-strong)" : "var(--border)"),
+    background: hover ? "var(--bg-hover)" : "var(--bg-elevated)",
+    textDecoration: "none",
+    color: "inherit",
+    transition: "background .12s, border-color .12s",
+  }),
+  iconTile: {
+    width: 40,
+    height: 40,
+    borderRadius: 9,
+    background: "var(--accent-bg)",
+    color: "var(--accent)",
+    display: "grid",
+    placeItems: "center",
+    flexShrink: 0,
+  } satisfies CSSProperties,
+  identity: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 5,
+    minWidth: 0,
+    flex: "1 1 200px",
+  } satisfies CSSProperties,
+  nameRow: { display: "flex", alignItems: "center", gap: 8, minWidth: 0 } satisfies CSSProperties,
+  name: {
+    fontSize: 15,
+    fontWeight: 700,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+    minWidth: 0,
+  } satisfies CSSProperties,
+  modelBadge: {
+    maxWidth: 180,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+    display: "inline-block",
+    flexShrink: 0,
+  } satisfies CSSProperties,
+  meta: { fontSize: 12.5, color: "var(--text-muted)" } satisfies CSSProperties,
+  stats: { display: "flex", alignItems: "center", gap: 22, flexShrink: 0 } satisfies CSSProperties,
+  statBlock: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "flex-end",
+    gap: 2,
+    minWidth: 46,
+  } satisfies CSSProperties,
+  statLabel: {
+    fontSize: 10.5,
+    fontWeight: 700,
+    color: "var(--text-muted)",
+    letterSpacing: "0.04em",
+  } satisfies CSSProperties,
+  statValue: (color: string): CSSProperties => ({
+    fontSize: 16,
+    fontWeight: 700,
+    color,
+  }),
+  sparkline: { flexShrink: 0, display: "flex", alignItems: "center" } satisfies CSSProperties,
+  chevron: { color: "var(--text-muted)", flexShrink: 0 } satisfies CSSProperties,
+} as const;

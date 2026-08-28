@@ -90,6 +90,57 @@ append-only. Entry format and promotion rules → root `INSIGHTS.md`.
   stub matched by URL suffix, pattern in `hooks/onboarding.test.tsx` — not
   after a reviewer notices.
 
+- **2026-08-26** — A new editor tab needs TWO edits, and the second one has no
+  test that can catch it: the tab row in `AgentEditor/constants.ts` **and** the
+  page-level whitelist `VALID_TABS` in `client/src/app/agents/[id]/page.tsx:16`,
+  which silently falls back to `config` for any value it does not list. L06's
+  `evals` tab shipped with the first and not the second; every RTL suite stayed
+  green (491) because pages are thin and this repo has **no** `page.test.tsx`
+  anywhere, and `plan-verifier` graded the criterion PARTIAL from reading the
+  code — but it was clicking the app that showed `?tab=evals` landing on
+  Config. Same shape as the skill/route whitelists: when a feature's reachability
+  lives in a literal array outside the component, the component's own tests
+  cannot prove the feature is reachable.
+
+- **2026-08-26** — `src/lib/api.ts#apiFetch` discards the HTTP status on
+  success, which is fine until a route uses status itself as the discriminant
+  (`POST /findings/:id/eval-case` answers 201-created vs 200-already-existed
+  with an identical body). The sanctioned move is `apiFetchWithStatus<T>` —
+  added alongside `apiFetch`, same error path, returns `{ data, status }` —
+  **not** a bare `fetch` in the hook: `check-ui-conventions.mjs` hard-fails any
+  `fetch(` outside `lib/api.ts`, and the test suite stubs `fetch` globally, so a
+  bypass would silently defeat the mock too.
+
+- **2026-08-26** — The app's `QueryClient` fires a **global**
+  `mutationCache.onError` toast for every mutation, and TanStack fires
+  cache-level and instance-level `onError` both — so a component that adds its
+  own translated message for one failure branch stacks two toasts on one click
+  (confirmed live: the raw server message plus the translated one). The opt-out
+  is `meta: { ownErrorToast: true }` on the mutation, which
+  `providers.tsx` now honours; a mutation that opts out owns **every** error
+  branch, not just the one it translated.
+- **2026-08-27** — **When a stored field gets a derived fallback, the check
+  that detects drift must read the RAW field, never the fallback.** A
+  fallback-derived value is computed from the very thing it would be compared
+  against, so the comparison can never fail and the check is structurally
+  dead — it looks implemented, passes review, and reports "no problem"
+  forever. `expectationKindOf()` falls back to deriving the kind from
+  `expected_output`, so `expectationMismatch()` reads `evalCase.expectation_kind`
+  directly (`EvalsTab/helpers.ts`); routing it through the fallback would have
+  silently disabled the whole stored-vs-actual warning it exists to raise.
+  Applies to any "stored intent + derived default" pair, not just this one.
+- **2026-08-27** — A modal the parent keeps mounted after a successful save
+  (here: `Run on save` deliberately keeps the case editor open) turns its
+  `entity` prop stale for the rest of the session — the parent's state did not
+  change, so the prop never will. Everything downstream of the save must read
+  a local state seeded from that prop, not the prop: the case editor showed no
+  kind banner for a case it had just created, disabled `Run case` with "save it
+  first" on an already-saved case, and — the expensive half — kept branching
+  `submit()` on the prop, so a second Save minted a **duplicate** row instead
+  of updating the one it had made. Fixing only the visible symptoms makes the
+  data bug likelier, because the modal then looks settled and invites that
+  second Save.
+
 ## Tool & Library Notes
 
 - **2026-08-11** — Scrolling to an element that a sibling's effect is about to
@@ -155,6 +206,24 @@ append-only. Entry format and promotion rules → root `INSIGHTS.md`.
   re-diagnose a bug you already fixed. Confirm a fix against `preview_logs`
   (search the dev-server output for the error string) or the served HTML, never
   against the console buffer.
+- **2026-08-26** — `@testing-library/user-event` is **not installed** in
+  `client/` and is not in its lockfile. Every interaction test here drives the
+  DOM with `fireEvent` instead — including keyboard assertions
+  (`CompareModal.test.tsx`, `FindingsPopover.test.tsx`,
+  `RunAllDialog.test.tsx` all do). This matters because the generic
+  `react-testing-library` guidance names `userEvent` as the default, so an
+  agent following it writes `import userEvent from "@testing-library/user-event"`
+  and only finds out mid-suite, at module-resolution time. Three separate lanes
+  of one run each hit this independently. Use `fireEvent`; do not add the
+  dependency to satisfy a skill's default.
+- **2026-08-27** — `@testing-library/dom`'s default normalizer collapses
+  whitespace in the **DOM's** text/value only, never in the string you pass as
+  the matcher. So `getByDisplayValue(someMultiLineDiff)` never matches: the
+  textarea's value comes back with its newlines collapsed to spaces, the
+  matcher string keeps its `\n`s, and the two can't be equal — while the value
+  is plainly correct in the rendered output, which sends you looking at the
+  component. Assert a multi-line value with a regex (or a normalizer-stripped
+  matcher). Bit the `input_diff` assertion in `EvalCaseModal.test.tsx`.
 
 ## Recurring Errors & Fixes
 

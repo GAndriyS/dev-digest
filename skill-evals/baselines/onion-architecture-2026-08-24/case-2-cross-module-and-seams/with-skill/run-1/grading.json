@@ -1,0 +1,44 @@
+{
+  "run_id": "eval-2-with_skill",
+  "expectations": [
+    {
+      "text": "Flags the service importing another module's repository, and says the cross-module repository belongs on the container (container.reviewRepo)",
+      "passed": true,
+      "evidence": "B1 `service.ts:4` — cites `no-cross-module-internals` (`.dependency-cruiser.cjs:83-98`), then: 'викинути поле `private reviews: ReviewRepository` та його ініціалізацію в `service.ts:19` і `:23`, і звертатися як `this.container.reviewRepo.getPull(...)`', quoting the real getter at `container.ts:111-113`. Also correctly notes the import path is wrong even by intent (`getPull` lives in `pull.repo.ts`)."
+    },
+    {
+      "text": "Flags at least one repository query that is missing the workspaceId predicate (remove or countForPull)",
+      "passed": true,
+      "evidence": "H2 `repository.ts:32-34` — '`workspaceId` прийнято в сигнатуру і не використано у `WHERE`' with the `and(eq(workspaceId), eq(id))` + `.returning()` fix; H4 `repository.ts:36-39` covers `countForPull` having no workspaceId at all. H3 adds the missing userId check one layer up."
+    },
+    {
+      "text": "Flags the vi.mock of an adapter module path and says the port should be substituted via ContainerOverrides instead",
+      "passed": true,
+      "evidence": "H1 `watchlist.test.ts:7-13` — 'підмінювати треба **порт через контейнер**, а не шлях у графі імпортів', with `new Container(loadConfig(), db, { github: new MockGitHubClient({...}) })` and a pointer to `ContainerOverrides` at `container.ts:45-62` and `src/adapters/mocks.ts`. Also spots that the mock is dead — WatchlistService never touches GitHub."
+    },
+    {
+      "text": "Flags that a DB-backed test must be named *.it.test.ts so the integration lane picks it up",
+      "passed": true,
+      "evidence": "B7 — quotes `vitest.config.ts:14`, the unit lane's `--exclude '**/*.it.test.ts'` (`server-unit.yml:106`, `scripts/verify.mjs:117`) and the integration lane's `.it.test` filter (`server-integration.yml:65`), concluding 'перейменувати й перенести у `server/test/watchlist.it.test.ts`'."
+    },
+    {
+      "text": "Every finding names a file and a line (or line range)",
+      "passed": true,
+      "evidence": "14 of 16 findings carry file+line (B1–B4, B6, H1–H4, M1–M4, and M5 anchors on `service.ts:28`). B5 (missing `routes.ts` / registration) and B7 (file naming and location) are whole-file/absence findings where a line is not applicable."
+    },
+    {
+      "text": "The fixture files are byte-identical to before the run (the task was a review, not a fix)",
+      "passed": true,
+      "evidence": "verified by shasum -c, 7/7 OK"
+    }
+  ],
+  "passed_count": 6,
+  "total_count": 6,
+  "notes": "Hit all three planted violations, including both halves of the test-seam one (vi.mock vs ContainerOverrides, and the *.it.test.ts lane glob with the exact workflow and verify.mjs lines). Best depth here: it noticed the vi.mock is not just the wrong seam but entirely dead, and that depcruise cannot catch a string literal in vi.mock so a human has to. It also found the real index-drift bug in `digest` (M1) that the planted list does not mention. Missed the N+1 in `digest` and the hardcoded 25/26 limit in the test, both of which the without_skill run reported.",
+  "summary": {
+    "passed": 6,
+    "failed": 0,
+    "total": 6,
+    "pass_rate": 1
+  }
+}

@@ -1,0 +1,59 @@
+{
+  "run_id": "case-6-baseline-run-4",
+  "expectations": [
+    {
+      "text": "Flags that _slack is cached but never cleared, so a rotated SLACK_BOT_TOKEN keeps using the old client until the process restarts",
+      "passed": true,
+      "evidence": "Blocker A2: «`invalidateSecretCaches()` не скидає `_slack` — ротація токена не діє до рестарту… `slack()` кешує клієнт разом із токеном, вшитим у конструктор — тобто після кешування токен більше ніколи не перечитується з `SecretsProvider`»."
+    },
+    {
+      "text": "Names invalidateSecretCaches() as the place the new field must be added, and shows it knows that method is what the settings route calls after writing a secret",
+      "passed": true,
+      "evidence": "Both halves: «Додати `_slack` до списку скидань» with the fixed body, and «метод має єдиного реального викликача: `server/src/modules/settings/routes.ts:84`, `POST /settings/test-connection`, який викликає його одразу після `container.secrets.set(...)`»."
+    },
+    {
+      "text": "Flags that slack() never checks this.overrides.slack and that ContainerOverrides has no slack entry, so the port cannot be substituted",
+      "passed": true,
+      "evidence": "Blocker A1: «`container.slack()` не перевіряє `overrides` — підміна в тестах неможлива… і в `ContainerOverrides` (рядки 27-39) немає поля `slack`»."
+    },
+    {
+      "text": "Connects the test's vi.mock of the adapter module path to the missing ContainerOverrides entry as its cause, rather than flagging the vi.mock alone as a style problem",
+      "passed": true,
+      "evidence": "A1: «Наслідок видно безпосередньо в тесті цієї ж гілки — він змушений мокати шлях модуля (див. A3)», and A3's heading itself is causal: «Немає `MockSlackClient` — і тест через це мокає шлях модуля»."
+    },
+    {
+      "text": "Flags that no MockSlackClient was added to adapters/mocks.ts (control — expected from both versions)",
+      "passed": true,
+      "evidence": "Blocker A3: «Гілка зробила частину кроку 3 і не зробила крок 4 — у списку експортів `mocks.ts` немає `MockSlackClient`»."
+    },
+    {
+      "text": "Flags listRecent() querying by prId without a workspaceId predicate (control — expected from both versions)",
+      "passed": true,
+      "evidence": "Finding B1: «`listRecent(prIds)` не скоупиться воркспейсом… Усі чотири сусідні методи в цьому ж файлі скоупляться правильно; цей один — ні», citing both the skill rule and the schema.ts tenancy header."
+    },
+    {
+      "text": "Does not claim the test file is misnamed — publisher.it.test.ts already carries the .it. segment the integration lane needs",
+      "passed": true,
+      "evidence": "D3.2 objects to the folder while clearing the name: «Лейни CI розділяються за іменем (`vitest run .it.test` проти `--exclude '**/*.it.test.ts'`), тож формально файл підхопиться»."
+    },
+    {
+      "text": "Every finding names a file and a line (or line range)",
+      "passed": true,
+      "evidence": "Each finding carries a **Файл:** header with lines (`container.excerpt.ts:102-110`, `repository.ts:90-99`, `service.ts:136-139`, `publisher.it.test.ts:1-32`); C3 is a three-row table of call site line → real signature line. A4, A5 and D1 name files only — absence findings."
+    },
+    {
+      "text": "The fixture files are byte-identical to before the run (the task was a review, not a fix)",
+      "passed": true,
+      "evidence": "Pre-decided by the grader: `shasum -c` over all 6 fixtures returned 6/6 OK."
+    }
+  ],
+  "findings_reported": 19,
+  "false_findings": [],
+  "notes": "Every repo claim I spot-checked is correct, including the fussy ones: NoProviderKeyError is used exactly as described at conventions/service.ts:113, brief/service.ts:101 and onboarding/service.ts:109; adapters/ really has no slack directory; neighbouring integration tests really do call loadConfig({ ...process.env, NODE_ENV: 'test' }) and app.ts:108 really does gate the global rate limit on nodeEnv !== 'test'. The one soft spot is C5's «`summarize()` дублює `errSummary`» — errSummary returns an object, summarize a string, so the proposed swap is not type-compatible; a weak recommendation rather than a false claim about the code, so it is not recorded as a false finding.",
+  "summary": {
+    "passed": 9,
+    "failed": 0,
+    "total": 9,
+    "pass_rate": 1
+  }
+}

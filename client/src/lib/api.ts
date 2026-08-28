@@ -18,10 +18,9 @@ export class ApiError extends Error {
   }
 }
 
-export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  let res: Response;
+async function rawFetch(path: string, init?: RequestInit): Promise<Response> {
   try {
-    res = await fetch(`${API_BASE}${path}`, {
+    return await fetch(`${API_BASE}${path}`, {
       ...init,
       headers: {
         // Only declare a JSON body when one is actually sent — otherwise a
@@ -42,26 +41,48 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
       e
     );
   }
+}
 
-  if (!res.ok) {
-    let code: string | undefined;
-    let message = `${res.status} ${res.statusText}`;
-    let details: unknown;
-    try {
-      const body = await res.json();
-      if (body?.error) {
-        code = body.error.code;
-        message = body.error.message ?? message;
-        details = body.error.details;
-      }
-    } catch {
-      /* non-JSON error body */
+async function errorFrom(res: Response): Promise<ApiError> {
+  let code: string | undefined;
+  let message = `${res.status} ${res.statusText}`;
+  let details: unknown;
+  try {
+    const body = await res.json();
+    if (body?.error) {
+      code = body.error.code;
+      message = body.error.message ?? message;
+      details = body.error.details;
     }
-    throw new ApiError(message, res.status, code, details);
+  } catch {
+    /* non-JSON error body */
   }
+  return new ApiError(message, res.status, code, details);
+}
 
+export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await rawFetch(path, init);
+  if (!res.ok) throw await errorFrom(res);
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
+}
+
+/**
+ * Like `apiFetch`, but also returns the HTTP status — for the rare endpoint
+ * where a 2xx success is itself status-discriminated (e.g.
+ * `POST /findings/:id/eval-case`: 201 case just created vs 200 case already
+ * existed, identical body either way — L06 AC-6). Error handling is identical
+ * to `apiFetch`; only the success path keeps the status instead of discarding
+ * it. Reuses the same `rawFetch`/error-mapping so the two never drift.
+ */
+export async function apiFetchWithStatus<T>(
+  path: string,
+  init?: RequestInit
+): Promise<{ data: T; status: number }> {
+  const res = await rawFetch(path, init);
+  if (!res.ok) throw await errorFrom(res);
+  const data = res.status === 204 ? (undefined as T) : ((await res.json()) as T);
+  return { data, status: res.status };
 }
 
 export const api = {

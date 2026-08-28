@@ -1,0 +1,7 @@
+{
+  "_comment": "Scripts only — the repo root is NOT a workspace and installs nothing. Deliberately no `packageManager` field: `pnpm/action-setup@v4` reads THIS file by default (`package_json_file: package.json`), and every workflow already passes `version: 10`, so declaring it here makes the action abort with 'Multiple versions of pnpm specified' and fails every CI job at setup. The pnpm pin lives in server/package.json and client/package.json, which is where corepack looks when you run pnpm inside those packages.",
+  "private": true,
+  "scripts": {
+    "verify:l06": "node scripts/verify.mjs --slice frontend --slice backend --slice integration"
+  }
+}

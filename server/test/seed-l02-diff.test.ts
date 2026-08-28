@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { EXPERIMENT_PRS } from '../scripts/seed-l02-experiment.js';
-import { parseUnifiedDiff } from '../src/adapters/git/diff-parser.js';
+import { parseUnifiedDiff, unifiedDiffFromPatches } from '../src/adapters/git/diff-parser.js';
 
 /**
  * Pins the L02 experiment fixtures (PRs 901 and 902), for the same reason
@@ -23,16 +23,10 @@ import { parseUnifiedDiff } from '../src/adapters/git/diff-parser.js';
 
 const byNumber = (n: number) => EXPERIMENT_PRS.find((p) => p.number === n)!;
 
-/** Rebuild one PR's diff exactly as `diffFromPrFiles` does before parsing. */
+/** Rebuild one PR's diff exactly as `diffFromPrFiles` does before parsing —
+    through the same shared helper it uses. */
 function parsePr(number: number) {
-  const parts: string[] = [];
-  for (const f of byNumber(number).files) {
-    parts.push(`diff --git a/${f.path} b/${f.path}`);
-    parts.push(`--- a/${f.path}`);
-    parts.push(`+++ b/${f.path}`);
-    parts.push(f.patch);
-  }
-  return parseUnifiedDiff(parts.join('\n'));
+  return parseUnifiedDiff(unifiedDiffFromPatches(byNumber(number).files));
 }
 
 /** Count what a hunk body actually contains, independent of its header. */

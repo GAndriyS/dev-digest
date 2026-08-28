@@ -1,0 +1,61 @@
+{
+  "run_id": "case-6-baseline-run-5",
+  "expectations": [
+    {
+      "text": "Flags that _slack is cached but never cleared, so a rotated SLACK_BOT_TOKEN keeps using the old client until the process restarts",
+      "passed": true,
+      "evidence": "Blocker B1: «`invalidateSecretCaches()` не скидає `_slack` — старий токен живе до рестарту… користувач вставив новий токен, Settings відповів “ОК”, а публікації далі падають з 401 — і так до перезапуску сервера»."
+    },
+    {
+      "text": "Names invalidateSecretCaches() as the place the new field must be added, and shows it knows that method is what the settings route calls after writing a secret",
+      "passed": true,
+      "evidence": "Both halves: «`this._slack = undefined;   // ← кожен клієнт, зібраний із секрету`» inside the named method, and «`invalidateSecretCaches()` викликається у `server/src/modules/settings/routes.ts:84` одразу після `container.secrets.set(...)`, тобто рівно в той момент, коли користувач через Settings міняє протухлий чи помилковий ключ»."
+    },
+    {
+      "text": "Flags that slack() never checks this.overrides.slack and that ContainerOverrides has no slack entry, so the port cannot be substituted",
+      "passed": true,
+      "evidence": "Blocker B2: «Перевірки `this.overrides.slack` немає, бо й самого поля `slack?: SlackClient` в `ContainerOverrides` немає — інтерфейс на рядках 27–39 перелічує… і на цьому все»."
+    },
+    {
+      "text": "Connects the test's vi.mock of the adapter module path to the missing ContainerOverrides entry as its cause, rather than flagging the vi.mock alone as a style problem",
+      "passed": true,
+      "evidence": "B2: «Прибравши цей шов для Slack, гілка змусила тест шукати обхід — і він його знайшов (див. B3)»; B3's heading is causal: «Немає `MockSlackClient`, і тому інтеграційний тест мокає шлях модуля»."
+    },
+    {
+      "text": "Flags that no MockSlackClient was added to adapters/mocks.ts (control — expected from both versions)",
+      "passed": true,
+      "evidence": "Blocker B3: «Список експортів `mocks.ts` повний і Slack-дубля в ньому немає… Це невиконаний крок 4 з чек-ліста порту»."
+    },
+    {
+      "text": "Flags listRecent() querying by prId without a workspaceId predicate (control — expected from both versions)",
+      "passed": true,
+      "evidence": "Finding S2: «`listRecent()` не скоупиться за `workspaceId`… Ізоляція воркспейсів — це інваріант шару даних; вона не має залежати від дисципліни викликача»."
+    },
+    {
+      "text": "Does not claim the test file is misnamed — publisher.it.test.ts already carries the .it. segment the integration lane needs",
+      "passed": true,
+      "evidence": "Listed under what the branch got right: «Тест названо `publisher.it.test.ts` — правильний глоб для інтеграційної лінії CI». No renaming demand anywhere."
+    },
+    {
+      "text": "Every finding names a file and a line (or line range)",
+      "passed": true,
+      "evidence": "Every finding names the target path plus lines («`server/src/modules/publisher/repository.ts`, рядки 90–99», «service.ts, рядки 131–134»). D1 and D2 name files without lines — absence findings (module not registered, contracts not mirrored)."
+    },
+    {
+      "text": "The fixture files are byte-identical to before the run (the task was a review, not a fix)",
+      "passed": true,
+      "evidence": "Pre-decided by the grader: `shasum -c` over all 6 fixtures returned 6/6 OK."
+    }
+  ],
+  "findings_reported": 16,
+  "false_findings": [
+    "D1 claims that a missing entry in modules/index.ts makes routes.ts unreachable and «CI впаде на правилі `no-orphans` (severity `error`) ще до будь-яких тестів». Untrue — no-orphans is declared with `severity: 'warn'` (server/.dependency-cruiser.cjs:42-47), so depcruise reports it and still exits green; four other runs in this set state the warn severity correctly."
+  ],
+  "notes": "Fewest findings of the ten (16) but the highest hit rate per finding, and it is the only run that catches the DTO/row mismatch in retryFailed (B4): listRetryable is typed Promise<PublishRecord[]>, toDto emits snake_case, and the service then reads row.reviewId / row.prId — a real defect nobody else spotted, correctly traced to the repository mapping to a wire DTO at all («Жоден інший `modules/*/repository.ts` не тримає власного `toDto`» — verified true). Against that, it never flags the AppError.status bug, and its no-orphans severity claim is wrong.",
+  "summary": {
+    "passed": 9,
+    "failed": 0,
+    "total": 9,
+    "pass_rate": 1
+  }
+}

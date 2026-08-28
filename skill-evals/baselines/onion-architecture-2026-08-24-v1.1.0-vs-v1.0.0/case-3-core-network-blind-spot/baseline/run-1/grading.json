@@ -1,0 +1,39 @@
+{
+  "run_id": "case-3-baseline-run-1",
+  "expectations": [
+    {
+      "text": "Flags the global fetch() call inside reviewer-core as I/O the core must not do, and says the advisory data should arrive resolved from the caller",
+      "passed": true,
+      "evidence": "«1. БЛОКЕР — мережевий I/O всередині доменного ядра… Рядок 44 робить await fetch(...) до стороннього HTTP-сервісу прямо з ядра — це другий, неінжектований, немокабельний побічний ефект.» Fix: «I/O належить викликачу… Ядро має приймати вже отримані адвайзорі», EnrichInput gains `advisories`, changedPackages dropped."
+    },
+    {
+      "text": "Notes that dependency-cruiser cannot catch this — the rule lists imports and global fetch is not imported — so a green CI is not evidence the boundary held",
+      "passed": true,
+      "evidence": "«Чому депкруз мовчить (сліпа зона, не «дозвіл»)» — quotes the two core-has-no-io path patterns verbatim, then: «fetch — це глобал Node 22, у нього немає рядка імпорту. Депкруз будує граф залежностей із імпортів; ребра тут просто не існує… Зелений депкруз означає «немає забороненого імпорту», а не «немає I/O».» Adds the counterfactual: node:https would have failed CI instantly."
+    },
+    {
+      "text": "Does not claim the file has a forbidden import: it imports only @devdigest/shared types and its own ./prompts.js",
+      "passed": true,
+      "evidence": "No forbidden-import claim. Finding 7 is about symbols that do not exist (EnrichedFinding, advisoryIds, ENRICH_SCHEMA, buildEnrichMessages, prompts.ts) — all verified absent. Finding 10 mentions no-orphans (severity warn), which is an accurate reading of the config, not a claim of a forbidden import."
+    },
+    {
+      "text": "Every finding names a file and a line (or line range)",
+      "passed": true,
+      "evidence": "Findings 1-9 carry explicit line ranges (37–57, 4–5, 20–35, 48/52–53, 60, 30/51, 1–2, 34, 44). Finding 10 is scoped to the whole file plus reviewer-core/src/index.ts, where the defect is an absent export."
+    },
+    {
+      "text": "The fixture file is byte-identical to before the run (the task was a review, not a fix)",
+      "passed": true,
+      "evidence": "Verified by the run owner: shasum -c over all 12 fixtures, 12/12 OK."
+    }
+  ],
+  "findings_reported": 10,
+  "false_findings": [],
+  "notes": "The old skill matches the new one finding-for-finding on the discriminating pair, and states the blindness mechanism at greater length than the with-skill run — it quotes the rule's two path patterns out of the config and explains that depcruise builds its graph from imports, so no edge exists. Its path to the conclusion is the config itself plus the v1.0.0 iron-rule line «Need I/O? It belongs in the caller», not any blind-spot prose. It also independently derives that the typecheck is meaningless because the fixture sits outside every tsconfig include — a point the with-skill run makes only in passing.",
+  "summary": {
+    "passed": 5,
+    "failed": 0,
+    "total": 5,
+    "pass_rate": 1
+  }
+}

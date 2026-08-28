@@ -784,6 +784,46 @@ export async function seed(db: Db): Promise<{ workspaceId: string; userId: strin
     }
   }
 
+  // ---- v1 snapshots for the seeded agents ----
+  // The loop above inserts agents directly, bypassing AgentsRepository.create()
+  // — the only writer of the initial agent_versions snapshot — so a starter
+  // agent is born without a v1 row and the UI can never diff "seed prompt →
+  // first edit". The snapshot is built from the SEED constants, not the current
+  // agents row (which may already be several versions ahead), in the exact
+  // shape snapshotVersion() writes; it sits after the links loop because the
+  // seeded skill set is part of that shape. onConflictDoNothing on the
+  // (agent_id, version) PK keeps re-runs from overwriting a real snapshot.
+  for (const a of seedAgents) {
+    const [agentRow] = await db
+      .select()
+      .from(t.agents)
+      .where(and(eq(t.agents.workspaceId, workspaceId), eq(t.agents.name, a.name)));
+    if (!agentRow) continue;
+    const seededSkillIds = (links.find((l) => l.agent === a.name)?.skills ?? [])
+      .map((name) => skillIdByName.get(name))
+      .filter((id): id is string => id !== undefined);
+    await db
+      .insert(t.agentVersions)
+      .values({
+        agentId: agentRow.id,
+        version: 1,
+        configJson: {
+          provider: a.provider,
+          model: a.model,
+          system_prompt: a.systemPrompt,
+          // The seed rows leave these four at the column defaults
+          // (schema/agents.ts) — spelled out here because the snapshot must
+          // hold the values as of v1 even if the column defaults ever change.
+          output_schema: null,
+          strategy: 'single-pass',
+          ci_fail_on: 'critical',
+          repo_intel: true,
+          skills: seededSkillIds,
+        },
+      })
+      .onConflictDoNothing();
+  }
+
   // ---- one skill-owned eval case ----
   // Asserts the rubric catches the same hardcoded key the seeded review found,
   // so the Evals tab has a runnable case out of the box.

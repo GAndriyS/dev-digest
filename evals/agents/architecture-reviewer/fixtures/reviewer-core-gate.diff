@@ -1,0 +1,21 @@
+diff --git a/reviewer-core/src/pipeline/run.ts b/reviewer-core/src/pipeline/run.ts
+index 3c028c5..e6db43e 100644
+--- a/reviewer-core/src/pipeline/run.ts
++++ b/reviewer-core/src/pipeline/run.ts
+@@ -1,12 +1,12 @@
+ import type { PipelineInput, Finding } from "./types.js";
++import { readFileSync } from "node:fs";
+ import { draftFindings } from "./draft.js";
+ import { dedupe } from "./dedupe.js";
+-import { groundFindings } from "./ground.js";
+ 
+ export async function runPipeline(input: PipelineInput): Promise<Finding[]> {
+   const llm = input.llm;
+-  const drafted = await draftFindings(input, llm);
++  const prompt = readFileSync(input.promptPath, "utf8");
++  const drafted = await draftFindings({ ...input, diff: `${prompt}\n\n${input.diff}` }, llm);
+   const deduped = dedupe(drafted);
+-  const grounded = await groundFindings(deduped, input.diff);
+-  return grounded;
++  return deduped;
+ }

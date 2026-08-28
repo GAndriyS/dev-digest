@@ -1,0 +1,44 @@
+{
+  "run_id": "case-5-baseline-run-1",
+  "expectations": [
+    {
+      "text": "Flags the service querying another module's tables (t.reviews / t.pullRequests) as cross-module coupling, and says the data should come from container.reviewRepo rather than an inline join",
+      "passed": true,
+      "evidence": "«П2. Модуль читає чужі таблиці — reviews і pull_requests», service.ts:46-47. Quotes the owning docblock at modules/reviews/repository.ts and concludes «alerts щойно завів другого власника цих таблиць». Fix: «server/src/platform/container.ts:111-113 віддає container.reviewRepo (ReviewRepository), і саме для цього він там існує», adding listForWorkspaceSince so the join lives with the table owner. Both the getter lines and the container.ts:81 comment it quotes are accurate."
+    },
+    {
+      "text": "Notes that dependency-cruiser does not catch this, because the only import is db/schema, which is legal everywhere",
+      "passed": true,
+      "evidence": "Opening section «Спершу про «депкруз зелений»», point 2: «Правило no-cross-module-internals (server/.dependency-cruiser.cjs:83-97) матчить шляхи виду ^src/modules/<x>/. Читання чужих таблиць через спільний барель src/db/schema.ts для нього невидиме — це обхід межі стороною, яку конфіг не бачить.» Restated in П2 («просто зроблений через db/schema.ts, тому no-cross-module-internals його й не спіймав») and again in the closing paragraph."
+    },
+    {
+      "text": "Flags remove() deleting by id without a workspaceId predicate (control — expected from both versions)",
+      "passed": true,
+      "evidence": "«П3. remove() не скоупиться по workspaceId — крос-тенантне видалення», service.ts:72-74 and repository.ts:43-45, contrasted with get/listForWorkspace/recordRun in the same file which all scope, and anchored to db/schema.ts:4-7."
+    },
+    {
+      "text": "Flags that data access belongs in the repository, not inline in the service (control — expected from both versions)",
+      "passed": true,
+      "evidence": "«П1. Сервіс сам ходить у БД замість репозиторія», service.ts:35-56: «evaluate() будує select().from().innerJoin() безпосередньо на this.container.db, минаючи AlertsRepository», with the consequence that AlertsService is no longer testable without a live DB, and «Разом із запитом має зникнути й import * as t із service.ts»."
+    },
+    {
+      "text": "Every finding names a file and a line (or line range)",
+      "passed": true,
+      "evidence": "П1-П4 and П6-П8 carry file plus line ranges; П5 is a table where each missing piece names the import line or file that reveals it. The closing summary table repeats a location per finding."
+    },
+    {
+      "text": "The fixture files are byte-identical to before the run (the task was a review, not a fix)",
+      "passed": true,
+      "evidence": "Verified by the run owner: shasum -c over all 12 fixtures, 12/12 OK."
+    }
+  ],
+  "findings_reported": 8,
+  "false_findings": [],
+  "notes": "The old skill catches the blind spot and states the mechanism unprompted, leading the review with it rather than burying it. Its path is the config: it reads routes-through-service and no-cross-module-internals out of server/.dependency-cruiser.cjs and reasons about what their path patterns can and cannot match, adding a point the with-skill run misses — there is deliberately no routes-through-service equivalent for service.ts, because the config cannot tell a repository from a service in the same folder. All repo claims verified (reviewRepo getter, the reviews column list, findings as a separate table, absent alert tables and contracts).",
+  "summary": {
+    "passed": 6,
+    "failed": 0,
+    "total": 6,
+    "pass_rate": 1
+  }
+}

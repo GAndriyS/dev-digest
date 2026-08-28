@@ -28,6 +28,66 @@ live in `<package>/INSIGHTS.md`. Maintained by the `engineering-insights` skill.
 
 ## What Works
 
+- **2026-08-26** — **A wire step that makes a shared field REQUIRED must name
+  every hand-built literal of that type, found by grepping the whole tree —
+  not only the sites the plan's author happened to know.** Adding
+  `EvalAgentSummary.trend` named two touch-up sites; a third literal sat in
+  `client/src/lib/hooks/eval.test.tsx`, committed by an earlier plan. In a
+  parallel wave that unnamed site is not a small miss: it turns `verify.mjs
+  --slice frontend` red for EVERY lane at once, because typecheck is whole-tree,
+  and three sibling lanes each independently re-diagnosed the same error before
+  the owning lane reached it. Two habits fall out — grep for the type's literals
+  while writing the step, and mid-wave verify scoped
+  (`--tests-only --only <scope>`), saving the full lane for the wave boundary
+  where a cross-lane red is meaningful.
+- **2026-08-26** — **When another session may be committing to the same branch,
+  commit with an explicit pathspec** (`git commit -m … -- <paths>`), not
+  `git add <paths> && git commit`. The latter commits the whole index, so
+  anything a concurrent session has staged rides along silently. This happened:
+  mid-run, another session staged the deletion of three tracked files under
+  `server/src/modules/checkout/` (it was relocating them into the evals fixture
+  tree) and landed two commits between waves. Pathspec commits kept all six of
+  this run's commits clean — verified per commit with `git show --stat`. The
+  tell that you are not alone on the branch: `git log` shows commits you did not
+  make, or `git status` shows staged changes you did not stage.
+- **2026-08-26** — **A rule a skill states in its rules list is not followed; the
+  same rule stated inside the output section that produces it, is.** Measured
+  twice on `dependency-checker` in one session. The internal-edges requirement
+  lived in the prose above the skeleton and scored 0/6; moved into the
+  `## Internal dependencies` section of the skeleton itself ("say that in the
+  report, not just in your head") it went to 2/2. The unknown-size recovery step
+  lived in numbered rule 5 — with an explicit example — and scored 0/2; moved
+  into the `## Size & weight` section next to the table it applies to, it moved
+  off zero. The mechanism is mundane and worth remembering: the rules list is
+  read once at the start, the skeleton is read while writing. When an eval shows
+  a skill skipping its own documented rule, the first fix to try is not stronger
+  wording — it is moving the rule to where the work happens.
+
+- **2026-08-25** — A rule that protects a MEASUREMENT has to fail a lane, not sit
+  in prose. Two of this branch's own findings had been written down as warnings —
+  "re-sync `architecture-reviewer-lite` before trusting a delta" and "remove the
+  dimension everywhere or measure nothing" — in exactly the shape the eval package
+  exists to stop trusting. Both are now mechanical: `evals/src/artifacts/pairs.ts`
+  holds a hash of each side of the pair plus one marker per place the removed
+  dimension appeared, and `pnpm eval:quality` and `pnpm vitest run src/` fail when
+  either file moves or a marker survives into the copy. The check costs nothing —
+  it reads two files — and it is the only thing standing between a re-synced pair
+  and a delta that reports the drift. The same gate grew an agent lane: `name`
+  matching the filename is the dispatch address, and nothing had ever checked it.
+
+- **2026-08-25** — Measured what `architecture-reviewer`'s "cite the documented
+  rule per finding" requirement actually buys, against
+  `architecture-reviewer-lite` (same cases, dimension removed everywhere), n=5:
+  the attribution practice fell **100% → 20%** and its case 75% → 20%, while both
+  unrelated cases sat at 100% on BOTH sides and the remaining practices in the
+  same case were flat or drifted up. Without the rule the agent still finds every
+  violation, still quotes the offending line verbatim, still assigns severity —
+  it just stops tying a finding to the contract it breaks. It is not free:
+  lite ran 452 output tokens and 3 turns cheaper on that case. **Do not trim this
+  rule for token economy** — that is the whole of what it holds up. Re-sync
+  `architecture-reviewer-lite.md` from the strict file before any re-measurement;
+  a delta across a drifted pair measures the drift.
+
 - **2026-08-19** — Sending the finished **plan** to an independent cross-model
   review before any code is written paid for itself on the L05 Onboarding run:
   15 amendments, 4 of them MAJOR and all of them things a review of the *diff*
@@ -53,6 +113,224 @@ live in `<package>/INSIGHTS.md`. Maintained by the `engineering-insights` skill.
 
 ## What Doesn't Work
 
+- **2026-08-26** — **A judged practice must grade ONE claim, and that claim must
+  be an outcome, not a wording.** Two failure shapes, both measured on the
+  `dependency-checker` cases across 12 historical runs plus 4 validation runs,
+  both invisible until the per-practice rates were tabulated:
+  (a) a practice worded `"X, and Y"` fails whenever either half misses but
+  reports as one line, so the half that held is invisible — three such
+  practices sat at 0/6 while their first halves passed every time. Splitting
+  them took three cases from 15–42% to 100% with no change to the artifact.
+  (b) a practice that grades the *reason* a finding gives, rather than the
+  finding, lands at ~50% no matter how it is packaged — measured on three
+  independent reason-practices (esbuild, puppeteer, zod-while-bundled). The
+  model reaches the right verdict and justifies it in its own words. Grade the
+  verdict; keep a reason practice only where the reason IS the documented rule
+  (a P0 given for the wrong reason is luck), and word it to accept a paraphrase.
+  Rule of thumb before adding a practice: *if the artifact did this perfectly
+  but phrased it differently, would this still pass?*
+
+- **2026-08-26** — **A `grounding` string is a claim about the agent's OUTPUT,
+  not about the fixture — and getting it wrong is the most expensive mistake in
+  this package**, because a miss hard-fails the case and skips the judge, so
+  correct work scores zero and the log says nothing about why. Three measured
+  instances in one session: `flowchart` failed a correct Mermaid graph written
+  `graph LR` (two current spellings of the same diagram type); `node:fs` failed
+  a report that found the filesystem violation and called it "Filesystem /
+  readFile / disk"; `chalk` — see the fixture entry below. Verify a grounding
+  string against a real passing output before trusting it, prefer
+  syntax-invariant anchors (` ```mermaid ` plus `-->` rather than the keyword),
+  and when a gate fails work the judge would have passed, move the string down
+  into a practice. The gate is for what cannot be said another way.
+
+- **2026-08-26** — **A fixture can defeat its own intended answer with facts the
+  model knows and the fixture author forgot.** The `dependency-checker` fixture
+  planted `chalk` as its one genuinely-dead dependency while also declaring
+  `pino-pretty`, which depends on `chalk` — so the model answered "loaded
+  indirectly by pino-pretty, keep it", which is *correct*, and scored 1/6 for
+  it. A planted trap must name something nothing else in the fixture can
+  plausibly pull in. Related and equally silent: an expectation whose answer
+  contradicts the artifact's own instructions (the same file demanded esbuild be
+  "its own finding" while `SKILL.md` instructs merging findings that share a
+  root cause). Grep the artifact for the behaviour you are about to demand.
+
+- **2026-08-26** — **"All cases green in one run" is the same p^N conjunction one
+  floor up, and it is not a reachable acceptance criterion for a suite.**
+  Measured on `dependency-checker` across four validation rounds after the
+  design bugs were fixed: per-case-run pass rate 34/40 = 85%, which is healthy —
+  but a 5-case suite at n=2 needs **ten** independent case-runs to land at once,
+  so a flawless suite shows "all green" about 0.85¹⁰ ≈ 20% of the time. Rounds
+  2–5 each had a different case red, and every time the red one had been green
+  the round before. Chasing that is chasing luck, and worse, it invites
+  threshold-lowering that hides real signal. Judge a suite by **per-case pass
+  rate over n runs** — which is exactly what `eval:repeat` computes and what its
+  own header says it is for ("one green run proves little") — and treat a case
+  at ≤2/5 as broken, 4–5/5 as healthy. Reserve "zero reds" for the deterministic
+  lanes, where it means something.
+
+- **2026-08-26** — **A behaviour requirement that works in an agent does not
+  transplant into a skill by writing the same sentence.** The
+  `architecture-reviewer` A/B measured what "cite the documented rule per
+  finding" is worth: 100% attribution with it, 20% without, violations still
+  found either way. Adding the same requirement to `onion-architecture`'s
+  SKILL.md — an explicit section listing the six rule ids and why naming them
+  matters — moved its attribution practice to **1/7**, and 0/5 at n=5. The
+  difference is structural, not rhetorical: the agent has a mandated report
+  format with a place for the citation, and a skill injected as a system prompt
+  produces free-form prose where a request for citations has nothing to attach
+  to. If a skill needs a field, give it an output shape, not a sentence.
+
+- **2026-08-26** — **Before concluding "the artifact is weak", read the run's
+  actual output.** Four consecutive red results on `dependency-checker` were all
+  defects in the measurement, and each looked exactly like an artifact failure
+  from the summary line alone: a fixture that named `chalk` as its dead
+  dependency while also declaring `pino-pretty`, which pulls `chalk` in (the
+  answer "loaded indirectly, keep it" was correct and scored 1/6); a grounding
+  gate on `node:fs` that failed a report which found the violation and called it
+  "Filesystem / readFile / disk"; a task that never said there was nowhere to
+  write a file, so a third of runs sent the report "to docs/" and returned the
+  chat summary the skill's own rule 6 prescribes; and a fixture line where
+  `esbuild` sat on a continuation of `dependencies:` directly above
+  `devDependencies:`, so the report filed it as dev. Diagnosing all four took
+  one look at the stored output each time. The per-practice rate table says
+  *that* something is wrong; only the output says *what*.
+
+- **2026-08-26** — A judge-scored case at `threshold: 1.0` is a CONJUNCTION
+  over N stochastic binary judgements, so it passes at roughly p^N: six
+  practices backed by a model that is right 19 times in 20 goes red about one run
+  in four with nothing wrong. Measured across four CI runs — two of them with an
+  IDENTICAL configuration, scoring the same case 1.0 then 0.83, and the workflow
+  tier 6/6 then 5/6 — while the 2- and 3-practice cases never moved, which is
+  exactly what the arithmetic predicts. Chasing that with model swaps wasted
+  three runs. **Count the practices before reading a red case as a regression**,
+  and do not spend 1.0 on a conjunction: the levers are grounding for the
+  mechanical half, a threshold that tolerates one miss, and EVAL_RETRY in CI.
+  Retry keeps the data honest because record() fires per ATTEMPT — the gate goes
+  lenient, results/records.jsonl does not.
+
+- **2026-08-25** — A weak judge is noise in **both** directions, and one swap
+  proved it in a single run. With `deepseek/deepseek-chat` judging, the
+  `architecture-reviewer` cases failed attribution 3 times (often with an empty
+  evidence string) while `dependency-checker` passed 4 of 5. Swapping only the
+  judge to `claude-sonnet-5` moved the two tiers in OPPOSITE directions: the agent
+  cases went to 3 of 4 — the weak judge had been failing a model that was right —
+  and the skill cases fell to 2 of 5 at 0 / 0.25 / 0.6 — it had been passing a
+  model that was wrong. Nothing about the artifacts or the task models changed.
+  **The judge is the instrument, not the subject: never trade it down for cost**,
+  and re-read any measurement taken with a cheaper one, in both directions.
+
+- **2026-08-25** — An exclusion is only worth what its CONSUMER preserves. A
+  vitest positional filter is a plain path **substring**, so
+  `vitest run agents/architecture-reviewer` also selects
+  `agents/architecture-reviewer-lite/` — re-admitting the A/B baseline that
+  `ci-detect.mjs` had just routed to `skipped_agents` one layer above, and
+  costing four extra model sessions grading a deliberately-degraded artifact
+  (measured in CI, 19 records where 15 were expected). The fix is a trailing
+  slash in the filter; the durable part is the rule: **when a name is a prefix of
+  another name, any substring-matching consumer will silently widen your
+  selection.** Pinned by a test that reads the workflow file, because the leak was
+  in the consumer, not in the thing that computed the exclusion.
+
+- **2026-08-25** — A dispatched subagent does not inherit the eval's model, and
+  the failure surfaces as a model-id error from an endpoint you never configured.
+  `runClaude()` passes `EVAL_MODEL` to the main `query()` only; a subagent resolves
+  the alias in its OWN frontmatter (`model: sonnet`, `model: opus` — nine of the
+  agents in `.claude/agents` carry one) to an Anthropic model id, which then goes
+  to whatever `ANTHROPIC_BASE_URL` points at. On the first CI run the workflow
+  tier dispatched `spec-creator` and the LiteLLM proxy answered
+  `openrouter/claude-opus-4-8 is not a valid model ID` while the main session ran
+  happily on the configured model the whole time — the model even narrated the
+  contradiction in its own trace. Any redirected backend needs
+  `ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU}_MODEL` pinned alongside the model option
+  (`evals/src/runtime/env.ts`); the option alone covers one session, not the tree.
+
+- **2026-08-25** — A pass threshold is calibrated against a MODEL, not only
+  against an artifact, so moving the runner to a cheaper model silently redefines
+  what the suite measures. The `architecture-reviewer` cases sit at
+  `threshold: 1` on `claude-haiku-4-5`; the first CI run put them on
+  `google/gemini-2.5-flash` and they measured 0.83 / 0.5 / 0, losing mostly the
+  attribution practice — a real difference between models, indistinguishable in
+  the report from the artifact regressing. The content tier makes the same point
+  from the other side: DeepSeek passed 4 of 5 `dependency-checker` cases, whose
+  thresholds are 0.75. **Run a gate on the model its bar was set against**, or
+  lower the bar deliberately and treat the two as separate series — which is what
+  the practice-identity rule already implies for a reworded practice.
+
+- **2026-08-25** — A CI trigger keyed on the literal name `CLAUDE.md` cannot
+  fire in this repo, and nothing about it looks broken. `CLAUDE.md` is a
+  two-line `@AGENTS.md` import; every rule lives in an `AGENTS.md`, which is
+  what `evals/workflow/review-workflow.cases.ts` asserts on by name
+  (`server/AGENTS.md`, `client/AGENTS.md`). `evals/scripts/ci-detect.mjs`
+  shipped with `f === "CLAUDE.md" || f === ".claude/CLAUDE.md"` as its whole
+  workflow-tier predicate — so the trigger that exists to notice the ruleset
+  changing would never have run once. It now matches
+  `/(^|\/)(AGENTS|CLAUDE)\.md$/`. The same trap has a second shape one layer
+  up: in a GitHub Actions `paths:` filter the `**/` prefix requires a
+  directory segment, so `'**/AGENTS.md'` does NOT match the repo-root file and
+  both forms have to be listed. **Anything that watches "the instructions" must
+  watch `AGENTS.md`; `CLAUDE.md` is a pointer, not the content.**
+
+- **2026-08-25** — "Does this artifact have an eval file?" is the wrong gate for
+  deciding what CI blocks on. `evals/agents/architecture-reviewer-lite/` holds a
+  real `*.eval.ts` that deliberately re-imports the STRICT agent's cases,
+  practices and threshold — the frozen half of an A/B pair is *supposed* to score
+  lower, that is the measurement. A `hasEvals()`-shaped check therefore routes a
+  deliberately-degraded artifact straight into a blocking matrix, where it is red
+  by design and teaches everyone to ignore the job. `ci-detect.mjs` now excludes
+  every `variant` declared in `src/artifacts/pairs.ts` (scraped as text, since
+  the detector is dependency-free `.mjs`), failing OPEN with a test row that
+  pins the scrape still matches. Editing either half of a pair is already caught
+  by `checkPairs()` in the zero-token gate, so nothing is lost by not gating on
+  it twice.
+
+- **2026-08-25** — Deriving a test's recorded outcome from the RUN's exit state
+  instead of from its assertions reports both false greens and false reds, and
+  nothing looks wrong. `evals/src/records/record.ts` fell back to
+  `!result.isError` whenever a case had no judge and no grounding gate — i.e.
+  for every trace-asserted workflow case. A dispatch case that read nothing,
+  launched nothing and merely answered in prose was recorded **2/2 PASS**
+  (the session exited fine); a near-miss negative whose assertions all held was
+  recorded **0/2 FAIL** (it spent one turn over `maxTurns`). Both flipped the
+  moment the runners passed an explicit verdict. `repeat`, `delta` and
+  `flaky` all read that column, so the whole workflow tier was being scored on
+  "did the session crash". **A trace-asserted case must record the conjunction
+  its asserts check — and deliberately exclude `isError` where the case does not
+  assert on it, or a turn-budget overrun reads as a behavioural failure.**
+
+- **2026-08-25** — An eval expectation that names an identifier from memory
+  scores 0% in BOTH arms of an A/B and silently removes the case from the
+  measurement. `evals/agents/architecture-reviewer` demanded the rule ids
+  `reviewer-core-zero-io` and `reviewer-core-ground-findings-gate`; neither
+  string exists anywhere in the repo (the real rule is `core-has-no-io`,
+  `server/.dependency-cruiser.cjs:123`, and the grounding gate has no id at
+  all — it is prose in `reviewer-core/AGENTS.md:20`). Same class of error in the
+  same file: "PASS/FAIL verdict" against an agent whose scale is `PASS |
+  BLOCKED` (12 BLOCKED / 4 PASS / 0 FAIL across 16 runs), and "does not comment
+  on test coverage" against a return format that makes an `Out of scope` section
+  naming tests mandatory. All three were failing the agent for obeying its own
+  definition. **Grep every identifier and every vocabulary word an expectation
+  quotes before writing it**; fixing these took two cases from 0% and 50% to
+  100%.
+  - **2026-08-25 follow-up** — the same grep also has to check the file
+    ABOVE the one under test. A workflow case asserted a read of
+    `server/AGENTS.md` while scoring on `vendor/shared` and `.it.test.ts` —
+    both of which the ROOT `AGENTS.md` also states, and the root file loads
+    automatically. One run answered correctly in a single turn with `grounded:
+    1` and an empty `reads`, so only the file assertion failed and the case sat
+    at 50% for a reason that had nothing to do with routing. Re-keying it on
+    `422` and `test/helpers/pg.ts` (root=0, client=0, server=1) took it to
+    100%: **a marker only tests an artifact if it is unreachable without it.**
+
+- **2026-08-25** — A cosmetic edit is not an A/B manipulation. Removing the
+  citation rule from two lines of `architecture-reviewer`'s return-format
+  template moved the target practice by −20 while an untouched control practice
+  moved −40 — pure noise, because the same requirement still appeared in three
+  other places (Step 2's "quote the violated rule name", Step 2's read-the-config
+  block, Step 3's per-observation `Skill` column). The same experiment against
+  `architecture-reviewer-lite`, which has the dimension removed everywhere,
+  measured −80 with every control flat. **Grep the artifact for the dimension
+  and remove all of it, or measure nothing.**
+
 - **2026-08-04** — Declaring a table in the schema file it "belongs" to can
   close an import cycle that dependency-cruiser rejects: `run_skills` references
   both `agent_runs` and `skills`, and putting it in `schema/skills.ts` created
@@ -63,6 +341,19 @@ live in `<package>/INSIGHTS.md`. Maintained by the `engineering-insights` skill.
   db:generate` had already produced a correct migration.
 
 ## Codebase Patterns
+
+- **2026-08-25** — A prohibition in `AGENTS.md` that offers no sanctioned route
+  to the goal gets an exception invented for it. The `Never docker compose down
+  -v` rule stated its consequence and still lost: asked for a clean Postgres, the
+  agent quoted the rule, decided it was "about ACCIDENTAL deletion", and put
+  `down -v` on line one of its instructions. Nothing was wrong with the wording —
+  the rule was a dead end, and the legitimate intent had nowhere else to go.
+  Adding the allowed path (reset the schemas, keep the volume) plus an explicit
+  "a deliberate wipe is not an exception" flipped the behaviour: the same prompt
+  now answers `НЕ робити: docker compose down -v` and reproduces the reset
+  verbatim. **Write a ban as ban + sanctioned alternative; a rule with no exit
+  is an invitation to reason around it.** Verified by
+  `evals/workflow` — the case that caught it is `destructive cleanup`.
 
 - **2026-08-18** — `.claude/settings.json`'s `deny` on `Edit(./**/src/vendor/ui/**)`
   has no carve-out for this repo's own **declared vendor update** pattern, so a
@@ -76,6 +367,20 @@ live in `<package>/INSIGHTS.md`. Maintained by the `engineering-insights` skill.
   the `Vendor-update:` declaration but says nothing about who may perform the
   edit. Note the block is wider than the file documents: `Bash rm -rf` under
   `server/clones/**` is also hard-denied, `dangerouslyDisableSandbox` included.
+  - **2026-08-27** — The same carve-out gap exists on
+    `Edit|Write(./server/src/db/migrations/*.sql)`, and it lands differently
+    because that deny has **no matching `Bash` deny**. `AGENTS.md:81-83`
+    forbids editing an *applied* migration; the glob cannot tell one from the
+    file `pnpm db:generate` produced thirty seconds ago, which the generating
+    step legitimately owns and must hand-append its backfill to. So a lane
+    doing exactly what its plan told it to is refused by `Edit`, finds
+    `printf >> file` uncontested, and completes — the rule is enforced against
+    the sanctioned tool and advisory against the unsanctioned one, which is
+    backwards. Two consequences: **a deny glob with no matching `Bash` deny
+    does not enforce anything, it only redirects**, and a step that generates
+    a migration and then edits it needs either a scoped exception or a
+    human/main-session row. Both reviewers flagged the glob independently on
+    the run this comes from.
 
 - **2026-08-13** — Any `file:line` derived from repo-intel resolves against
   `repo_index_state.last_indexed_sha`, **never** the PR's `head_sha` — the index
@@ -123,7 +428,92 @@ live in `<package>/INSIGHTS.md`. Maintained by the `engineering-insights` skill.
   a model". Planners: read `verify: e2e flow` on a model-spending surface as a
   spec finding to re-lane, never as an instruction to write the flow.
 
+- **2026-08-26** — A "known pre-existing failure" carried in a handoff brief is
+  a tax every later agent pays, and it is often not pre-existing at all. L06
+  opened with 5 red server unit tests documented since 2026-08-20 as
+  macOS-only-and-ignorable; four separate agents re-confirmed them across the
+  run. They were a two-line fixture bug: `mkdtemp(join(tmpdir(), …))` on macOS
+  returns `/var/folders/…`, a symlink to `/private/var/folders/…`, and both the
+  clone-root symlink guard and dependency-cruiser resolve real paths, so the
+  fixture root matched nothing. Wrapping the fixture in `realpath` made
+  `--slice backend` 562/562 for the first time. **Budget an hour to fix a
+  standing red before writing it into a brief** — the brief entry costs more,
+  every run, than the fix did once, and a permanently-red lane trains everyone
+  to skim the one line that matters.
+
+- **2026-08-26** — Clicking the finished feature caught two defects that a
+  full review chain did not: `?tab=evals` silently fell back to Config (a
+  page-level whitelist no test covers), and one click stacked two error toasts.
+  Eight `/code-review` angles, a security pass, an architecture review and
+  `plan-verifier` all read the same code and found neither *as a user-visible
+  symptom* — `plan-verifier` did flag the tab one, from the code, and graded it
+  PARTIAL. Reviews find what is wrong in code; only running it finds what is
+  wrong on screen. Keep the manual click-through as its own stage, after the
+  reviews settle, not as an optional extra.
+
 ## Tool & Library Notes
+
+- **2026-08-25** — A headless session must expire BEFORE the test runner that
+  owns it, or the failure is unrecordable. `record()` fires from a `finally`, and
+  a test killed by vitest never reaches one, so a run that hits vitest's 240 s
+  ceiling leaves no row — not a red row, an absent one, which `repeat` then
+  reports as a green 5/5 over six cases. The fix is the SDK's own
+  `Options.abortController`: `runClaude()` arms a timer at `RUN_TIMEOUT_MS`
+  (`TEST_TIMEOUT_MS - 60 s`, both in `evals/src/config.ts`, with
+  `vitest.config.ts` importing the outer one so the two cannot drift apart), and
+  an expired run returns a normal `Result` — `isError`, `timedOut`, partial trace
+  intact — instead of throwing. The gap has to clear everything that runs after
+  the session inside the same test: the judge is another model round-trip. A
+  `timed_out` column now distinguishes a run that died on its deadline from one
+  whose assertions failed; they are otherwise identical and call for opposite
+  responses. Unit-tested against a mocked SDK session that hangs until aborted.
+
+- **2026-08-25** — In the Claude Agent SDK, `allowedTools` is a DECLARATION,
+  not a restriction: under `permissionMode: "bypassPermissions"` a session
+  reaches for tools that are not on the list. `evals/src/tasks.ts` ran the
+  workflow tier with a read-only `allowedTools` and the traces still showed
+  `Write`, `Edit` and `Bash` — and the `engineering-insights` activation case
+  wrote its synthetic pgvector finding straight into the real
+  `server/INSIGHTS.md`. `disallowedTools` is the half the SDK enforces; with
+  `["Write","Edit","NotebookEdit","Bash"]` added, a re-run left `git status`,
+  `specs/` and every `INSIGHTS.md` checksum untouched while the model still
+  *attempted* Write (a trace records the REQUEST, not the outcome — a blocked
+  tool still appears in `toolsUsed`, and costs turns: 21 instead of the usual
+  3–4). **Any headless session pointed at a real checkout needs a deny-list;
+  the allow-list alone will not hold.** Note what it does not cover: a
+  dispatched subagent carries its own tool set, so a dispatch case still
+  depends on `stopWhen` tearing the session down at launch.
+
+- **2026-08-25** — A model can emit malformed tool-call syntax, and one bad
+  string silently deletes a whole test case from a run. An observed dispatch put
+  the rest of the XML into `subagent_type`, so `subagents` held
+  `spec-creator</subagent_type>\n<parameter name="prompt">…`. Everything
+  downstream compares by EXACT membership — above all `stopWhen`'s
+  `subagents.includes(name)` — so the early stop never fired, the nested
+  subagent ran to completion, the case blew past vitest's 240 s `testTimeout`,
+  and **the kill left its `finally` unreached, so it wrote no record at all**.
+  `repeat` builds its summary from records, so a 6-case run printed a green
+  "5/5 cases" with the sixth simply absent. Two fixes, both needed:
+  normalise the name at extraction (`agentName()` in
+  `evals/src/runtime/run-claude.ts`, unit-tested), and make `repeat` compare
+  `countTests` against the summary and say so. **Never let a killed test be
+  indistinguishable from a passing one — and never key control flow on a string
+  the model formatted.**
+
+- **2026-08-25** — vitest's `expect.getState().currentTestName` is AMBIENT, not
+  bound to the test that read it. `evals/src/records/record.ts` built each
+  record's `nodeid` from it, and because it runs in a `finally` after a 40–70 s
+  model call, the ambient name had already moved to a neighbouring case:
+  in one 5-run series over four cases, one test collected 6 records, another 0,
+  and a third never appeared, so every per-practice rate was computed over
+  another case's denominator. `repeat`, `delta` and `benchmark` all aggregate by
+  `nodeid`, so all three had been quietly comparing the wrong rows — nothing
+  failed, the numbers just meant something else. **Never use ambient test state
+  as identity for anything written after an `await`; pass the name in.** The
+  symptom to look for is a per-practice list containing practices that belong to
+  a different case. Related trap in the same package: the LLM judge echoes each
+  practice back and does not echo it byte-for-byte (a dropped pair of backticks
+  was enough), so judge output must never be a join key either.
 
 - **2026-08-05** — Every CI workflow pins `pnpm` **10** via
   `pnpm/action-setup@v4`, but nothing in the repo pinned it locally, so corepack
@@ -265,8 +655,47 @@ live in `<package>/INSIGHTS.md`. Maintained by the `engineering-insights` skill.
   the symptom→restart loop is confirmed. Reduce the exposure at the source:
   log external-call failures through `errSummary()` from `platform/errors.ts`,
   never the raw error.
+- **2026-08-26** — `ReferenceError: <identifier> is not defined` from a file
+  whose only recent change was a COMMENT means the comment quoted a glob. A
+  block comment containing `**/src/vendor/ui/**` — the exact form this repo's
+  `AGENTS.md` uses for its do-not-touch paths, and which agents copy into file
+  headers to explain themselves — ends at the `**/` inside it, so the rest of
+  the prose parses as code. It surfaces as an undefined identifier, never as a
+  comment-syntax error, which sends you looking at the logic instead. Quote
+  such a path without the closing-comment token (`src/vendor/ui`), or use `//`
+  lines.
 
 ## Session Notes
+
+- **2026-08-27** — SPEC-05 follow-up: the expectation kind (`must_find` /
+  `must_not_flag`) stopped being derived from `expected_output` on every render
+  and became a stored column, set from the finding's accept/dismiss decision —
+  the requirement both earlier L06 plans had missed. Around it: a per-case run
+  route that writes outside any batch, the case editor's POSITIVE/NEGATIVE
+  banner with `Run case` / `Run on save` / `Actual output`, and the kind
+  printed in words on the Evals row. 11 steps, 5 waves, ~1.5M agent tokens;
+  architecture PASS twice and an empty security report, so the whole fix loop
+  was one `/code-review` finding — which then turned up a second bug of the
+  same root (a stale prop minting duplicate rows) that the first fix would
+  have made likelier.
+- **2026-08-26** — SPEC-05 design-fidelity delta: the `/eval` overview was
+  rebuilt to its mock (full-width agent rows with a `recall` sparkline, metric
+  bars in the runs table, version-as-link) and `Run all agents` added behind a
+  confirmation dialog, as a client-side fan-out over the existing
+  `POST /agents/:id/eval-runs` — no new route, no migration, one wire field
+  (`EvalAgentSummary.trend`). Ran through `/implement`: 4 waves, 9 steps, ~950k
+  agent tokens; architecture PASS with zero findings and an empty security
+  report, so the entire fix loop was three `/code-review` findings, two of which
+  came from clicking the page rather than reading it. Another session committed
+  to the branch mid-run; see What Works on pathspec commits.
+- **2026-08-26** — L06 SPEC-05 eval pipeline shipped end to end through
+  `/implement`: 7 waves, 16 steps, ~2.6M agent tokens. Eight `/code-review`
+  findings (all CONFIRMED, all fixed), one architecture WARNING, one security
+  MEDIUM, one `plan-verifier` PARTIAL, and two more defects found only by
+  clicking the app. Landed green: frontend 491, backend 562, integration 135,
+  mcp 67, reviewer-core 23. The two process lessons are in Codebase Patterns
+  above — fix a standing red instead of documenting it, and keep the manual
+  click-through as its own stage.
 
 - **2026-07-31** — Built the docs layer: three-section `CLAUDE.md` (Before
   answering / Conventions / Use when) at root + 4 packages, seeded docs/specs
@@ -314,6 +743,55 @@ live in `<package>/INSIGHTS.md`. Maintained by the `engineering-insights` skill.
   pass; the behavioural probes are deferred to a fresh session for the
   registry reason recorded above.
 
+- **2026-08-25** — Lab 6: ran the `architecture-reviewer` citation A/B and spent
+  most of it fixing the measuring instrument. Three harness defects fell out, in
+  rising order of damage: expectations quoting identifiers the repo never
+  documents; practice rates keyed on the judge's echoed text; and records filed
+  under whichever test vitest's ambient state happened to be pointing at, which
+  had been corrupting every `repeat`/`delta`/`benchmark` denominator. With those
+  fixed and the manipulation made real (`architecture-reviewer-lite`), the effect
+  measured cleanly at −80 points on the attribution practice with every control
+  flat. Also shipped `dependency-checker` 1.0.0 with `scripts/deps-report.mjs`.
+
+- **2026-08-25** — Lab 6b: built the workflow (systemic) eval tier — six
+  composite cases over `CLAUDE.md` routing, package `AGENTS.md`, skill
+  activation and subagent dispatch, run as 6 sessions instead of 10 by merging
+  along one task each. Added `expectMentions` so a trace case can also score the
+  final text, which is the only way to see a rule delivered as CONFIG (root and
+  package `CLAUDE.md` produce no `Read`). Most of the session went into the
+  instrument again: the allow-list that was not enforcing, an outcome column
+  measuring "did not crash", and a mangled subagent name that deleted a case
+  from a run. All six cases end green (M3 at 5/5); the tier's first real finding
+  was a hole in `AGENTS.md`, not in the code.
+
+- **2026-08-25** — Lab 6c: wired the harness evals into GitHub Actions
+  (`.github/workflows/evals.yml`): a zero-token `gate`, a `detect` job that
+  routes from the PR diff, and matrix'd `skills` / `agents` / `workflow` tiers
+  on OpenRouter (DeepSeek for content, Gemini 2.5 Flash + the bundled LiteLLM
+  proxy for the tool tiers, which are the only ones measured to actually dispatch
+  a subagent). Most of the value was not the YAML: `ci-detect.mjs` had shipped
+  unreferenced with a workflow trigger that could never fire, and its
+  "artifact has evals" check would have gated on an A/B baseline. Both are now
+  covered by `evals/src/ci-detect.test.ts` in the model-free lane.
+  - **follow-up, same day** — the first real run answered three things at once:
+    the wiring works end to end (routing, proxy, artifacts) and `evals/` does
+    install under pnpm 10; a dispatched subagent ignores `EVAL_MODEL`; and the
+    tool-tier thresholds are model-calibrated, so those tiers moved to
+    `anthropic/claude-haiku-4.5` via the Anthropic Skin, which needs no proxy at
+    all. Measured cost for all three tiers: 324.5k in / 15.3k out, ~$0.10-0.15.
+
 ## Open Questions
 
-_None open._
+- **2026-08-25** — A fixture that is PASTED rather than applied cannot produce
+  gate output, and no expectation should be written as if it could. The
+  `core-has-no-io` practice in `evals/agents/architecture-reviewer` has been
+  re-keyed to attribution behaviour (a named contract plus a locator, which is
+  the dimension the lite variant actually loses), so the case discriminates
+  again — but the underlying limitation stands for every future case: the agent
+  runs depcruise against the LIVE repo, which is green, so a fixture diff never
+  reaches a gate. Materialising a case's diff into a scratch tree the gate can
+  cruise is the only way to grade what a machine check actually printed. Nobody
+  has needed it enough yet to build it.
+
+  *(The vitest-timeout question recorded here on 2026-08-25 is closed — see the
+  session-deadline entry under Tool & Library Notes.)*

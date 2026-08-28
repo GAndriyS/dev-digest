@@ -1,0 +1,136 @@
+{
+  "skill": "onion-architecture",
+  "run": "skill-evals/results/onion-architecture-case7-v2-vs-v1.1.0",
+  "graded_at": "2026-08-24T13:40:28.674Z",
+  "configs": {
+    "baseline": {
+      "pass_rate": 0.5999999999999999,
+      "passed": 27,
+      "total": 45,
+      "false_findings": 0,
+      "seconds": 323.2,
+      "runs": [
+        {
+          "case": "team-conventions",
+          "run": "run-1",
+          "passed": 5,
+          "failed": 4,
+          "total": 9,
+          "pass_rate": 0.5555555555555556,
+          "findings_reported": 20,
+          "false_findings": 0,
+          "seconds": 310.8
+        },
+        {
+          "case": "team-conventions",
+          "run": "run-2",
+          "passed": 5,
+          "failed": 4,
+          "total": 9,
+          "pass_rate": 0.5555555555555556,
+          "findings_reported": 29,
+          "false_findings": 0,
+          "seconds": 391.3
+        },
+        {
+          "case": "team-conventions",
+          "run": "run-3",
+          "passed": 6,
+          "failed": 3,
+          "total": 9,
+          "pass_rate": 0.6666666666666666,
+          "findings_reported": 18,
+          "false_findings": 0,
+          "seconds": 270.5
+        },
+        {
+          "case": "team-conventions",
+          "run": "run-4",
+          "passed": 5,
+          "failed": 4,
+          "total": 9,
+          "pass_rate": 0.5555555555555556,
+          "findings_reported": 21,
+          "false_findings": 0,
+          "seconds": 333.3
+        },
+        {
+          "case": "team-conventions",
+          "run": "run-5",
+          "passed": 6,
+          "failed": 3,
+          "total": 9,
+          "pass_rate": 0.6666666666666666,
+          "findings_reported": 21,
+          "false_findings": 0,
+          "seconds": 310.1
+        }
+      ]
+    },
+    "with-skill": {
+      "pass_rate": 1,
+      "passed": 45,
+      "total": 45,
+      "false_findings": 0,
+      "seconds": 281.14,
+      "runs": [
+        {
+          "case": "team-conventions",
+          "run": "run-1",
+          "passed": 9,
+          "failed": 0,
+          "total": 9,
+          "pass_rate": 1,
+          "findings_reported": 16,
+          "false_findings": 0,
+          "seconds": 226
+        },
+        {
+          "case": "team-conventions",
+          "run": "run-2",
+          "passed": 9,
+          "failed": 0,
+          "total": 9,
+          "pass_rate": 1,
+          "findings_reported": 20,
+          "false_findings": 0,
+          "seconds": 339.4
+        },
+        {
+          "case": "team-conventions",
+          "run": "run-3",
+          "passed": 9,
+          "failed": 0,
+          "total": 9,
+          "pass_rate": 1,
+          "findings_reported": 21,
+          "false_findings": 0,
+          "seconds": 302.9
+        },
+        {
+          "case": "team-conventions",
+          "run": "run-4",
+          "passed": 9,
+          "failed": 0,
+          "total": 9,
+          "pass_rate": 1,
+          "findings_reported": 15,
+          "false_findings": 0,
+          "seconds": 234
+        },
+        {
+          "case": "team-conventions",
+          "run": "run-5",
+          "passed": 9,
+          "failed": 0,
+          "total": 9,
+          "pass_rate": 1,
+          "findings_reported": 23,
+          "false_findings": 0,
+          "seconds": 303.4
+        }
+      ]
+    }
+  },
+  "delta_pass_rate": 0.4
+}

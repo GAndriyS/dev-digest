@@ -9,10 +9,17 @@
     "metricTrend": "Metric trend",
     "recentRuns": "Recent runs",
     "noRuns": "No runs yet. Create an eval case and run it.",
+    "noProviderKey": "No LLM provider key is configured, so eval runs are disabled. Add a key in Settings → API Keys and try again.",
+    "delta": "{value} pt",
     "metrics": {
       "recall": "RECALL",
       "precision": "PRECISION",
       "citationAccuracy": "CITATION ACCURACY"
+    },
+    "metricsShort": {
+      "recall": "RECALL",
+      "precision": "PREC",
+      "citation": "CITE"
     },
     "legend": {
       "recall": "Recall",
@@ -25,13 +32,47 @@
       "precision": "Precision",
       "citation": "Citation",
       "pass": "Pass",
-      "cost": "Cost"
+      "cost": "Cost",
+      "errored": "{count} errored",
+      "erroredNote": "Errored cases are excluded from recall, precision and citation accuracy."
     },
     "pass": "pass",
-    "fail": "fail"
+    "fail": "fail",
+    "alert": {
+      "title": "Regression detected",
+      "body": "{metric} dropped {drop} pt since the previous run",
+      "otherUp": "{metric} rose {value} pt",
+      "otherDown": "{metric} fell {value} pt",
+      "otherFlat": "{metric} unchanged"
+    },
+    "overview": {
+      "title": "Eval Dashboard",
+      "subtitle": "Regression harness across all reviewer agents · pick an agent to see its runs",
+      "agentsHeading": "AGENTS",
+      "recentBatchesHeading": "RECENT EVAL RUNS · ALL AGENTS",
+      "emptyAgents": "No agents have eval cases yet. Add cases from an agent's Evals tab to start tracking regressions.",
+      "columnAgent": "Agent",
+      "columnModel": "Model",
+      "columnLastRun": "Last run",
+      "columnVersion": "Version",
+      "columnPass": "Pass",
+      "lastRun": "Last run v{version} · {timestamp} · {passed}/{total} pass"
+    }
+  },
+  "runAllAgents": {
+    "button": "Run all agents",
+    "disabledReason": "No agent has eval cases yet",
+    "dialogTitle": "Run all agents?",
+    "dialogBody": "This runs the eval set for {agents, plural, one {# agent} other {# agents}} — {cases, plural, one {# eval case} other {# eval cases}} total.",
+    "confirm": "Confirm",
+    "cancel": "Cancel",
+    "failure": "{name} — {reason}"
   },
   "caseEditor": {
     "newCase": "New eval case",
+    "subtitleAccepted": "Seeded from an accepted finding · assert the expected output",
+    "subtitleDismissed": "Seeded from a dismissed finding · assert the expected output",
+    "subtitleManual": "Created by hand · assert the expected output",
     "caseTitle": "Eval case · {name}",
     "runCase": "Run case",
     "running": "Running…",
@@ -55,23 +96,80 @@
     "invalidJson": "invalid JSON",
     "lastRunPassed": "Last run passed",
     "lastRunFailed": "Last run failed",
-    "resultSummary": "recall {recall}% · precision {precision}% · citation {citation}% · {duration}s"
+    "resultSummary": "recall {recall}% · precision {precision}% · citation {citation}% · {duration}s",
+    "banner": {
+      "positiveTitle": "POSITIVE CASE",
+      "negativeTitle": "NEGATIVE CASE",
+      "mustFind": "MUST find \"{title}\" at {file}:{line}",
+      "mustNotFlag": "MUST NOT flag"
+    },
+    "actualOutput": "Actual output",
+    "neverRun": "Never run yet",
+    "runOnSave": "Run on save",
+    "runFailed": "Run failed: {reason}",
+    "runNeedsSave": "Save the case before running it"
   },
   "evalsTab": {
     "metricsTitle": "Eval metrics",
     "metricsSubtitle": "Recall / Precision / Citation for this agent's eval cases",
     "casesHeading": "Eval cases",
     "newCase": "New case",
+    "kind": {
+      "mustFind": "must_find",
+      "mustNotFlag": "must_not_flag"
+    },
+    "expectedCount": {
+      "mustFind": "Expects {count, plural, one {# finding} other {# findings}} — the agent must report {count, plural, one {it} other {them}} on this diff",
+      "mustNotFlag": "Expects no findings — the agent must not flag anything on this diff"
+    },
+    "kindMismatch": "Stored as {kind}, but expected output has {count, plural, one {# finding} other {# findings}}",
     "loadingCases": "Loading cases…",
+    "loadError": "Could not load eval cases.",
     "emptyCases": "No eval cases yet. Create one to assert this agent's expected findings on a sample diff.",
     "neverRun": "never run",
     "passed": "passed",
     "failed": "failed",
+    "errored": "errored",
+    "erroredReason": "Failed: {reason}",
+    "erroredNote": "Excluded from recall, precision and citation accuracy.",
     "recallSuffix": " · recall {recall}%",
+    "tracesSummary": "{passed} / {total} traces passed",
+    "viewDashboard": "View in Eval Dashboard →",
+    "deleteConfirm": "Delete the eval case \"{name}\"? This cannot be undone.",
+    "noProviderKey": "No LLM provider key is configured, so eval runs are disabled. Add a key in Settings → API Keys and try again.",
     "run": "Run",
     "running": "Running…",
     "edit": "Edit",
     "delete": "Delete"
+  },
+  "findingAction": {
+    "turnIntoEvalCase": "Turn into eval case",
+    "disabledReason": "Accept or dismiss the finding first",
+    "noPatch": "No diff text for this file — can't create an eval case.",
+    "created": "Eval case created",
+    "opened": "Eval case already exists — opening it",
+    "failed": "Couldn't create an eval case from this finding."
+  },
+  "compare": {
+    "subtitle": "Old prompt vs new — metric deltas and prompt diff",
+    "button": "Compare",
+    "selectHint": "Select exactly two runs to compare",
+    "metricsHeading": "METRIC DELTAS",
+    "costLabel": "Cost",
+    "promptDiffHeading": "SYSTEM PROMPT DIFF",
+    "promptDiffUnavailable": "Prompt diff isn't available — the agent configuration snapshot for one of these runs no longer exists.",
+    "close": "Close",
+    "titleVersions": "Compare runs · v{older} → v{newer}",
+    "titleSameVersion": "Compare runs · v{version}",
+    "cards": {
+      "recall": "RECALL",
+      "precision": "PRECISION",
+      "citation": "CITATION",
+      "cost": "COST"
+    },
+    "legendOld": "v{version} (old)",
+    "legendNew": "v{version} (new)",
+    "promptDiffSameVersion": "Both runs were made on v{version} — the system prompt didn't change between them."
   },
   "page": {
     "crumbSkillsLab": "Skills Lab",

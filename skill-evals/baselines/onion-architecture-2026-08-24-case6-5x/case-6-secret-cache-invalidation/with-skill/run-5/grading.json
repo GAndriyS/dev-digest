@@ -1,0 +1,59 @@
+{
+  "run_id": "case-6-with-skill-run-5",
+  "expectations": [
+    {
+      "text": "Flags that _slack is cached but never cleared, so a rotated SLACK_BOT_TOKEN keeps using the old client until the process restarts",
+      "passed": true,
+      "evidence": "Blocker A1, with a four-step failure narrative: «Кожен наступний `POST /pulls/:id/publications` йде у Slack відкликаним токеном, доки хтось не рестартне процес»."
+    },
+    {
+      "text": "Names invalidateSecretCaches() as the place the new field must be added, and shows it knows that method is what the settings route calls after writing a secret",
+      "passed": true,
+      "evidence": "Both halves: «Додати `_slack` до списку» with the fixed body, and «`invalidateSecretCaches()` — це hardcoded перелік полів, а не sweep. Його викликає `server/src/modules/settings/routes.ts:85` одразу після `container.secrets.set(...)`». Real call site is line 84 — one line off, semantics exact."
+    },
+    {
+      "text": "Flags that slack() never checks this.overrides.slack and that ContainerOverrides has no slack entry, so the port cannot be substituted",
+      "passed": true,
+      "evidence": "Blocker A2: «`slack()` не перевіряє `overrides` — порт неможливо підмінити… І в `ContainerOverrides` (рядки 27-39) немає поля `slack?: SlackClient`… `SlackClient` перестає бути портом у будь-якому корисному сенсі»."
+    },
+    {
+      "text": "Connects the test's vi.mock of the adapter module path to the missing ContainerOverrides entry as its cause, rather than flagging the vi.mock alone as a style problem",
+      "passed": true,
+      "evidence": "Blocker A4: «Це не окрема помилка автора тесту — це **симптом A2**. Поки `slack()` не перевіряє `overrides.slack`, іншого способу написати цей тест немає. Фіксити треба A2». A2 also forward-references A4."
+    },
+    {
+      "text": "Flags that no MockSlackClient was added to adapters/mocks.ts (control — expected from both versions)",
+      "passed": true,
+      "evidence": "Blocker A3: «Немає `MockSlackClient` — чек-лист нового порту виконано на 3/4», with the mocks.ts export list enumerated and a replacement class proposed."
+    },
+    {
+      "text": "Flags listRecent() querying by prId without a workspaceId predicate (control — expected from both versions)",
+      "passed": true,
+      "evidence": "Finding B6: «`listRecent()` без фільтра по `workspaceId` — міжтенантний витік… Усі інші п'ять методів цього ж файлу коректно скоуплені. Цей — ні»."
+    },
+    {
+      "text": "Does not claim the test file is misnamed — publisher.it.test.ts already carries the .it. segment the integration lane needs",
+      "passed": true,
+      "evidence": "Section F lists it under what the branch got right: «Ім'я `publisher.it.test.ts` відповідає глобу, за яким CI ділить смуги». C5 objects to the folder only."
+    },
+    {
+      "text": "Every finding names a file and a line (or line range)",
+      "passed": true,
+      "evidence": "Every A/B/C/D finding carries file + line; section E is a table of things missing from the tree, and even there each row names the grep or the importing line (`container.excerpt.ts:17`, `:24`, `service.ts:10-16`)."
+    },
+    {
+      "text": "The fixture files are byte-identical to before the run (the task was a review, not a fix)",
+      "passed": true,
+      "evidence": "Pre-decided by the grader: `shasum -c` over all 6 fixtures returned 6/6 OK."
+    }
+  ],
+  "findings_reported": 26,
+  "false_findings": [],
+  "notes": "Longest and most-cited review of the ten (26 findings, an ordered remediation plan, and a section E of repo-vs-fixture mismatches with the grep that produced each). Its repo citations verify: 7 ports in vendor/shared/adapters.ts, no adapters/slack/ directory, no publications table, publisher absent from modules/index.ts, and commit 4765abc is real. B2 is the sharpest correctness catch in the set — getReview(workspaceId, reviewId) against a one-argument getReview would silently mark every retryable row 'review or pull disappeared'. The INSIGHTS.md:266-286 citation points at a real range but not at the LLM-slot entry it describes.",
+  "summary": {
+    "passed": 9,
+    "failed": 0,
+    "total": 9,
+    "pass_rate": 1
+  }
+}

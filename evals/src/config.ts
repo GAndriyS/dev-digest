@@ -1,0 +1,86 @@
+/**
+ * All tunables in one place. No logic here — just the knobs the rest of the package reads.
+ * Nothing in this module imports from another src module (it is the bottom of the dependency
+ * graph): config knows nothing of runtime, scoring, or the SDK.
+ */
+
+// --- Models -----------------------------------------------------------------
+// Cheap model under test by default; the judge is a stronger family to soften self-preference.
+export const EVAL_MODEL = process.env.EVAL_MODEL ?? "claude-haiku-4-5";
+export const EVAL_JUDGE_MODEL = process.env.EVAL_JUDGE_MODEL ?? "claude-sonnet-5";
+export const MAX_TURNS = Number(process.env.EVAL_MAX_TURNS ?? "8");
+
+// --- Configuration tag ------------------------------------------------------
+// "candidate" = artifact injected (normal). "baseline" = no artifact (benchmark lift baseline).
+export const EVAL_CONFIG = process.env.EVAL_CONFIG ?? "candidate";
+export const IS_BASELINE = EVAL_CONFIG === "baseline";
+
+// --- Repetition budget ------------------------------------------------------
+// How many times a multi-run tool (repeat, benchmark) may run the same pattern. Both the default
+// and the CAP are 2: a session is the expensive unit here, and 2 already catches a blatantly
+// flaky case. Raising it is a deliberate act, not a flag typo — export EVAL_MAX_REPEATS.
+//
+// What you give up at n=2: every pass rate is 0/50/100%, so a single coin-flip moves a practice
+// by 50 points and an A/B delta cannot be told from noise (measured 2026-08-25 on the
+// architecture-reviewer citation A/B). The stats layer wants 5, and below 5 `repeat` stamps its
+// stddev "indicative only". So: n=2 to check stability, EVAL_MAX_REPEATS=5 to MEASURE a change.
+export const MAX_REPEATS = Number(process.env.EVAL_MAX_REPEATS ?? "2");
+
+// --- Time budget ------------------------------------------------------------
+// Two ceilings, and the ORDER between them is the whole point: the session's own deadline must
+// expire strictly BEFORE vitest's, or a stuck run is killed by the test runner and takes its
+// record with it — record() fires in a `finally`, and a killed test never reaches one. That is
+// how a mangled subagent name deleted a whole case from a 6-case run while `repeat` printed a
+// green "5/5" (measured 2026-08-25): the row was missing, not red.
+//
+// vitest reads TEST_TIMEOUT_MS from vitest.config.ts; runClaude() enforces RUN_TIMEOUT_MS on
+// itself and returns a partial, isError Result instead of hanging. Keep the gap wide enough for
+// everything that happens AFTER the session in the same test: a judge call is another model
+// round-trip, and record() then writes the row.
+export const TEST_TIMEOUT_MS = Number(process.env.EVAL_TEST_TIMEOUT_MS ?? "240000");
+export const RUN_TIMEOUT_MS = Number(
+  process.env.EVAL_RUN_TIMEOUT_MS ?? String(Math.max(30_000, TEST_TIMEOUT_MS - 60_000)),
+);
+
+// --- Scoring / statistics thresholds ---------------------------------------
+export const DEFAULT_THRESHOLD = 0.6; // judge score gate for a quality case
+export const FLAKY_LOW = 0.2; // pass rate strictly inside (20%, 80%) is "flaky"
+export const FLAKY_HIGH = 0.8;
+export const COST_REGRESSION_RATIO = 1.25; // candidate mean tokens > 125% of baseline
+
+// --- Tool allow-lists -------------------------------------------------------
+// Subagent-spawning tool name varies by harness; count both.
+export const SPAWN_TOOLS = new Set(["Task", "Agent"]);
+// workflowTask runs against the LIVE repo with bypassPermissions — keep this read-only.
+export const WORKFLOW_ALLOWED_TOOLS = ["Read", "Grep", "Glob", "Task", "Agent", "Skill"];
+/**
+ * The read-only list above turned out to be a DECLARATION, not a restriction: under
+ * bypassPermissions a workflow session reached for `Write`, `Edit` and `Bash` anyway, and the
+ * engineering-insights activation case wrote its synthetic pgvector finding straight into the real
+ * server/INSIGHTS.md (measured 2026-08-25, 12-session repeat). `disallowedTools` is the half the
+ * SDK actually enforces, so the mutating tools are named here explicitly.
+ *
+ * Note what this does NOT cover: a dispatched subagent carries its own tool set (spec-creator has
+ * Write/Edit), so a dispatch case still relies on `stopWhen` tearing the session down at the
+ * launch. Keep dispatch cases early-stopping.
+ */
+export const WORKFLOW_DISALLOWED_TOOLS = ["Write", "Edit", "NotebookEdit", "Bash"];
+
+// --- Output verbosity -------------------------------------------------------
+// Set EVAL_QUIET to suppress per-run trace/verdict spam during multi-run aggregation.
+export const QUIET = Boolean(process.env.EVAL_QUIET);
+
+// --- Retries ----------------------------------------------------------------
+// How many times vitest re-runs a FAILED model-backed eval before calling it red. 0 locally, so a
+// failure is seen as it happened; CI sets 1.
+//
+// The justification is arithmetic, not tolerance for noise. A judge-scored case is a conjunction
+// over N stochastic binary judgements, so a case whose practices each hold at p passes at ~p^N —
+// six practices at p=0.95 is a 73% pass rate, i.e. red roughly one run in four with nothing wrong.
+// One retry turns that into ~93%. What it costs is sensitivity in a narrow band: a case that
+// really degraded from "always" to "usually" now goes green.
+//
+// What it does NOT distort is the measurement. record() fires per ATTEMPT, so a retried case
+// leaves both rows in results/records.jsonl and the recorded pass rate stays honest even while
+// the gate is lenient. Read the records, not the checkmark, when asking how an artifact is doing.
+export const RETRIES = Number(process.env.EVAL_RETRY ?? "0");

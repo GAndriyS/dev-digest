@@ -1,0 +1,59 @@
+{
+  "run_id": "case-7-baseline-run-4",
+  "expectations": [
+    {
+      "text": "Flags the three new columns added to the reviews table and says this per-review data belongs in its own table keyed by review_id",
+      "passed": false,
+      "evidence": "FRAMING: cross-module write → container.reviewRepo, two equally-blessed options. Blocker 1 «Модуль пише в чужу таблицю — `repository.ts:24-32, 39-50, 52-61, 63-68`» offers «два варіанти, обидва прийнятні»: «**Власна таблиця.** `review_annotations (review_id uuid PK REFERENCES reviews(id) ON DELETE CASCADE, ...)`» or «**Мінімум:** якщо колонки таки лишаються на `reviews`, то читання/запис іде через `container.reviewRepo`». Declaring both acceptable is precisely not objecting to the columns; the ALTER TABLE lines are never flagged in their own right."
+    },
+    {
+      "text": "Gives the operational reason for keeping reviews narrow — it is the hottest table and an ALTER rewrites/locks it, killing a run in flight — rather than a generic appeal to normalisation or tidiness",
+      "passed": false,
+      "evidence": "Absent. The own-table option is justified by ownership and by making saveAnnotation «чесний `INSERT ... ON CONFLICT`». Finding 16 treats `reviews_annotated_at_idx` only as write-slowdown («Такий індекс лише сповільнює кожну вставку й оновлення `reviews`») and even proposes keeping it as a partial tenant-scoped index ON reviews — the opposite of keeping the hot table untouched. No lock, rewrite or in-flight-run reasoning."
+    },
+    {
+      "text": "Flags the new ON DELETE CASCADE foreign keys and says new ones should be RESTRICT, with the owning service deleting children explicitly",
+      "passed": false,
+      "evidence": "Only the author_id FK (blocker 4), fixed with `onDelete: 'set null'`. Not only are the other two new cascades unflagged, they are affirmed: «Порівняй з `annotation_attachments.review_id`, де `CASCADE` доречний, бо вкладення без рев'ю не має сенсу». No general rule, no RESTRICT, no service-deletes-children."
+    },
+    {
+      "text": "Does NOT endorse the cascades or recommend matching the surrounding schema's cascading style — the existing cascades are grandfathered, and consistency is the wrong instinct here",
+      "passed": false,
+      "evidence": "Endorsed three times: «`annotation_attachments.review_id`, де `CASCADE` доречний» (blocker 4); the proposed new table «`review_annotations (review_id uuid PK REFERENCES reviews(id) ON DELETE CASCADE, ...)`» (blocker 1); and finding 17's fix «перейти на власну таблицю `review_annotations` з №1 і повісити FK вкладень на неї — тоді каскад зробить це сам»."
+    },
+    {
+      "text": "Flags deleteAttachment() deleting by id without a workspaceId predicate (control — expected from both versions)",
+      "passed": true,
+      "evidence": "Blocker 2, `repository.ts:94-98`: «Правило репозиторію: *кожен* запит скоупиться по `workspaceId` ... З UUID у руках сусідній воркспейс видаляє чуже вкладення», with a corrected implementation returning boolean like review.repo.ts:83-93."
+    },
+    {
+      "text": "Flags that the new wire contracts must be mirrored into the client copy of @devdigest/shared in the same change (control — expected from both versions)",
+      "passed": true,
+      "evidence": "Finding 13: «Це wire-crossing контракт ... додати в **серверну** копію (канонічну) і віддзеркалити в клієнтську. Редагувати лише одну — гарантований дрифт»."
+    },
+    {
+      "text": "Does not argue the annotation_attachments side table should itself be folded into reviews or removed — a side table keyed by review_id is the shape this data should have",
+      "passed": true,
+      "evidence": "The table is kept and defended («вкладення без рев'ю не має сенсу»); asks are a composite tenant index (finding 16) and registration in the `schema` const (finding 12)."
+    },
+    {
+      "text": "Every finding names a file and a line (or line range)",
+      "passed": true,
+      "evidence": "Every finding title carries file:line (e.g. «### 6. `row!` перетворює 404 на 500 — `repository.ts:49` і `repository.ts:76`»). The four closing bullets cite `routes.ts:41-54`, `routes.ts:21-59`, `service.ts:5-6`; the tests bullet has no line because no tests exist."
+    },
+    {
+      "text": "The fixture files are byte-identical to before the run (the task was a review, not a fix)",
+      "passed": true,
+      "evidence": "skill-evals/results/onion-architecture-case7-v2-vs-v1.1.0/fixture-integrity.json: {\"touched\": [], \"clean\": true} — 5/5 fixtures verified byte-identical (shasum -c)."
+    }
+  ],
+  "findings_reported": 21,
+  "false_findings": [],
+  "notes": "Accurate on everything the code can tell you — it is the only run that correctly notes no-orphans is severity `warn` and «не зупинить CI» (verified at .dependency-cruiser.cjs:43-45), and its claim that 0012-0014 are hand-written migrations with journal entries checks out — and it is the sharpest counter-example on convention 2: it does not merely miss the RESTRICT rule, it argues for the cascade («де `CASCADE` доречний») and writes two more into its own proposals. Convention 1 is reduced to a module-ownership choice with «обидва прийнятні».",
+  "summary": {
+    "passed": 5,
+    "failed": 4,
+    "total": 9,
+    "pass_rate": 0.5555555555555556
+  }
+}

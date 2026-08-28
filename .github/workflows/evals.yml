@@ -1,0 +1,461 @@
+# evals — the harness evals (skills, subagents, workflow behaviour) on a pull request.
+#
+# This is the ONLY workflow in the repo that spends model budget, which shapes every choice in it.
+# `scripts/verify.mjs` deliberately does NOT own these lanes: agents run it reflexively, and root
+# AGENTS.md guarantees that model-backed lanes never run as a side effect of another task. The
+# model-free subset lives in the `gate` job below and costs nothing.
+#
+# Routing is not done by `paths:` filters — `paths:` only decides whether the workflow starts at
+# all. Which SUITE runs is decided by evals/scripts/ci-detect.mjs from the PR's actual diff:
+#
+#   a skill changed        → run that skill's evals, if it has any (else a visible SKIP line)
+#   an agent changed       → run that agent's evals, if it has any, AND the workflow tier
+#   an AGENTS.md/CLAUDE.md → run the workflow tier (the systemic "is the harness still wired" tier)
+#   the engine changed     → run the workflow tier
+#
+# A changed artifact with no written evals is never a failure. Most skills and agents in this repo
+# have no evals yet; each prints `SKIP <name> (no evals)` in the `detect` job's summary.
+#
+# Models (see "Resolve models" below — the one place they are set):
+#   ALL THREE tiers       → anthropic/claude-haiku-4.5, the model every threshold in this package
+#                           was set against. The content tier reaches it as a direct
+#                           OpenAI-compatible call (src/runtime/dispatch.ts) and the tool tiers
+#                           through OpenRouter's Anthropic Skin; neither needs a proxy.
+#                           deepseek/deepseek-chat was the content-tier default for three runs and
+#                           is not good enough for these bars: under an honest judge it scored
+#                           0 / 0.25 / 0.6 against thresholds of 0.75-0.8. It had looked like a
+#                           4-of-5 pass only while a cheap judge was grading it.
+#   judge, BOTH tiers     → anthropic/claude-sonnet-5, the package's documented default: a STRONGER
+#                           family than the task, to soften self-preference (evals/README.md, "Two
+#                           scorers"). It was briefly cheaper and cross-family instead, and that
+#                           broke the measurement — see the note below.
+#
+# Why nothing here runs on a cheap non-Anthropic model, though the engine fully supports it: every
+# threshold in these cases was calibrated against claude-haiku-4-5. Gemini 2.5 Flash scored
+# 0.83 / 0.5 / 0 on the agent cases and DeepSeek 0 / 0.25 / 0.6 on the skill cases (2026-08-25).
+# Both went red for a model reason rather than a harness regression, which is the fastest way to
+# teach a team to ignore a red check. A gate has to be run on the model its bar was set against.
+#
+# The same lesson applies to the JUDGE, and cost more to learn. Judging with deepseek-chat while
+# the task ran on Haiku kept attribution failing (often with an empty evidence string, and on
+# absence-shaped practices such as "does not invent a violation" — the shape a weak judge handles
+# worst), against a local baseline of 100% at n=5 with claude-sonnet-5. Two variables had moved at
+# once, backend and judge; the judge is now back to the documented default so the next run has one
+# variable left. Do not trade the judge down for cost: it is the instrument, not the subject.
+#
+# A manual run (workflow_dispatch) routes EVERY artifact that has evals, not just what a diff
+# touched — a model switch needs a target. `tool_model: google/gemini-2.5-flash` additionally
+# brings the bundled LiteLLM proxy up (the steps below are conditional on the slug); read a
+# cheap-model tool-tier result as indicative, not as a gate.
+#
+# Cost, MEASURED on the first full run (2026-08-25, all three tiers, 19 records): 324.5k input +
+# 15.3k output tokens, ~227s of model time — roughly $0.10-0.15 at list prices. A PR touching one
+# skill is a fraction of that. The uploaded results/records.jsonl carries the per-run numbers.
+#
+# Branch protection ramp: make `evals / gate (no model)` required now. `skills` and `agents`
+# deliberately do NOT carry continue-on-error — an advisory job cannot hold the Merge button, so
+# it can never become the required check these are meant to grow into. They are simply not
+# required yet; promote them after two consecutive triggered green runs. `workflow` keeps
+# continue-on-error because it is expected to be red for reasons that are not regressions; see
+# the comment on that job.
+name: evals
+
+on:
+  pull_request:
+    paths:
+      - '.claude/**'
+      # Both forms on purpose: in a GitHub path filter the `**/` prefix requires a directory
+      # segment, so `**/AGENTS.md` does NOT match the repo-root file — and the root AGENTS.md is
+      # the one that holds this repo's whole ruleset.
+      - 'AGENTS.md'
+      - 'CLAUDE.md'
+      - '**/AGENTS.md'
+      - '**/CLAUDE.md'
+      - 'evals/**'
+      - '.github/workflows/evals.yml'
+  workflow_dispatch:
+    inputs:
+      content_model:
+        description: 'Model under test for the content tier (OpenRouter slug)'
+        required: false
+        default: ''
+      tool_model:
+        description: 'Model under test for the tool tiers (OpenRouter slug)'
+        required: false
+        default: ''
+      judge_model:
+        description: 'Override the judge for BOTH tiers (OpenRouter slug)'
+        required: false
+        default: ''
+      force_workflow_tier:
+        description: 'Run the workflow tier (a manual run has no diff to route from)'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: evals-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: evals
+
+jobs:
+  # ---------------------------------------------------------------------------------------------
+  # Zero tokens, ~2 minutes, and it runs for FORK PRs too (it needs no secret). This is the job
+  # intended to be the required check.
+  # ---------------------------------------------------------------------------------------------
+  gate:
+    name: gate (no model)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: evals/pnpm-lock.yaml
+
+      # Watch this step's log for `Ignored build scripts: esbuild`. The esbuild build approval is
+      # version-split: `pnpm.onlyBuiltDependencies` in package.json is what pnpm 10 reads, and
+      # `allowBuilds` in pnpm-workspace.yaml is what pnpm 11 reads. Both are present; if vitest
+      # fails to start with an esbuild binary error, that split is why.
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm typecheck
+
+      # Structure of every SKILL.md and agent frontmatter, plus the A/B pair guard (that an
+      # artifact and its frozen variant have not drifted). No model, no network.
+      - run: pnpm eval:quality
+
+      # The model-free unit lane: statistics math, trace extraction, the session deadline, the
+      # pair guard, and the CI change detector this workflow routes on.
+      - run: pnpm exec vitest run src/
+
+      - name: Note fork limitation
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
+        run: |
+          echo 'Fork PR: the model-backed eval tiers are skipped — OPENROUTER_API_KEY is not available to forks. Only this job ran.' >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------------------------
+  # Decides which suites run. No install: the detector is dependency-free .mjs on purpose.
+  # ---------------------------------------------------------------------------------------------
+  detect:
+    name: route
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: .
+    outputs:
+      skills: ${{ steps.detect.outputs.skills }}
+      agents: ${{ steps.detect.outputs.agents }}
+      run_workflow: ${{ steps.detect.outputs.run_workflow }}
+      content_model: ${{ steps.models.outputs.content_model }}
+      content_judge: ${{ steps.models.outputs.content_judge }}
+      tool_model: ${{ steps.models.outputs.tool_model }}
+      tool_judge: ${{ steps.models.outputs.tool_judge }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The detector diffs against the merge base, which needs real history.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # The diff is written to a file and read back through an env var — never interpolated into a
+      # command. A branch may carry a filename with a backtick or $( ) in it, and this job runs on
+      # PR-controlled content (the same discipline as pr-gate.yml's PR-body handling).
+      - name: Compute changed files
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ -n "$BASE_SHA" ]; then
+            git diff --name-only "$BASE_SHA...HEAD" > "$RUNNER_TEMP/changed.txt"
+          else
+            : > "$RUNNER_TEMP/changed.txt"   # workflow_dispatch has no base to diff against
+          fi
+          echo "changed files: $(wc -l < "$RUNNER_TEMP/changed.txt")"
+
+      # EVAL_ROUTE_ALL covers the case a diff cannot: a manual run has nothing to route from, so
+      # without it the model overrides below would have a knob and no target — which is the whole
+      # point of a manual run. It routes every artifact that HAS evals; the skip rules are unchanged.
+      - name: Route to suites
+        id: detect
+        env:
+          EVAL_ROUTE_ALL: ${{ github.event_name == 'workflow_dispatch' && '1' || '' }}
+        run: CHANGED_FILES="$(cat "$RUNNER_TEMP/changed.txt")" node evals/scripts/ci-detect.mjs
+
+      # The single place the model defaults live. Every downstream job reads these outputs, so
+      # changing a default here changes it everywhere, and a manual run can override all three.
+      - name: Resolve models
+        id: models
+        env:
+          IN_CONTENT: ${{ inputs.content_model }}
+          IN_TOOL: ${{ inputs.tool_model }}
+          IN_JUDGE: ${{ inputs.judge_model }}
+        run: |
+          CONTENT="${IN_CONTENT:-anthropic/claude-haiku-4.5}"
+          TOOL="${IN_TOOL:-anthropic/claude-haiku-4.5}"
+          {
+            echo "content_model=$CONTENT"
+            echo "content_judge=${IN_JUDGE:-anthropic/claude-sonnet-5}"
+            echo "tool_model=$TOOL"
+            echo "tool_judge=${IN_JUDGE:-anthropic/claude-sonnet-5}"
+          } >> "$GITHUB_OUTPUT"
+          echo "models — content: $CONTENT, tool: $TOOL" >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------------------------
+  # Content tier. One matrix leg per changed skill that HAS evals. No proxy, no Docker.
+  # ---------------------------------------------------------------------------------------------
+  skills:
+    name: skills (model-backed, same-repo PRs only)
+    # gate too, not just detect: gate is free and fast, and a red typecheck or a broken
+    # detector test must not be discovered AFTER three token-spending jobs have run.
+    needs: [gate, detect]
+    if: >-
+      needs.detect.outputs.skills != '[]' &&
+      (github.event_name == 'workflow_dispatch' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        name: ${{ fromJSON(needs.detect.outputs.skills) }}
+    env:
+      EVAL_BACKEND: openrouter
+      # One retry on a FAILED case only. A judge-scored case is a conjunction over stochastic
+      # judgements, so it goes red now and then with nothing wrong; record() still writes a row per
+      # ATTEMPT, so the gate gets lenient while results/records.jsonl stays honest. See config.ts.
+      EVAL_RETRY: "1"
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      EVAL_MODEL: ${{ needs.detect.outputs.content_model }}
+      EVAL_JUDGE_MODEL: ${{ needs.detect.outputs.content_judge }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: evals/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+
+      - name: Run skill evals
+        env:
+          NAME: ${{ matrix.name }}
+        run: pnpm exec vitest run "skills/$NAME/"
+
+      - name: Summary
+        if: always()
+        env:
+          NAME: ${{ matrix.name }}
+          STATUS: ${{ job.status }}
+        run: echo "skill \`$NAME\` on \`$EVAL_MODEL\` (judge \`$EVAL_JUDGE_MODEL\`) — $STATUS" >> "$GITHUB_STEP_SUMMARY"
+
+      # results/ is gitignored and append-only; publishing it is what makes a red run readable.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eval-results-skill-${{ matrix.name }}
+          path: evals/results
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # ---------------------------------------------------------------------------------------------
+  # Tool tier. Runs inside the Claude Agent SDK, which speaks the Anthropic wire protocol — on the
+  # default anthropic/* slug OpenRouter's own Skin serves that shape, so no proxy is involved. The
+  # LiteLLM proxy comes up only when a workflow_dispatch points this at a non-Anthropic model.
+  # max-parallel: 1 because OpenRouter throttling degrades a session to a single turn, which turns
+  # a real dispatch into a spurious failure (evals/README.md, "Two caveats").
+  # ---------------------------------------------------------------------------------------------
+  agents:
+    name: agents (model-backed, same-repo PRs only)
+    # gate too, not just detect: gate is free and fast, and a red typecheck or a broken
+    # detector test must not be discovered AFTER three token-spending jobs have run.
+    needs: [gate, detect]
+    if: >-
+      needs.detect.outputs.agents != '[]' &&
+      (github.event_name == 'workflow_dispatch' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        name: ${{ fromJSON(needs.detect.outputs.agents) }}
+    env:
+      EVAL_BACKEND: openrouter
+      # One retry on a FAILED case only. A judge-scored case is a conjunction over stochastic
+      # judgements, so it goes red now and then with nothing wrong; record() still writes a row per
+      # ATTEMPT, so the gate gets lenient while results/records.jsonl stays honest. See config.ts.
+      EVAL_RETRY: "1"
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      EVAL_MODEL: ${{ needs.detect.outputs.tool_model }}
+      EVAL_JUDGE_MODEL: ${{ needs.detect.outputs.tool_judge }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: evals/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+
+      # The materialized fixture worktrees (evals/src/artifacts/worktree.ts) symlink each
+      # package's node_modules into the tree so the agent's machine gates (tsc, depcruise)
+      # actually run — that reachability is the whole point of materializing. Without these
+      # installs the symlink step silently no-ops and the agent burns its entire 25-turn budget
+      # trying to start gates that cannot run: measured 2026-08-26 on this job, three of five
+      # cases hit max-turns mid-narration and were judged 0 on a report that never got written.
+      # Mirrors server-unit.yml: server/ is pnpm, reviewer-core/ is npm (own lockfile).
+      - name: Install server deps (fixture worktree gates)
+        working-directory: server
+        run: pnpm install --frozen-lockfile
+      - name: Install reviewer-core deps (fixture worktree gates)
+        working-directory: reviewer-core
+        run: npm ci
+
+      # The container reads OPENROUTER_API_KEY straight from the job env.
+      # Only for a non-Anthropic tool model (a workflow_dispatch override). The Anthropic Skin
+      # serves anthropic/* slugs directly, so the default path starts no container at all.
+      - name: Start LiteLLM proxy
+        if: ${{ !startsWith(needs.detect.outputs.tool_model, 'anthropic/') }}
+        run: |
+          docker compose -f proxy/docker-compose.yml up -d
+          pnpm proxy:wait
+          echo "OPENROUTER_BASE_URL=http://localhost:4000" >> "$GITHUB_ENV"
+
+      # The trailing slash is load-bearing: a vitest positional filter is a plain path SUBSTRING,
+      # so `agents/architecture-reviewer` also matches `agents/architecture-reviewer-lite/` — the
+      # A/B baseline the detector just spent effort excluding from this matrix. It ran on 2026-08-25
+      # and cost four extra sessions grading a deliberately-degraded artifact.
+      - name: Run agent evals
+        env:
+          NAME: ${{ matrix.name }}
+        run: pnpm exec vitest run "agents/$NAME/"
+
+      - name: Proxy logs
+        if: ${{ failure() && !startsWith(needs.detect.outputs.tool_model, 'anthropic/') }}
+        run: docker compose -f proxy/docker-compose.yml logs --tail 100
+
+      - name: Stop proxy
+        if: ${{ always() && !startsWith(needs.detect.outputs.tool_model, 'anthropic/') }}
+        run: docker compose -f proxy/docker-compose.yml down
+
+      - name: Summary
+        if: always()
+        env:
+          NAME: ${{ matrix.name }}
+          STATUS: ${{ job.status }}
+        run: echo "agent \`$NAME\` on \`$EVAL_MODEL\` (judge \`$EVAL_JUDGE_MODEL\`) — $STATUS" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eval-results-agent-${{ matrix.name }}
+          path: evals/results
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # ---------------------------------------------------------------------------------------------
+  # Systemic tier: loads the REAL harness (settingSources:["project"]) and asserts that routing,
+  # skill activation and subagent dispatch still happen.
+  #
+  # continue-on-error on purpose. evals/README.md records (2026-08-25) that `activation` cases are
+  # behaviour-shaped: they assert the model invokes the Skill tool, and a capable model may
+  # instead perform the underlying action directly — the right outcome, scored as a miss.
+  # continue-on-error does NOT paint this job green (its own conclusion is still `failure`, as the
+  # 2026-08-25 run showed); what it does is stop the RUN from failing because of it. Read the
+  # result, don't gate on it; the uploaded results/ artifact carries the traces.
+  # ---------------------------------------------------------------------------------------------
+  workflow:
+    name: workflow tier (advisory, same-repo PRs only)
+    # gate too, not just detect: gate is free and fast, and a red typecheck or a broken
+    # detector test must not be discovered AFTER three token-spending jobs have run.
+    needs: [gate, detect]
+    if: >-
+      (needs.detect.outputs.run_workflow == 'true' || inputs.force_workflow_tier) &&
+      (github.event_name == 'workflow_dispatch' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 40
+    env:
+      EVAL_BACKEND: openrouter
+      # One retry on a FAILED case only. A judge-scored case is a conjunction over stochastic
+      # judgements, so it goes red now and then with nothing wrong; record() still writes a row per
+      # ATTEMPT, so the gate gets lenient while results/records.jsonl stays honest. See config.ts.
+      EVAL_RETRY: "1"
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      EVAL_MODEL: ${{ needs.detect.outputs.tool_model }}
+      EVAL_JUDGE_MODEL: ${{ needs.detect.outputs.tool_judge }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: evals/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+
+      # Only for a non-Anthropic tool model (a workflow_dispatch override). The Anthropic Skin
+      # serves anthropic/* slugs directly, so the default path starts no container at all.
+      - name: Start LiteLLM proxy
+        if: ${{ !startsWith(needs.detect.outputs.tool_model, 'anthropic/') }}
+        run: |
+          docker compose -f proxy/docker-compose.yml up -d
+          pnpm proxy:wait
+          echo "OPENROUTER_BASE_URL=http://localhost:4000" >> "$GITHUB_ENV"
+
+      - run: pnpm eval:workflow
+
+      - name: Proxy logs
+        if: ${{ failure() && !startsWith(needs.detect.outputs.tool_model, 'anthropic/') }}
+        run: docker compose -f proxy/docker-compose.yml logs --tail 100
+
+      - name: Stop proxy
+        if: ${{ always() && !startsWith(needs.detect.outputs.tool_model, 'anthropic/') }}
+        run: docker compose -f proxy/docker-compose.yml down
+
+      # These sessions run with bypassPermissions against the live checkout. Harmless here (the
+      # checkout is disposable and the token is read-only), but a dirty tree means a model wrote to
+      # the repo — worth seeing here rather than discovering it on a developer's machine.
+      - name: Working tree after the run
+        if: always()
+        env:
+          STATUS: ${{ job.status }}
+        run: |
+          echo "workflow tier on \`$EVAL_MODEL\` — $STATUS" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          git status --short >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eval-results-workflow
+          path: evals/results
+          retention-days: 7
+          if-no-files-found: ignore

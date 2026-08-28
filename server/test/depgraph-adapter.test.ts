@@ -10,7 +10,7 @@
  * unresolved, and with it every blast caller and endpoint.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { DepCruiseGraph } from '../src/adapters/depgraph/index.js';
@@ -25,7 +25,12 @@ describe('DepCruiseGraph.buildEdges', () => {
   let root: string;
 
   beforeEach(async () => {
-    root = await mkdtemp(join(tmpdir(), 'depgraph-'));
+    // `realpath` on purpose: on macOS `tmpdir()` is `/var/folders/…`, a symlink
+    // to `/private/var/folders/…`. dependency-cruiser echoes back paths relative
+    // to the REAL directory, which then match none of the file set we passed —
+    // buildEdges swallows that and returns [], so both assertions below failed
+    // on this machine only. Linux CI has no such symlink and never saw it.
+    root = await realpath(await mkdtemp(join(tmpdir(), 'depgraph-')));
   });
   afterEach(async () => {
     await rm(root, { recursive: true, force: true });

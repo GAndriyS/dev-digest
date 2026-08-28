@@ -7,6 +7,7 @@ export * from "./reviews";
 export * from "./trace";
 export * from "./repo-intel";
 export * from "./skills";
+export * from "./eval";
 export { useConventions, useExtractConventions, useUpdateConvention } from "./conventions";
 export { usePrBlast, useBlastSummary, useCachedBlastSummary } from "./blast";
 export { useOnboardingTour, useGenerateOnboardingTour } from "./onboarding";

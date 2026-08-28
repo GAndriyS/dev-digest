@@ -209,7 +209,40 @@ promotion rules → root `INSIGHTS.md`.
   override slot — rather than an import; a plan step that says "import blast's
   service" fails depcruise in CI, not at review.
 
+- **2026-08-26** — Two modules can legitimately need the *same* small Zod shape
+  while neither owns the other, and `no-cross-module-internals` allows a module
+  to import only a sibling's `constants.ts`/`types.ts`/`index.ts` — `helpers.ts`
+  is private even for a stable 6-field schema. When `skills/routes.ts` (which
+  owns the generic `PUT /eval-cases/:id` for both owner kinds) had to also accept
+  the agent-shaped `expected_output` defined in `eval/helpers.ts`, the
+  depcruise-legal move was to **duplicate the schema locally with a comment
+  naming the rule**, not to import across the boundary or hoist a shared file.
+  The repo already lives with the same duplication one level up: two eval
+  scorers, deliberately separate.
+
+- **2026-08-26** — A single generic route serving two owner kinds is a silent
+  data-corruption vector when its body schema only knows one of them. Zod's
+  default `z.object()` **strips** unknown keys instead of rejecting them, so the
+  skill-shaped `expected_output` schema on `PUT /eval-cases/:id` deleted
+  `file`/`start_line`/`end_line` from agent cases on every save, and the agent
+  scorer then read the result as "expects nothing" and scored the case as passed.
+  Nothing errored anywhere. The fix is an agent-branch-first `z.union` (the agent
+  branch is `.passthrough()`, so a record carrying both shapes keeps every key).
+  When one route serves two consumers, the request schema must be the union of
+  what both write, or the narrower consumer quietly truncates the wider one.
+
 ## Tool & Library Notes
+
+- **2026-08-26** — This repo's Postgres driver is `postgres` (porsager), not
+  `pg`: it attaches the wire-protocol error fields (`code`, `constraint_name`,
+  `table_name`, …) **directly** on the thrown `PostgresError` via `Object.assign`
+  — not nested under `.cause`. Check `err.code === '23505'` and
+  `err.constraint_name` on the error itself. Where that check belongs is the
+  other half of the lesson: it is SQL failure shape, so it lives in the
+  repository, which translates it into a domain error
+  (`EvalRepository#insertCase` → `DuplicateEvalCaseError`) for the service to
+  catch by type. A service that shape-matches driver internals compiles, passes
+  depcruise, and still breaks the moment anything wraps or retries the query.
 
 - **2026-08-19** — A Fastify route whose `schema.body` is a plain zod object
   rejects a **body-less** POST with 422, and `.optional()` does not fix it: with
@@ -251,6 +284,16 @@ promotion rules → root `INSIGHTS.md`.
   `test/depgraph-adapter.test.ts`). Separately, `relative()` returns backslashes
   on win32 — every path leaving an adapter must go through
   `.split(sep).join('/')`, the same normalisation `walk.ts:119` applies.
+- **2026-08-27** — `pnpm verify:l06`'s integration slice runs all 15
+  `*.it.test.ts` files in ONE vitest invocation, each spinning its own
+  testcontainers Postgres, and under that load the lane produces genuine
+  non-deterministic failures that are not regressions: `Error: No host port
+  found for host IP` from Docker port contention (seen in
+  `smart-diff.it.test.ts`), and at least one cross-file ordering flake
+  (`reviews.it.test.ts`'s `trace.specs_read`). Both passed in isolation and on
+  the next full run. **Re-run a red integration gate once before treating it as
+  a regression** — and when it is red, check whether the failing file is one
+  your change even touches.
 
 ## Recurring Errors & Fixes
 
@@ -326,6 +369,11 @@ promotion rules → root `INSIGHTS.md`.
   branch under review: check whether the failing suite uses `tmpdir()` first.
   This cost an entire SPEC-04 implementation run's worth of agents each
   re-encountering the same five reds and being told to ignore them.
+  **Fixed 2026-08-26 (L06):** both fixture helpers now wrap their `mkdtemp` in
+  `realpath` — `--slice backend` is 562/562 green on macOS. The lesson that
+  outlived the bug: a red that is "known pre-existing" on one platform still
+  costs every later agent a re-investigation, so fix the fixture the first time
+  instead of writing it into the handoff brief.
 
 ## Session Notes
 

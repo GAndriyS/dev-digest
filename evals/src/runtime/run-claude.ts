@@ -1,0 +1,247 @@
+/**
+ * The headless turn-loop driver. Runs one Claude Agent SDK session on the subscription and
+ * extracts what the session ACTUALLY did (tools, subagents, skills, reads) — not its prose.
+ */
+
+import { query, type Options } from "@anthropic-ai/claude-agent-sdk";
+import { EVAL_MODEL, MAX_TURNS, RUN_TIMEOUT_MS, SPAWN_TOOLS } from "../config.js";
+import { REPO_ROOT } from "../artifacts/paths.js";
+import { subscriptionEnv } from "./env.js";
+
+export interface Metrics {
+  durationMs: number;
+  inputTokens: number;
+  outputTokens: number;
+  /** Total tool_use blocks seen (NOT deduplicated — a measure of work done). */
+  toolCallCount: number;
+}
+
+export interface Result {
+  text: string;
+  toolsUsed: string[];
+  subagents: string[];
+  /** Skills activated via the Skill tool (workflow mode); name may be "plugin:skill". */
+  skillsInvoked: string[];
+  filesRead: string[];
+  numTurns: number;
+  isError: boolean;
+  /** The session hit its own wall-clock deadline and was aborted; the trace is partial. */
+  timedOut?: boolean;
+  metrics: Metrics;
+}
+
+/**
+ * A stand-in Result for a run that never produced one — the SDK threw, the session was throttled
+ * away, the process died mid-call.
+ *
+ * A thrown run used to leave NO record at all, because the task call sits outside the try that
+ * owns record(). The series then silently shrank: a 5-run repeat kept `times: 5` while one case
+ * held 4 rows and another 3, and repeat/delta went on presenting those rates side by side as
+ * though both had the same denominator (measured 2026-08-25 — one run lost 5 records and a whole
+ * sixth run produced none). A failed run is data: it belongs in the series as a failure, not as
+ * an absence.
+ */
+/**
+ * Take the agent name off a spawn tool's input, tolerating a malformed call.
+ *
+ * A model does not always emit clean tool-call syntax: one observed run put the whole rest of the
+ * XML into `subagent_type`, so `subagents` held
+ * `spec-creator</subagent_type>\n<parameter name="prompt">…` instead of `spec-creator`. Everything
+ * downstream compares by EXACT membership — `stopWhen`'s `subagents.includes(name)` above all — so
+ * a mangled name means the early stop never fires and the nested subagent runs to completion. That
+ * is how a dispatch case blew past the 240s vitest timeout and vanished from its run entirely
+ * (measured 2026-08-25), taking its record with it: a killed test never reaches its `finally`.
+ *
+ * Keep the leading identifier and drop whatever follows. Agent names are `[a-z0-9-]` plus an
+ * optional `plugin:agent` prefix; anything outside that set starts the garbage.
+ */
+export const agentName = (raw: unknown): string =>
+  String(raw ?? "").trim().match(/^[A-Za-z0-9][A-Za-z0-9_.:-]*/)?.[0] ?? "";
+
+export const failedResult = (err: unknown): Result => ({
+  text: `RUN FAILED: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`,
+  toolsUsed: [],
+  subagents: [],
+  skillsInvoked: [],
+  filesRead: [],
+  numTurns: 0,
+  isError: true,
+  metrics: { durationMs: 0, inputTokens: 0, outputTokens: 0, toolCallCount: 0 },
+});
+
+export interface RunOptions {
+  systemPrompt?: string;
+  allowedTools?: string[];
+  /** Hard deny-list. Unlike `allowedTools`, this is enforced under bypassPermissions. */
+  disallowedTools?: string[];
+  maxTurns?: number;
+  /**
+   * Wall-clock ceiling for THIS session, in ms (default RUN_TIMEOUT_MS). On expiry the session is
+   * aborted and a partial `isError` Result is returned — never a throw, so the caller still gets
+   * to record the row. Must stay below vitest's testTimeout; see config.ts, "Time budget".
+   */
+  timeoutMs?: number;
+  cwd?: string;
+  model?: string;
+  /** ["project"] loads on-disk CLAUDE.md + skills/agents; default [] keeps the run isolated. */
+  settingSources?: Array<"user" | "project" | "local">;
+  /**
+   * Early-stop hook. Called after every tool_use with the trace collected SO FAR; return true to
+   * end the session immediately. Lets a dispatch/trace case stop the moment its evidence is in
+   * (e.g. the subagent was launched) instead of waiting for a heavy nested subagent to finish.
+   * On an early stop the run is NOT an error and metrics reflect only what ran before the stop.
+   */
+  stopWhen?: (partial: Pick<Result, "subagents" | "filesRead" | "skillsInvoked" | "toolsUsed">) => boolean;
+}
+
+/** Run one headless Claude turn-loop and extract what it ACTUALLY did (not its prose). */
+export async function runClaude(prompt: string, opts: RunOptions = {}): Promise<Result> {
+  const allowedTools = opts.allowedTools ?? [];
+  // With no tools, a subagent/skill prompt that says "read files" will loop on denied tool
+  // calls until max-turns. For these content-only evals the input is already in the prompt,
+  // so tell the model to answer directly.
+  let systemPrompt = opts.systemPrompt;
+  if (allowedTools.length === 0) {
+    const directive =
+      "\n\nYou have NO tools available in this session. Do not attempt any tool calls. " +
+      "Answer directly and completely from the information given in the prompt.";
+    systemPrompt = (systemPrompt ?? "") + directive;
+  }
+
+  // The session's own deadline. Letting vitest kill the test instead is NOT an equivalent
+  // outcome: record() fires in a `finally` the kill never reaches, so the case leaves no row and
+  // a multi-run summary counts it as ABSENT rather than failed — a green "5/5" over six cases
+  // (measured 2026-08-25). Aborting from inside keeps the failure in the series.
+  const timeoutMs = opts.timeoutMs ?? RUN_TIMEOUT_MS;
+  const abortController = new AbortController();
+
+  const options: Options = {
+    model: opts.model ?? EVAL_MODEL,
+    abortController,
+    maxTurns: opts.maxTurns ?? MAX_TURNS,
+    permissionMode: "bypassPermissions", // safe: evals only read/plan and tools are allow-listed
+    systemPrompt,
+    allowedTools,
+    ...(opts.disallowedTools?.length ? { disallowedTools: opts.disallowedTools } : {}),
+    cwd: opts.cwd ?? REPO_ROOT,
+    // Default: do NOT load on-disk config — isolates the injected artifact. workflowTask overrides.
+    settingSources: opts.settingSources ?? [],
+    env: subscriptionEnv(),
+  };
+
+  const textParts: string[] = [];
+  const tools: string[] = [];
+  const subagents: string[] = [];
+  const skills: string[] = [];
+  const reads: string[] = [];
+  let resultText = "";
+  let isError = false;
+  let numTurns = 0;
+  let toolCallCount = 0;
+  // Resource metrics, read defensively off the result message (field names verified against the
+  // installed SDK's types). On the subscription path total_cost_usd is meaningless, so we ignore
+  // it and surface tokens only. Fall back to 0 whenever a field is absent — never throw.
+  let durationMs = 0;
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let stoppedEarly = false;
+  let timedOut = false;
+  // Wall-clock fallback: on an early stop we break before the result message that carries
+  // duration_ms/usage, so those stay 0. Stamp duration ourselves, and accumulate output tokens
+  // off each assistant message, so an early-stopped case still reports meaningful metrics.
+  const startedAt = Date.now();
+
+  // The SDK throws on an error result (e.g. max-turns). We still want the partial output
+  // and the tool/subagent trace we collected, so catch and fall through with isError=true.
+  const deadline = setTimeout(() => {
+    timedOut = true;
+    abortController.abort();
+  }, timeoutMs);
+
+  try {
+    loop: for await (const msg of query({ prompt, options })) {
+      if (msg.type === "assistant") {
+        numTurns++;
+        outputTokens += (msg.message as any).usage?.output_tokens ?? 0;
+        for (const block of msg.message.content as any[]) {
+          if (block.type === "text") textParts.push(block.text);
+          else if (block.type === "tool_use") {
+            tools.push(block.name);
+            toolCallCount++;
+            const input = block.input ?? {};
+            if (SPAWN_TOOLS.has(block.name)) {
+              const sub = agentName(input.subagent_type ?? input.agent_type ?? input.name);
+              if (sub) subagents.push(sub);
+            }
+            if (block.name === "Read") {
+              const fp = input.file_path ?? input.path;
+              if (fp) reads.push(fp);
+            }
+            if (block.name === "Skill") {
+              const s = input.skill ?? input.command;
+              if (s) skills.push(s);
+            }
+            // Evidence is in — break the loop before a heavy nested subagent runs to completion.
+            // Breaking the async iterator triggers its return()/abort, tearing down the subprocess.
+            if (
+              opts.stopWhen?.({
+                subagents: [...new Set(subagents)],
+                filesRead: reads,
+                skillsInvoked: [...new Set(skills)],
+                toolsUsed: [...new Set(tools)],
+              })
+            ) {
+              stoppedEarly = true;
+              break loop;
+            }
+          }
+        }
+      } else if (msg.type === "result") {
+        isError = msg.subtype !== "success";
+        const m = msg as any;
+        numTurns = m.num_turns ?? 0;
+        durationMs = m.duration_ms ?? 0;
+        inputTokens = m.usage?.input_tokens ?? 0;
+        outputTokens = m.usage?.output_tokens ?? 0;
+        if (m.result) resultText = m.result;
+      }
+    }
+  } catch (err) {
+    isError = true;
+    // A deadline abort is a MEASURED outcome, not a crash: fall through with the partial trace so
+    // the caller records a failing row (with whatever tools and reads did happen) instead of
+    // losing the case entirely.
+    if (timedOut) {
+      // textParts are joined with a newline downstream, so the marker lands on its own line.
+      textParts.push(`[RUN TIMED OUT after ${timeoutMs} ms — aborted by the eval harness; trace is partial]`);
+    } else if (!resultText && textParts.length === 0) {
+      throw err; // nothing usable collected — surface the failure
+    }
+  } finally {
+    clearTimeout(deadline);
+  }
+
+  // The abort may end the iterator instead of throwing, in which case the catch above never runs
+  // and isError would still say "success". A run cut short by its own deadline is a failure.
+  if (timedOut) {
+    isError = true;
+    if (!textParts.some((t) => t.startsWith("[RUN TIMED OUT"))) {
+      textParts.push(`[RUN TIMED OUT after ${timeoutMs} ms — aborted by the eval harness; trace is partial]`);
+    }
+  }
+
+  // Neither an early stop nor a timeout reaches the result message, so fall back to wall clock.
+  if ((stoppedEarly || timedOut) && durationMs === 0) durationMs = Date.now() - startedAt;
+
+  return {
+    text: resultText || textParts.join("\n"),
+    toolsUsed: [...new Set(tools)],
+    subagents: [...new Set(subagents)],
+    skillsInvoked: [...new Set(skills)],
+    filesRead: reads,
+    numTurns,
+    isError,
+    ...(timedOut ? { timedOut: true } : {}),
+    metrics: { durationMs, inputTokens, outputTokens, toolCallCount },
+  };
+}

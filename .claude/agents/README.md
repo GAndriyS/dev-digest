@@ -17,6 +17,25 @@ is `.claude/agents/`; shared with the team via version control.
 | [plan-verifier](plan-verifier.md) | sonnet | `Read, Grep, Glob, Bash, TodoWrite` | **none — and no `Skill` tool either.** A verifier holding a rulebook becomes a second code reviewer within three findings | A verdict per plan requirement with a locator, the conformance verdict, plus the changes no requirement asked for. Runs **once, last** among the reviewers; a re-run with its previous report regrades only what was not `MET` | Write or edit anything; run a mutating command even when the plan names it; offer style, naming or refactor advice; mark MET on intent; ask a question |
 | [doc-writer](doc-writer.md) | sonnet | `Read, Edit, Write, Grep, Glob, Bash, TodoWrite, Skill` | **none.** `mermaid-diagram` is loaded on demand, once a diagram has earned its place — most runs (a stale-doc patch, a reference table) produce no diagram at all | Docs for shipped behaviour, the diagrams, and the layering call about which section a piece belongs in | Write rules into `AGENTS.md`, entries into `INSIGHTS.md`, or specs into `specs/`; document unbuilt behaviour; run builds or tests |
 
+### Not in the chain
+
+`architecture-reviewer-lite.md` is an **eval fixture, not an agent to dispatch.**
+It is a frozen copy of `architecture-reviewer.md` with one dimension removed —
+every requirement to attribute a finding to a named documented contract — so that
+`evals/agents/architecture-reviewer-lite/` can measure what that requirement buys.
+The eval imports the *strict* variant's cases on purpose, so both are graded on an
+identical task and the only thing that moves is attribution. It lives in this
+directory because the eval loader reads `.claude/agents/<name>.md` by relative
+path, which is also why it is a copy rather than an include.
+
+**Re-sync it from `architecture-reviewer.md` before trusting a new measurement.**
+The pair will drift, and a delta across a drifted pair measures the drift — so
+that is no longer left to prose. `evals/src/artifacts/pairs.ts` holds a hash of
+both files plus one marker per place the removed dimension appears, and both
+`cd evals && pnpm eval:quality` and `pnpm vitest run src/` fail when either side
+moves or a marker survives into the copy. After a deliberate re-sync, update the
+two hashes there in the same commit; the failure message prints them.
+
 The `skills:` field **preloads full skill bodies** into the agent's startup
 context, on every run, and it cannot express a condition. That makes it the
 wrong tool for anything routed: preloading ten skills so a body can then order

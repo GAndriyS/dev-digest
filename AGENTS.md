@@ -9,15 +9,35 @@ agent review on it. Node 22 · TS 5.7 · Zod 3 · Fastify 5 + Drizzle/Postgres
 Read the touched module's `INSIGHTS.md` before starting work (root `INSIGHTS.md`
 for cross-cutting tasks); search `docs/` and `specs/` as needed. Working inside
 a package — read its own `AGENTS.md` (`server/`, `client/`, `reviewer-core/`,
-`e2e/`, `mcp/`).
+`e2e/`, `mcp/`); `evals/` has no `AGENTS.md` — read its `README.md`.
 
 ## Conventions (not obvious from code)
 
-- This is NOT a monorepo workspace: five independent packages, each with its own
-  `package.json` **and lockfile**. `server/`, `client/` → **pnpm**;
-  `reviewer-core/`, `e2e/`, `mcp/` → **npm**. Installing at the repo root does
-  nothing. Cross-package code resolves via tsconfig path aliases, not published
-  modules.
+- This is NOT a monorepo workspace: six independent packages, each with its own
+  `package.json` **and lockfile**. `server/`, `client/`, `evals/` → **pnpm**;
+  `reviewer-core/`, `e2e/`, `mcp/` → **npm**. Cross-package code resolves via
+  tsconfig path aliases, not published modules. The repo root does carry its
+  own `package.json` (private, scripts only, zero dependencies) — installing at
+  the root still installs nothing, but `pnpm verify:l06` lives there as the one
+  L06 verification entry point (`node scripts/verify.mjs --slice frontend
+  --slice backend --slice integration`). It must **not** declare
+  `packageManager`: `pnpm/action-setup@v4` reads the root `package.json` by
+  default and every workflow already passes `version: 10`, so that field aborts
+  every CI job with "Multiple versions of pnpm specified". The pnpm pin belongs
+  in `server/package.json` and `client/package.json`, where corepack looks.
+- `evals/` is the harness eval package (skills, subagents, workflow traces). It
+  is **not** a `scripts/verify.mjs` slice — that script must never bill tokens —
+  but it does run in CI, in its own workflow `.github/workflows/evals.yml`, on
+  PRs touching `.claude/**`, any `AGENTS.md`/`CLAUDE.md`, or `evals/**`. Which
+  suite runs is routed from the diff by `evals/scripts/ci-detect.mjs`; a changed
+  artifact with no evals is a printed SKIP, not a failure. Only the zero-token
+  `gate` job is a required check. It
+  reads `.claude/skills/*` and `.claude/agents/*` by relative path, which is why
+  it lives in the repo instead of `node_modules`. Its `pnpm.onlyBuiltDependencies`
+  is dead config under pnpm 11 — the esbuild build approval lives in
+  `evals/pnpm-workspace.yaml` (`allowBuilds: esbuild: true`); without it vitest
+  installs unbuilt. CI pins pnpm **10**, where the live key is the other one —
+  keep both, they are not redundant.
 - Migrations are NOT applied on boot — `cd server && pnpm db:migrate`.
 - `@devdigest/shared` exists **twice**: `server/src/vendor/shared` (canonical,
   also used by reviewer-core) and `client/src/vendor/shared` (trimmed copy, has
@@ -34,7 +54,14 @@ a package — read its own `AGENTS.md` (`server/`, `client/`, `reviewer-core/`,
 - The DB schema ships every table for every course lesson — empty tables are
   expected, not a bug.
 - Never `docker compose down -v` — it drops the `devdigest_pgdata` volume along
-  with every imported repo and review.
+  with every imported repo and review. A *deliberate* wipe is not an exception:
+  wanting a clean database is the case this rule exists for. Reset the schemas
+  instead and keep the volume —
+  `docker compose exec postgres psql -U devdigest -d devdigest -c 'DROP SCHEMA
+  public CASCADE; CREATE SCHEMA public; DROP SCHEMA IF EXISTS drizzle CASCADE;'`
+  then `cd server && pnpm db:migrate`. Drop `drizzle` too or the migration
+  ledger survives, `db:migrate` reports nothing to do, and you are left with an
+  empty database that looks migrated.
 - Agent instructions live in `AGENTS.md`; the `CLAUDE.md` next to it is a
   two-line `@AGENTS.md` import and holds no content — Claude Code reads only
   `CLAUDE.md`, so the pointer is what makes `AGENTS.md` reachable. Do not delete
@@ -64,6 +91,15 @@ a package — read its own `AGENTS.md` (`server/`, `client/`, `reviewer-core/`,
 - Review-engine work → read `reviewer-core/AGENTS.md`
 - Browser e2e work → read `e2e/AGENTS.md`
 - MCP-server / coding-agent tool work → read `mcp/AGENTS.md`
+- Measuring a skill, subagent or the harness itself (static gate, LLM-judged
+  quality, workflow traces, with/without benchmark) → read `evals/README.md`;
+  the model-free lanes are `cd evals && pnpm eval:quality` (skills, agents and
+  the A/B pairs) and `pnpm vitest run src/` (stats, trace extraction, the
+  session deadline, the pair guard) — neither spends a token. Model-backed lanes
+  (`pnpm eval*`) spend subscription or OpenRouter budget — run them by hand,
+  never as a side effect of another task. CI is the one exception, and it is
+  budgeted: `.github/workflows/evals.yml` runs only the suites the diff touches,
+  on OpenRouter.
 - Deep dives → read `docs/` · current work → read `specs/` · findings → read
   `INSIGHTS.md` · skills catalog → read `.claude/skills/README.md` · subagents
   catalog → read `.claude/agents/README.md`
@@ -87,6 +123,11 @@ a package — read its own `AGENTS.md` (`server/`, `client/`, `reviewer-core/`,
   before it, never from it. `test-writer` is off the default chain (token
   budget) — delegate to it by hand when a feature needs a test pass. Why the
   order → read `.claude/agents/README.md`.
+- Auditing dependencies (what we depend on, what it weighs, what to fix first)
+  → run `/dependency-checker`; the fact base is `node scripts/deps-report.mjs
+  [--json]` — offline by default, `--outdated`/`--audit` hit the registry and are
+  opt-in. It measures and recommends; it never edits a `package.json` or a
+  lockfile. Reports land in `docs/dependencies/`.
 - Running a CI lane locally (any agent, any session) → `node scripts/verify.mjs
   --slice <frontend|backend|reviewer-core|mcp|integration>` — one line per
   gate, failure output only. Do not inline `tsc`/`depcruise`/`vitest` in

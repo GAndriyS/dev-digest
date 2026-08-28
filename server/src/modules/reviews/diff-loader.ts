@@ -1,6 +1,6 @@
 import type { Container } from '../../platform/container.js';
 import type { UnifiedDiff } from '@devdigest/shared';
-import { parseUnifiedDiff } from '../../adapters/git/diff-parser.js';
+import { parseUnifiedDiff, unifiedDiffFromPatches } from '../../adapters/git/diff-parser.js';
 import * as schema from '../../db/schema.js';
 import type { ReviewRepository, PullRow } from './repository.js';
 
@@ -29,16 +29,15 @@ export async function loadDiff(
   return diffFromPrFiles(repo, pull.id);
 }
 
-/** Reconstruct a UnifiedDiff from persisted pr_files patches. */
+/**
+ * Reconstruct a UnifiedDiff from persisted pr_files patches.
+ *
+ * The header reconstruction lives in `unifiedDiffFromPatches` rather than
+ * inline here: the eval runner replays a stored `pr_files.patch` too, and when
+ * this was the only copy that path silently skipped it — every finding then
+ * failed the grounding gate as uncited.
+ */
 export async function diffFromPrFiles(repo: ReviewRepository, prId: string): Promise<UnifiedDiff> {
   const files = await repo.getPrFiles(prId);
-  const parts: string[] = [];
-  for (const f of files) {
-    if (!f.patch) continue;
-    parts.push(`diff --git a/${f.path} b/${f.path}`);
-    parts.push(`--- a/${f.path}`);
-    parts.push(`+++ b/${f.path}`);
-    parts.push(f.patch);
-  }
-  return parseUnifiedDiff(parts.join('\n'));
+  return parseUnifiedDiff(unifiedDiffFromPatches(files));
 }

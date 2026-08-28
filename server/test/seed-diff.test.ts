@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { BREAKING_PR_FILES } from '../src/db/seed.js';
-import { parseUnifiedDiff } from '../src/adapters/git/diff-parser.js';
+import { parseUnifiedDiff, unifiedDiffFromPatches } from '../src/adapters/git/diff-parser.js';
 
 /**
  * Pins the PR #483 fixture — the Skills Lab control experiment's diff.
@@ -18,16 +18,10 @@ import { parseUnifiedDiff } from '../src/adapters/git/diff-parser.js';
  * would not drop anything, since the parser populates the line array itself.
  */
 
-/** Rebuild the diff exactly as `diffFromPrFiles` does before parsing. */
+/** Rebuild the diff exactly as `diffFromPrFiles` does before parsing — through
+    the same shared helper it uses, so this fixture cannot drift from it. */
 function parseFixture() {
-  const parts: string[] = [];
-  for (const f of BREAKING_PR_FILES) {
-    parts.push(`diff --git a/${f.path} b/${f.path}`);
-    parts.push(`--- a/${f.path}`);
-    parts.push(`+++ b/${f.path}`);
-    parts.push(f.patch);
-  }
-  return parseUnifiedDiff(parts.join('\n'));
+  return parseUnifiedDiff(unifiedDiffFromPatches(BREAKING_PR_FILES));
 }
 
 /** Count what a hunk body actually contains, independent of its header. */

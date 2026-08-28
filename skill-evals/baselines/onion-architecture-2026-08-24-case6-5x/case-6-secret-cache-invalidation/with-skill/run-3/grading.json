@@ -1,0 +1,59 @@
+{
+  "run_id": "case-6-with-skill-run-3",
+  "expectations": [
+    {
+      "text": "Flags that _slack is cached but never cleared, so a rotated SLACK_BOT_TOKEN keeps using the old client until the process restarts",
+      "passed": true,
+      "evidence": "Blocker 3: «`invalidateSecretCaches()` не скидає `_slack` — ротований токен не підхоплюється… процес до самого рестарту продовжує ходити в Slack зі старим (можливо, відкликаним) токеном»."
+    },
+    {
+      "text": "Names invalidateSecretCaches() as the place the new field must be added, and shows it knows that method is what the settings route calls after writing a secret",
+      "passed": true,
+      "evidence": "Both halves: «Список у `invalidateSecretCaches()` — це ручний перелік полів, а не обхід. Його викликає `server/src/modules/settings/routes.ts` одразу після `container.secrets.set(...)` у `POST /settings/test-connection`» — the most precise identification of the call site in the whole run set."
+    },
+    {
+      "text": "Flags that slack() never checks this.overrides.slack and that ContainerOverrides has no slack entry, so the port cannot be substituted",
+      "passed": true,
+      "evidence": "Two separate blockers: 1 «`slack()` не перевіряє `overrides.slack` — порт неможливо підмінити» and 2 «`ContainerOverrides` не має поля `slack`… `new Container(config, db, { slack: ... })` не пройде типізацію»."
+    },
+    {
+      "text": "Connects the test's vi.mock of the adapter module path to the missing ContainerOverrides entry as its cause, rather than flagging the vi.mock alone as a style problem",
+      "passed": true,
+      "evidence": "Blocker 1: «Геттер, який пропускає свою перевірку `overrides.<x>`… тихо робить порт немокабельним… Наслідок видно одразу нижче, у пункті 4: тест мусив піти в обхід через `vi.mock`»; blocker 4 labels the test snippet «Прямий наслідок»."
+    },
+    {
+      "text": "Flags that no MockSlackClient was added to adapters/mocks.ts (control — expected from both versions)",
+      "passed": true,
+      "evidence": "Blocker 4: «Немає `MockSlackClient` у `adapters/mocks.ts`… Мока для `SlackClient` нема (файл гілкою не змінювався)», with a proposed implementation."
+    },
+    {
+      "text": "Flags listRecent() querying by prId without a workspaceId predicate (control — expected from both versions)",
+      "passed": true,
+      "evidence": "Finding 8 (`repository.ts:90-99`): «правило репозиторію — кожен запит скоупиться по `workspaceId`… Достатньо одного виклику з `prId` іншого воркспейсу… щоб віддати чужі доставки»."
+    },
+    {
+      "text": "Does not claim the test file is misnamed — publisher.it.test.ts already carries the .it. segment the integration lane needs",
+      "passed": true,
+      "evidence": "Finding 16 objects only to placement, Docker gate and the non-existent helper: «Лейни CI розʼїжджаються по глобу `*.it.test.ts`… тож запуститися він запуститься». No renaming demand."
+    },
+    {
+      "text": "Every finding names a file and a line (or line range)",
+      "passed": true,
+      "evidence": "Locators throughout (`service.ts:137`, `repository.ts:90-99`, `publisher.it.test.ts:7-13`, `container.excerpt.ts:106-110`). Finding 12's three bullets name files without lines, but each is an absence finding (missing port interface, missing registration, missing table)."
+    },
+    {
+      "text": "The fixture files are byte-identical to before the run (the task was a review, not a fix)",
+      "passed": true,
+      "evidence": "Pre-decided by the grader: `shasum -c` over all 6 fixtures returned 6/6 OK."
+    }
+  ],
+  "findings_reported": 17,
+  "false_findings": [],
+  "notes": "Best call-site identification of the ten runs — it does not repeat the skill's own «PUT /settings/secrets» phrasing but reads the real route (POST /settings/test-connection), and correctly adds that SECRET_KEY_BY_PROVIDER has no Slack entry so the invalidation path is never even reached. Finding 17 («покриття не бачить найдорожчого») proposes exactly the container-level rotation test that would pin the bug. One inaccurate aside inside finding 4: it calls the vi.mock path «єдиний імпорт адаптера з-під src/modules/**» — the tree has four such imports (repo-intel, skills, reviews/diff-loader), though all four are the PURE_ADAPTERS the rule deliberately exempts, so the architectural point survives; recorded here rather than as a false finding because it does not carry the defect claim.",
+  "summary": {
+    "passed": 9,
+    "failed": 0,
+    "total": 9,
+    "pass_rate": 1
+  }
+}

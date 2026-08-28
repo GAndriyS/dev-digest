@@ -1,0 +1,13 @@
+diff --git a/server/src/modules/blast/score.ts b/server/src/modules/blast/score.ts
+index 8504716..4ac56eb 100644
+--- a/server/src/modules/blast/score.ts
++++ b/server/src/modules/blast/score.ts
+@@ -3,6 +3,7 @@ export interface BlastRow {
+   score: number;
+ }
+ 
++// Renamed locals for readability; behaviour unchanged.
+ export function summarize(rows: BlastRow[]) {
+-  return rows.map((r) => ({ id: r.id, score: r.score }));
++  return rows.map((row) => ({ id: row.id, score: row.score }));
+ }

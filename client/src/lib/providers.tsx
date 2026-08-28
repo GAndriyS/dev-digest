@@ -39,7 +39,14 @@ export function Providers({ children }: { children: React.ReactNode }) {
           },
         }),
         mutationCache: new MutationCache({
-          onError: (err) => notify.error(errorMessage(err)),
+          // `meta.ownErrorToast` opts a mutation out of this global toast: the
+          // caller shows its own translated message for at least one failure
+          // branch, and both firing would stack two toasts for one click
+          // (cache-level and instance-level onError both always run).
+          onError: (err, _vars, _ctx, mutation) => {
+            if (mutation.meta?.ownErrorToast) return;
+            notify.error(errorMessage(err));
+          },
         }),
       })
   );
